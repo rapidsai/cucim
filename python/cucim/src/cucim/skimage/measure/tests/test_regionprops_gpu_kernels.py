@@ -1918,6 +1918,93 @@ def test_oriented_bbox_rotated_rectangle():
     assert_allclose(out["oriented_bbox_center"][0], (40, 40), atol=0.1)
 
 
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("spacing", [None, (0.7, 1.3, 1.1)])
+def test_oriented_bbox_corners(ndim, spacing):
+    labels = _convex_test_labels("random", ndim)
+    if spacing is not None:
+        spacing = spacing[:ndim]
+    names = [
+        "oriented_bbox_size",
+        "oriented_bbox_center",
+        "inertia_tensor_eigenvectors",
+    ]
+    out = regionprops_dict(labels, properties=names, spacing=spacing)
+    corners = measure.oriented_bbox_corners(out)
+    assert isinstance(corners, cp.ndarray)
+    num_labels = int(labels.max())
+    assert corners.shape == (num_labels, 2**ndim, ndim)
+    size, center, eigvecs = (cp.asnumpy(out[name]) for name in names)
+    present = np.unique(cp.asnumpy(labels))
+    present = present[present > 0] - 1
+    for lab in present:
+        for k, signs in enumerate(itertools.product((-1, 1), repeat=ndim)):
+            expected = center[lab] + sum(
+                sg * size[lab, a] / 2 * eigvecs[lab][:, a]
+                for a, sg in enumerate(signs)
+            )
+            assert_allclose(corners[lab, k], expected, rtol=1e-12, atol=1e-12)
+        # the corners are those of a box: the box frame's extremes
+        local = (cp.asnumpy(corners[lab]) - center[lab]) @ eigvecs[lab]
+        assert_allclose(
+            np.abs(local),
+            np.broadcast_to(0.5 * size[lab], local.shape),
+            rtol=1e-12,
+        )
+    # absent labels
+    absent = np.setdiff1d(np.arange(num_labels), present)
+    assert np.all(np.isnan(cp.asnumpy(corners)[absent]))
+    if ndim == 2:
+        # the order 0, 1, 3, 2 goes around the rectangle
+        loop = cp.asnumpy(corners)[present][:, [0, 1, 3, 2, 0]]
+        sides = np.diff(loop, axis=1)
+        assert_allclose(
+            np.einsum("lsd,lsd->ls", sides[:, :-1], sides[:, 1:]), 0, atol=1e-9
+        )
+
+
+@pytest.mark.parametrize("separator", ["-", "_"])
+@pytest.mark.parametrize("host", [False, True])
+def test_oriented_bbox_corners_table(separator, host):
+    # the columns of regionprops_table give the same corners
+    labels = _convex_test_labels("random", 3)
+    names = [
+        "label",
+        "oriented_bbox_size",
+        "oriented_bbox_center",
+        "inertia_tensor_eigenvectors",
+    ]
+    table = measure.regionprops_table(
+        labels,
+        properties=names,
+        separator=separator,
+        copy_output_to_host=host,
+    )
+    assert f"inertia_tensor_eigenvectors{separator}2{separator}1" in table
+    corners = measure.oriented_bbox_corners(table, separator=separator)
+    assert isinstance(corners, np.ndarray if host else cp.ndarray)
+    expected = measure.oriented_bbox_corners(
+        regionprops_dict(labels, properties=names[1:])
+    )
+    assert_allclose(
+        cp.asnumpy(corners),
+        cp.asnumpy(expected)[cp.asnumpy(table["label"]) - 1],
+    )
+
+
+def test_oriented_bbox_corners_missing_properties():
+    labels = _convex_test_labels("blobs", 2)
+    out = regionprops_dict(
+        labels, properties=["oriented_bbox_size", "oriented_bbox_center"]
+    )
+    with pytest.raises(
+        ValueError, match="missing: inertia_tensor_eigenvectors"
+    ):
+        measure.oriented_bbox_corners(out)
+    with pytest.raises(ValueError, match="regionprops_table"):
+        measure.oriented_bbox_corners({})
+
+
 def test_surface_area_weights():
     # the Crofton weights are the areas of the Voronoi cells of the 26
     # neighbor directions on the unit sphere (a direction and its opposite)

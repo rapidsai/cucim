@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import itertools
 import warnings
 from collections.abc import Callable
 from copy import copy
@@ -403,7 +404,9 @@ def regionprops_dict(
       extent along ``V[:, a]``, and ``oriented_bbox_center`` its center, in
       the coordinates of ``centroid``. Its ``2**ndim`` corners are
       ``center + sum_a s_a * size[a] / 2 * V[:, a]`` for all choices of
-      signs ``s_a`` in {-1, +1}; in a table, ``V[d, a]`` is the column
+      signs ``s_a`` in {-1, +1} (`oriented_bbox_corners` computes them from
+      the result of this function or of `regionprops_table`); in a table,
+      ``V[d, a]`` is the column
       ``inertia_tensor_eigenvectors-d-a``. Unlike ITK's corner (origin), the
       size and the center do not depend on the signs of the eigenvectors.
       It is not the smallest box that encloses the region: for a right
@@ -987,6 +990,132 @@ def regionprops_dict(
             extra_property_names=tuple(f.__name__ for f in extra_properties),
         )
     return out
+
+
+def _property_array(props, name, separator):
+    """``props[name]``, or the columns ``name-i-j`` of a `regionprops_table`
+    result stacked into an array of shape (n_labels, i, j); None if absent.
+    """
+    if name in props:
+        return props[name]
+    prefix = name + separator
+    columns = {
+        tuple(int(i) for i in key[len(prefix) :].split(separator)): value
+        for key, value in props.items()
+        if key.startswith(prefix)
+        and key[len(prefix) :].replace(separator, "").isdigit()
+    }
+    if not columns:
+        return None
+    first = next(iter(columns.values()))
+    xp = cp.get_array_module(first)
+    shape = tuple(
+        1 + max(i[d] for i in columns) for d in range(len(next(iter(columns))))
+    )
+    out = xp.empty(first.shape + shape, dtype=xp.float64)
+    for index, column in columns.items():
+        out[(Ellipsis, *index)] = column
+    return out
+
+
+def _required_properties(props, names, function, separator):
+    """The arrays of the properties `names`, or a ValueError that lists the
+    missing ones and how to request them."""
+    arrays = [_property_array(props, name, separator) for name in names]
+    missing = [name for name, array in zip(names, arrays) if array is None]
+    if missing:
+        raise ValueError(
+            f"{function} needs the properties {', '.join(names)}; missing: "
+            f"{', '.join(missing)}. Request them in the `properties` argument "
+            "of regionprops_table or regionprops_dict."
+        )
+    return arrays
+
+
+def _box_corners(size, center, axes):
+    """The corners ``center + sum_a s_a * size[a] / 2 * axes[:, a]`` for all
+    sign choices, of arrays with any leading shape."""
+    xp = cp.get_array_module(size, center, axes)
+    size = xp.asarray(size, dtype=xp.float64)
+    center = xp.asarray(center, dtype=xp.float64)
+    axes = xp.asarray(axes, dtype=xp.float64)
+    ndim = size.shape[-1]
+    if center.shape[-1] != ndim or axes.shape[-2:] != (ndim, ndim):
+        raise ValueError(
+            "size, center and axes must have shapes (..., ndim), "
+            "(..., ndim) and (..., ndim, ndim)"
+        )
+    signs = xp.asarray(list(itertools.product((-1.0, 1.0), repeat=ndim)))
+    along_axes = signs * (0.5 * size[..., None, :])
+    return center[..., None, :] + along_axes @ xp.swapaxes(axes, -1, -2)
+
+
+def oriented_bbox_corners(props, *, separator="-"):
+    """Corners of the oriented bounding boxes of regions.
+
+    The corners of the box of the ``oriented_bbox_size`` and
+    ``oriented_bbox_center`` properties, which is aligned with the principal
+    axes of the region, the columns of ``inertia_tensor_eigenvectors``.
+
+    Parameters
+    ----------
+    props : dict
+        The result of `regionprops_dict` or `regionprops_table` with the
+        properties ``oriented_bbox_size``, ``oriented_bbox_center`` and
+        ``inertia_tensor_eigenvectors`` (a `ValueError` lists any that are
+        missing). Columns of a table (``oriented_bbox_size-0``, ...) are
+        stacked back into arrays.
+    separator : str, optional
+        The `separator` that was passed to `regionprops_table`.
+
+    Returns
+    -------
+    corners : ndarray, shape (n_labels, 2**ndim, ndim)
+        ``center + sum_a s_a * size[a] / 2 * V[:, a]`` for all choices of the
+        signs ``s_a`` in {-1, +1}, where ``V`` is
+        ``inertia_tensor_eigenvectors``. The corners are in the order of
+        ``itertools.product([-1, 1], repeat=ndim)`` (the sign of the last
+        axis changes fastest), which is not an order along the outline: in
+        2D, the order 0, 1, 3, 2 goes around the rectangle. They are in the
+        coordinates of ``centroid`` (array axes, scaled by the spacing if one
+        was given). The corners of absent labels are NaN. The result is a
+        CuPy array, or a NumPy array if the properties are NumPy arrays (a
+        table made with ``copy_output_to_host=True``).
+
+    Notes
+    -----
+    The flipping of an eigenvector's sign relabels the corners but does not
+    change their set. When principal moments are equal, as for a square or a
+    cube, the axes are not unique, and neither are the corners.
+
+    Examples
+    --------
+    >>> import cupy as cp
+    >>> from cucim.skimage.measure import oriented_bbox_corners, regionprops_table
+    >>> labels = cp.zeros((8, 8), dtype=cp.uint8)
+    >>> labels[2:6, 1:7] = 1
+    >>> props = regionprops_table(
+    ...     labels,
+    ...     properties=(
+    ...         "oriented_bbox_size",
+    ...         "oriented_bbox_center",
+    ...         "inertia_tensor_eigenvectors",
+    ...     ),
+    ... )
+    >>> oriented_bbox_corners(props).shape
+    (1, 4, 2)
+    """
+    size, center, eigenvectors = _required_properties(
+        props,
+        (
+            "oriented_bbox_size",
+            "oriented_bbox_center",
+            "inertia_tensor_eigenvectors",
+        ),
+        "oriented_bbox_corners",
+        separator,
+    )
+    return _box_corners(size, center, eigenvectors)
 
 
 def _props_dict_to_table(

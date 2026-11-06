@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2024-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 # Explicitly setting `__all__` is necessary for type inference engines
@@ -9,6 +9,7 @@
 __all__ = [
     "regionprops",
     "regionprops_table",
+    "oriented_bbox_corners",
     "perimeter",
     "perimeter_crofton",
     "euler_number",
@@ -61,6 +62,7 @@ from ._regionprops import (
     regionprops,
     regionprops_table,
 )
+from ._regionprops_gpu import oriented_bbox_corners
 from .block import block_reduce
 from .entropy import shannon_entropy
 from .profile import profile_line
