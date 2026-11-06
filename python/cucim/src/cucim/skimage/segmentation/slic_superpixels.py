@@ -313,6 +313,10 @@ _slic_connectivity_apply_map = cp.ElementwiseKernel(
 )
 
 
+# upper bound on the number of merge passes of the GPU connectivity cleanup
+_CONNECTIVITY_MAX_PASSES = 16
+
+
 def _enforce_label_connectivity_gpu(
     labels,
     min_size,
@@ -338,57 +342,66 @@ def _enforce_label_connectivity_gpu(
     if max_label == 0:
         return labels.copy()
 
-    sizes = regionprops_num_pixels(components, max_label=max_label)
-    sizes = sizes.astype(cp.uint64, copy=False)
-
-    large_keys = cp.zeros(max_label + 1, dtype=cp.uint64)
-    small_keys = cp.zeros(max_label + 1, dtype=cp.uint64)
-    component_map = cp.arange(max_label + 1, dtype=cp.int32)
-
     if labels.ndim == 2:
         n0, n1, n2 = 1, labels.shape[0], labels.shape[1]
     else:
         n0, n1, n2 = labels.shape
     block = (256,)
     grid = ((components.size + block[0] - 1) // block[0],)
-    _slic_connectivity_collect_adjacency(
-        grid,
-        block,
-        (
-            components,
-            sizes,
-            large_keys,
-            small_keys,
-            n0,
-            n1,
-            n2,
-            labels.ndim,
-            max_label,
-            np.uint64(max(1, min_size)),
-            np.uint64(components.size),
-        ),
-    )
-
     grid_map = ((max_label + block[0] - 1) // block[0],)
-    _slic_connectivity_build_map(
-        grid_map,
-        block,
-        (
-            sizes,
-            large_keys,
-            small_keys,
-            component_map,
-            max_label,
-            np.uint64(max(1, min_size)),
-        ),
-    )
-    _slic_connectivity_compress_map(
-        ((max_label + 1 + block[0] - 1) // block[0],),
-        block,
-        (component_map, max_label),
-    )
+    grid_compress = ((max_label + 1 + block[0] - 1) // block[0],)
+    min_size = np.uint64(max(1, min_size))
+    identity = cp.arange(max_label + 1, dtype=cp.int32)
 
-    connected = _slic_connectivity_apply_map(components, component_map)
+    # One pass merges every small component into one of its neighbors. A
+    # component whose neighbors are all small, and have larger ids, stays
+    # as it is in that pass, but can then be next to a larger, merged,
+    # component. Repeat until no component is smaller than min_size.
+    for _ in range(_CONNECTIVITY_MAX_PASSES):
+        sizes = regionprops_num_pixels(components, max_label=max_label)
+        sizes = sizes.astype(cp.uint64, copy=False)
+        if not bool(cp.any((sizes > 0) & (sizes < min_size))):
+            break
+
+        large_keys = cp.zeros(max_label + 1, dtype=cp.uint64)
+        small_keys = cp.zeros(max_label + 1, dtype=cp.uint64)
+        component_map = identity.copy()
+        _slic_connectivity_collect_adjacency(
+            grid,
+            block,
+            (
+                components,
+                sizes,
+                large_keys,
+                small_keys,
+                n0,
+                n1,
+                n2,
+                labels.ndim,
+                max_label,
+                min_size,
+                np.uint64(components.size),
+            ),
+        )
+        _slic_connectivity_build_map(
+            grid_map,
+            block,
+            (
+                sizes,
+                large_keys,
+                small_keys,
+                component_map,
+                max_label,
+                min_size,
+            ),
+        )
+        _slic_connectivity_compress_map(
+            grid_compress, block, (component_map, max_label)
+        )
+        if not bool(cp.any(component_map != identity)):
+            break  # nothing can be merged (e.g. a single small component)
+        components = _slic_connectivity_apply_map(components, component_map)
+    connected = components
 
     if relabel:
         connected, _, _ = relabel_sequential(connected, offset=1)
@@ -744,10 +757,12 @@ def slic(
     connectivity_algorithm : {"host", "gpu"}, optional
         Algorithm used when ``enforce_connectivity=True``. ``"gpu"`` is the
         default and keeps cleanup on device using a deterministic
-        GPU-friendly small-component merge policy that may not produce labels
-        identical to scikit-image. Use ``"host"`` to run scikit-image's
-        Cython-based CPU connectivity cleanup, which requires transferring the
-        label image to host and the cleaned labels back to device.
+        small-component merge policy. It gives a qualitatively similar
+        segmentation to scikit-image, but not identical labels (see Notes).
+        Use ``"host"`` to run scikit-image's Cython-based CPU connectivity
+        cleanup, which returns identical labels but requires transferring the
+        label image to host and the cleaned labels back to device. It is
+        typically several times slower overall than ``"gpu"``.
     relabel_connectivity : bool, optional
         If ``True``, relabel the result of GPU connectivity cleanup so labels
         are dense and sequential. Set to ``False`` to skip this extra pass when
@@ -789,13 +804,35 @@ def slic(
       a mask transfer to host and CPU work on each call.
 
     * When ``enforce_connectivity=True``, cuCIM uses a GPU connectivity cleanup
-      by default. This avoids host/device label transfers, but uses a
-      GPU-friendly merge policy that may not match scikit-image exactly. The
-      GPU path relabels the result to dense sequential labels by default. Pass
-      ``relabel_connectivity=False`` to skip that extra pass, or call
+      by default. It splits each label into its connected components and
+      merges every component smaller than ``min_size_factor`` times the
+      nominal segment size into a neighboring component: the largest
+      neighbor that is large enough, otherwise a neighbor with a smaller id.
+      This is repeated until no component is too small. The result is
+      qualitatively similar to the one from scikit-image: in the cases tested
+      the number of segments differs by at most 2, no segment is smaller
+      than the minimum size, and the differences are along the boundaries of
+      fragmented regions, which are most numerous at low ``compactness``.
+      The labels are not identical and their numbering differs.
+
+      Exactly reproducing scikit-image on a GPU would not be efficient. Its
+      cleanup scans the pixels in raster order and grows each component by a
+      breadth-first search. A small component is merged into the label of the
+      neighbor that the search encountered last among the components already
+      numbered, so the result for one component depends on the results of
+      all the earlier ones, and on the visiting order within the search.
+      The search also stops once a component reaches ``max_size`` pixels,
+      which splits larger components at a point that depends on that order.
+      Following that order requires processing the components one after the
+      other, which gives up the parallelism that makes the GPU path fast. The
+      GPU path therefore ignores ``max_size_factor``. Pass
+      ``connectivity_algorithm="host"`` to get scikit-image's result, at the
+      cost of transferring the labels to the host and a sequential CPU pass.
+
+      The GPU path relabels the result to dense sequential labels by default.
+      Pass ``relabel_connectivity=False`` to skip that extra pass, or call
       :func:`cucim.skimage.segmentation.relabel_sequential` later if dense
-      labels are needed. Pass ``connectivity_algorithm="host"`` to use
-      scikit-image's Cython-based CPU cleanup instead.
+      labels are needed.
 
     * Images of shape (M, N, 3) are interpreted as 2D RGB images by default. To
       interpret them as 3D with the last dimension having length 3, use

@@ -321,6 +321,21 @@ def test_slic_matches_skimage_without_connectivity(
     assert float((cp.asnumpy(seg) == expected).mean()) > min_agreement
 
 
+@pytest.mark.parametrize("compactness", [1, 10])
+def test_slic_connectivity_gpu_no_small_segments(compactness):
+    # A component whose neighbors are all small must still end up in a
+    # segment that is at least min_size (the default min_size_factor is 0.5).
+    img = cp.asarray(data.astronaut())
+    kwargs = dict(n_segments=100, compactness=compactness)
+    n_centroids = len(
+        cp.unique(slic(img, enforce_connectivity=False, **kwargs))
+    )
+    min_size = int(0.5 * img.shape[0] * img.shape[1] / n_centroids)
+    seg = slic(img, connectivity_algorithm="gpu", **kwargs)
+    sizes = cp.bincount(seg.ravel())[1:]
+    assert int(sizes.min()) >= min_size
+
+
 def test_slic_connectivity_algorithm_gpu():
     img = cp.asarray(data.cat()[:64, :64])
 
