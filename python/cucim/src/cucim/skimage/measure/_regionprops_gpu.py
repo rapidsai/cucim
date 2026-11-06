@@ -133,6 +133,10 @@ PROPS_GPU_EXTRA = {
     "feret_angle_min": "feret_angle_min",
     # the perimeter of the convex hull, as DIPlib's ConvexPerimeter
     "perimeter_convex": "perimeter_convex",
+    # the minimum-area enclosing rectangle of the convex hull
+    "min_area_bbox_size": "min_area_bbox_size",
+    "min_area_bbox_center": "min_area_bbox_center",
+    "min_area_bbox_angle": "min_area_bbox_angle",
     # the oriented bounding box, as in ITK
     "oriented_bbox_size": "oriented_bbox_size",
     "oriented_bbox_center": "oriented_bbox_center",
@@ -163,6 +167,9 @@ COL_DTYPES_EXTRA = {
     "feret_angle_max": float,
     "feret_angle_min": float,
     "perimeter_convex": float,
+    "min_area_bbox_size": float,
+    "min_area_bbox_center": float,
+    "min_area_bbox_angle": float,
     "oriented_bbox_size": float,
     "oriented_bbox_center": float,
 }
@@ -248,6 +255,9 @@ ndim_2_only = {
     "feret_angle_max",
     "feret_angle_min",
     "perimeter_convex",
+    "min_area_bbox_size",
+    "min_area_bbox_center",
+    "min_area_bbox_angle",
 }
 
 # set of properties that can only be computed for 3D regions
@@ -397,6 +407,18 @@ def regionprops_dict(
       returned.
     - ``perimeter_convex`` (2D only): the perimeter of that polygon, as
       DIPlib's ``ConvexPerimeter``.
+    - ``min_area_bbox_size``, ``min_area_bbox_center``,
+      ``min_area_bbox_angle`` (2D only): the rectangle of the smallest area
+      that encloses that polygon, which has a side along an edge of the
+      polygon (the rotating calipers of Freeman and Shapira). The size is
+      (length, width) with length >= width, the center is in the coordinates
+      of ``centroid``, and the angle is that of the direction of the length
+      side, ``atan2(d1, d0)`` in (-pi/2, pi/2] as for the Feret angles. The
+      corners are ``min_area_bbox_corners(props)``.
+      Unlike ``oriented_bbox_size``, it does not depend on the mass
+      distribution, so it is well defined for squares and discs. It
+      encloses the polygon of the pixel-edge midpoints, like the Feret
+      diameters, not whole pixels as ``oriented_bbox_size`` does.
     - ``oriented_bbox_size``, ``oriented_bbox_center``: the bounding box
       aligned with the principal axes (the columns ``V[:, a]`` of
       ``inertia_tensor_eigenvectors``) that encloses all the region's pixels,
@@ -854,6 +876,9 @@ def regionprops_dict(
             "feret_angle_max",
             "feret_angle_min",
             "perimeter_convex",
+            "min_area_bbox_size",
+            "min_area_bbox_center",
+            "min_area_bbox_angle",
         }
     )
     if (
@@ -1116,6 +1141,52 @@ def oriented_bbox_corners(props, *, separator="-"):
         separator,
     )
     return _box_corners(size, center, eigenvectors)
+
+
+def min_area_bbox_corners(props, *, separator="-"):
+    """Corners of the minimum-area rectangles of 2D regions.
+
+    The corners of the rectangle of the ``min_area_bbox_size``,
+    ``min_area_bbox_center`` and ``min_area_bbox_angle`` properties.
+
+    Parameters
+    ----------
+    props : dict
+        The result of `regionprops_dict` or `regionprops_table` with the
+        properties ``min_area_bbox_size``, ``min_area_bbox_center`` and
+        ``min_area_bbox_angle`` (a `ValueError` lists any that are missing).
+        Columns of a table (``min_area_bbox_size-0``, ...) are stacked back
+        into arrays.
+    separator : str, optional
+        The `separator` that was passed to `regionprops_table`.
+
+    Returns
+    -------
+    corners : ndarray, shape (n_labels, 4, 2)
+        The corners (row, column) in the coordinates of ``centroid``, in the
+        order of ``itertools.product([-1, 1], repeat=2)`` for the signs along
+        the length side and the width side; the order 0, 1, 3, 2 goes around
+        the rectangle. The corners of absent labels are NaN. The result is a CuPy
+        array, or a NumPy array if the properties are NumPy arrays (a table
+        made with ``copy_output_to_host=True``).
+
+    Notes
+    -----
+    The first axis of the rectangle is the direction ``(cos(a), sin(a))`` of
+    the length side, for the angle ``a``, and the second is perpendicular to
+    it; `oriented_bbox_corners` computes the same for the oriented box.
+    """
+    size, center, angle = _required_properties(
+        props,
+        ("min_area_bbox_size", "min_area_bbox_center", "min_area_bbox_angle"),
+        "min_area_bbox_corners",
+        separator,
+    )
+    xp = cp.get_array_module(size, center, angle)
+    angle = xp.asarray(angle, dtype=xp.float64)
+    cos, sin = xp.cos(angle), xp.sin(angle)
+    axes = xp.stack([xp.stack([cos, -sin], -1), xp.stack([sin, cos], -1)], -2)
+    return _box_corners(size, center, axes)
 
 
 def _props_dict_to_table(

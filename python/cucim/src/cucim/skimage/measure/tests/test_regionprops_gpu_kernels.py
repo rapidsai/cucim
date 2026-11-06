@@ -17,6 +17,7 @@ from cupy.testing import (
 )
 from scipy.ndimage import find_objects as cpu_find_objects
 from skimage import measure as measure_cpu
+from skimage.morphology import convex_hull_image
 
 from cucim.skimage import data, measure
 from cucim.skimage._vendored import ndimage as ndi
@@ -2519,6 +2520,173 @@ def test_feret_calipers_2d(kind, spacing):
         assert result["feret_diameter_min"][lab] == 0
         assert result["perimeter_convex"][lab] == 0
         assert np.isnan(result["feret_angle_max"][lab])
+
+
+def _min_area_bbox_reference(region, spacing):
+    """The minimum-area rectangles (size, center, angle) of the hull of the
+    convex image's diamond points: one for each hull edge with the smallest
+    area (the ties)."""
+    from scipy.spatial import ConvexHull
+    from skimage.morphology import convex_hull_image
+
+    spacing = np.ones(2) if spacing is None else np.asarray(spacing, float)
+    centers = np.argwhere(convex_hull_image(region.image))
+    diamond = np.array([[-0.5, 0], [0.5, 0], [0, -0.5], [0, 0.5]])
+    points = (centers[:, np.newaxis] + diamond).reshape(-1, 2)
+    points = np.unique(points, axis=0) * spacing
+    v = points[ConvexHull(points).vertices]
+    found = []
+    for k in range(len(v)):
+        edge = v[(k + 1) % len(v)] - v[k]
+        edge /= np.linalg.norm(edge)
+        normal = np.array([-edge[1], edge[0]])
+        t, u = v @ edge, v @ normal
+        extent, width = np.ptp(t), np.ptp(u)
+        center = edge * (t.max() + t.min()) / 2
+        center = center + normal * (u.max() + u.min()) / 2
+        center = center + np.asarray(region.bbox[:2]) * spacing
+        long_axis = edge if extent >= width else normal
+        found.append(
+            (
+                extent * width,
+                (max(extent, width), min(extent, width)),
+                center,
+                _fold_angle(math.atan2(long_axis[1], long_axis[0])),
+            )
+        )
+    smallest = min(f[0] for f in found)
+    return [f for f in found if f[0] <= smallest * (1 + 1e-12)]
+
+
+@pytest.mark.parametrize("kind", ["blobs", "lines", "random"])
+@pytest.mark.parametrize("spacing", [None, (0.7, 1.3)])
+def test_min_area_bbox_2d(kind, spacing):
+    labels = _convex_test_labels(kind, 2)
+    props = [
+        "min_area_bbox_size",
+        "min_area_bbox_center",
+        "min_area_bbox_angle",
+    ]
+    result = regionprops_dict(labels, properties=props, spacing=spacing)
+    result = {k: cp.asnumpy(v) for k, v in result.items()}
+    labels_cpu = cp.asnumpy(labels)
+    for region in measure_cpu.regionprops(labels_cpu):
+        lab = region.label - 1
+        size = result["min_area_bbox_size"][lab]
+        center = result["min_area_bbox_center"][lab]
+        angle = result["min_area_bbox_angle"][lab]
+        reference = _min_area_bbox_reference(region, spacing)
+        assert any(
+            np.allclose(size, f[1], rtol=1e-10)
+            and np.allclose(center, f[2], rtol=1e-10, atol=1e-9)
+            and abs(_fold_angle(angle - f[3])) < 1e-8
+            or (  # a square: either side is the length
+                np.isclose(size[0], size[1], rtol=1e-10)
+                and np.allclose(size, f[1], rtol=1e-10)
+                and np.allclose(center, f[2], rtol=1e-10, atol=1e-9)
+            )
+            for f in reference
+        ), (size, center, angle, reference)
+    # absent labels
+    absent = np.setdiff1d(
+        np.arange(1, int(labels_cpu.max()) + 1), np.unique(labels_cpu)
+    )
+    for lab in absent - 1:
+        assert np.all(np.isnan(result["min_area_bbox_size"][lab]))
+        assert np.all(np.isnan(result["min_area_bbox_center"][lab]))
+        assert np.isnan(result["min_area_bbox_angle"][lab])
+
+
+def test_min_area_bbox_rotated_square():
+    # for a square rotated by 45 degrees the oriented box (from the equal
+    # principal moments) is the axis-aligned one, with twice the area; the
+    # minimum-area box has the sides of the square
+    rr, cc = np.mgrid[:120, :120]
+    labels = cp.asarray(
+        ((np.abs(rr - 60) + np.abs(cc - 60)) <= 40).astype(np.uint8)
+    )
+    out = regionprops_dict(
+        labels, properties=["min_area_bbox_size", "min_area_bbox_center"]
+    )
+    size = cp.asnumpy(out["min_area_bbox_size"][0])
+    assert_allclose(size, [size[0], size[0]], rtol=1e-12)
+    assert abs(size[0] - 40 * math.sqrt(2)) < 1.5
+    assert_allclose(cp.asnumpy(out["min_area_bbox_center"][0]), (60, 60))
+
+
+@pytest.mark.parametrize("kind", ["blobs", "lines", "random"])
+@pytest.mark.parametrize("spacing", [None, (0.7, 1.3)])
+def test_min_area_bbox_corners(kind, spacing):
+    labels = _convex_test_labels(kind, 2)
+    names = [
+        "min_area_bbox_size",
+        "min_area_bbox_center",
+        "min_area_bbox_angle",
+    ]
+    out = regionprops_dict(labels, properties=names, spacing=spacing)
+    corners = cp.asnumpy(measure.min_area_bbox_corners(out))
+    size, center, angle = (cp.asnumpy(out[name]) for name in names)
+    labels_cpu = cp.asnumpy(labels)
+    assert corners.shape == (int(labels_cpu.max()), 4, 2)
+    for region in measure_cpu.regionprops(labels_cpu):
+        lab = region.label - 1
+        c = corners[lab]
+        # a rectangle (in the order 0, 1, 3, 2) of the size, around the center
+        loop = c[[0, 1, 3, 2, 0]]
+        sides = np.diff(loop, axis=0)
+        assert_allclose(np.sum(sides[:-1] * sides[1:], axis=1), 0, atol=1e-9)
+        assert_allclose(
+            sorted(np.linalg.norm(sides, axis=1)[:2]),
+            sorted(size[lab]),
+            rtol=1e-10,
+        )
+        assert_allclose(c.mean(axis=0), center[lab], atol=1e-9)
+        # the first axis is the direction of the length side
+        axis = c[2] - c[0]
+        assert_allclose(
+            axis / np.linalg.norm(axis),
+            (math.cos(angle[lab]), math.sin(angle[lab])),
+            atol=1e-9,
+        )
+        # the corners enclose the polygon of the Feret diameters
+        scale = np.ones(2) if spacing is None else np.asarray(spacing)
+        centers = np.argwhere(convex_hull_image(region.image))
+        diamond = np.array([[-0.5, 0], [0.5, 0], [0, -0.5], [0, 0.5]])
+        points = (centers[:, np.newaxis] + diamond).reshape(-1, 2)
+        points = (points + region.bbox[:2]) * scale
+        rel = points - c[0]
+        u = rel @ (c[2] - c[0]) / np.sum((c[2] - c[0]) ** 2)
+        v = rel @ (c[1] - c[0]) / np.sum((c[1] - c[0]) ** 2)
+        assert min(u.min(), v.min()) > -1e-9
+        assert max(u.max(), v.max()) < 1 + 1e-9
+    absent = np.setdiff1d(
+        np.arange(1, int(labels_cpu.max()) + 1), np.unique(labels_cpu)
+    )
+    assert np.all(np.isnan(corners[absent - 1]))
+
+
+def test_min_area_bbox_corners_table_and_missing():
+    labels = _convex_test_labels("blobs", 2)
+    names = [
+        "min_area_bbox_size",
+        "min_area_bbox_center",
+        "min_area_bbox_angle",
+    ]
+    table = measure.regionprops_table(
+        labels,
+        properties=["label", *names],
+        separator="_",
+        copy_output_to_host=True,
+    )
+    corners = measure.min_area_bbox_corners(table, separator="_")
+    assert isinstance(corners, np.ndarray)
+    expected = measure.min_area_bbox_corners(
+        regionprops_dict(labels, properties=names)
+    )
+    assert_allclose(corners, cp.asnumpy(expected)[table["label"] - 1])
+    out = regionprops_dict(labels, properties=names[:2])
+    with pytest.raises(ValueError, match="missing: min_area_bbox_angle"):
+        measure.min_area_bbox_corners(out)
 
 
 def test_feret_calipers_3d_raises():

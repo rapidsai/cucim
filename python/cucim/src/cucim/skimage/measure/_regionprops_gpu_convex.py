@@ -30,6 +30,9 @@ convex_deps["feret_diameter_min_perpendicular"] = ["bbox"]
 convex_deps["feret_angle_max"] = ["bbox"]
 convex_deps["feret_angle_min"] = ["bbox"]
 convex_deps["perimeter_convex"] = ["bbox"]
+convex_deps["min_area_bbox_size"] = ["bbox"]
+convex_deps["min_area_bbox_center"] = ["bbox"]
+convex_deps["min_area_bbox_angle"] = ["bbox"]
 convex_deps["oriented_bbox_size"] = ["bbox", "inertia_tensor_eigenvectors"]
 convex_deps["oriented_bbox_center"] = ["bbox", "inertia_tensor_eigenvectors"]
 
@@ -652,7 +655,12 @@ def _get_feret_calipers_2d_kernel():
 
     The width perpendicular to the minimum one is the extent of the vertices
     along the edge of the minimum width, and the sum of the edge lengths is
-    the perimeter of the polygon. Angles are those of the direction
+    the perimeter of the polygon. Two more pointers find the vertices with
+    the smallest and largest position along each edge, so that the rectangle
+    with a side on that edge (width times extent) is known for every edge.
+    The smallest of these is the minimum-area enclosing rectangle, which has
+    a side on an edge of the hull (Freeman and Shapira [3]_). Angles are
+    those of the direction
     (d0, d1) between axis 0 and axis 1, atan2(d1, d0), folded into
     (-pi/2, pi/2] (the convention of ``orientation``).
 
@@ -664,6 +672,9 @@ def _get_feret_calipers_2d_kernel():
     .. [2] G. T. Toussaint, "Solving geometric problems with the rotating
            calipers", Proceedings of IEEE MELECON '83, Athens, Greece, May
            1983.
+    .. [3] H. Freeman and R. Shapira, "Determining the minimum-area encasing
+           rectangle for an arbitrary closed curve", Communications of the
+           ACM 18(7), 409-413, 1975. :DOI:`10.1145/360881.360919`
     """
     source = """
       long long base = 2 * offsets[i] + i;
@@ -678,6 +689,11 @@ def _get_feret_calipers_2d_kernel():
         perimeter[i] = 0.0;
         angle_max[i] = nan("");
         angle_min[i] = nan("");
+        box_size[2 * i] = nan("");
+        box_size[2 * i + 1] = nan("");
+        box_center[2 * i] = nan("");
+        box_center[2 * i + 1] = nan("");
+        box_angle[i] = nan("");
       } else {
         // the right chain, bottom to top, without the shared end vertices
         int top = (left[0] == right[0] && left[1] == right[1]) ? 1 : 0;
@@ -713,15 +729,22 @@ def _get_feret_calipers_2d_kernel():
         int min_edge = 0;
         double length = 0.0;
         int j = 1;
+        // the vertices with the largest and smallest position along the edge
+        // (not wrapped: they only move forward)
+        int r = 1, l = 1;
+        double best_area = 1.0 / 0.0;
+        int box_edge = 0;
+        double box_width = 0.0, box_t_lo = 0.0, box_t_hi = 0.0, box_cross = 0.0;
         for (int e = 0; e < n; e++) {
           double ay = vy(e), ax = vx(e);
           double ey = vy(e + 1) - ay;
           double ex = vx(e + 1) - ax;
           // twice the area of the triangle (edge, vertex k): proportional
           // to the distance of vertex k from the edge's line
-          auto height = [&](int k) {
-            return fabs(ey * (vx(k) - ax) - ex * (vy(k) - ay));
+          auto cross = [&](int k) {
+            return ey * (vx(k) - ax) - ex * (vy(k) - ay);
           };
+          auto height = [&](int k) { return fabs(cross(k)); };
           while (height(j + 1) > height(j)) {
             check_pair(e, j);
             check_pair(e + 1, j);
@@ -740,6 +763,25 @@ def _get_feret_calipers_2d_kernel():
           if (w < min_w) {
             min_w = w;
             min_edge = e;
+          }
+          auto along = [&](int k) { return vy(k) * ey + vx(k) * ex; };
+          r = max(r, e + 1);
+          while (r < e + n && along(r + 1) >= along(r)) {
+            r++;
+          }
+          l = max(l, r);
+          while (l < r + n && along(l + 1) <= along(l)) {
+            l++;
+          }
+          double t_lo = along(l) / edge_length;
+          double t_hi = along(r) / edge_length;
+          if (w * (t_hi - t_lo) < best_area) {
+            best_area = w * (t_hi - t_lo);
+            box_edge = e;
+            box_width = w;
+            box_t_lo = t_lo;
+            box_t_hi = t_hi;
+            box_cross = cross(j);
           }
         }
         // the extent of the vertices along the edge of the minimum width
@@ -768,31 +810,62 @@ def _get_feret_calipers_2d_kernel():
         };
         angle_max[i] = fold(atan2(best_dx, best_dy));
         angle_min[i] = fold(atan2(ey, -ex));
+        // the minimum-area rectangle: a side along the edge `box_edge` (unit
+        // vector u = (by, bx) / blen, normal (-bx, by) / blen); its center is
+        // at the middle of the positions along u and across the edge
+        double ay = vy(box_edge), ax = vx(box_edge);
+        double by = vy(box_edge + 1) - ay, bx = vx(box_edge + 1) - ax;
+        double blen = sqrt(by * by + bx * bx);
+        double t_mid = 0.5 * (box_t_lo + box_t_hi);
+        double s_mid = (-bx * ay + by * ax) / blen + 0.5 * box_cross / blen;
+        box_center[2 * i] = (by * t_mid - bx * s_mid) / blen
+                            + bbox[4 * i] * 2.0 * half_spacing0;
+        box_center[2 * i + 1] = (bx * t_mid + by * s_mid) / blen
+                                + bbox[4 * i + 1] * 2.0 * half_spacing1;
+        double extent = box_t_hi - box_t_lo;
+        if (extent >= box_width) {
+          box_size[2 * i] = extent;
+          box_size[2 * i + 1] = box_width;
+          box_angle[i] = fold(atan2(bx, by));
+        } else {
+          box_size[2 * i] = box_width;
+          box_size[2 * i + 1] = extent;
+          box_angle[i] = fold(atan2(by, -bx));
+        }
       }\n"""
     inputs = (
         "raw E left_chains, raw E right_chains, raw int32 chain_sizes, "
-        "raw int64 offsets, float64 half_spacing0, float64 half_spacing1"
+        "raw int64 offsets, raw B bbox, float64 half_spacing0, "
+        "float64 half_spacing1"
     )
     outputs = (
         "raw float64 feret_min, raw float64 feret_min_perp, "
-        "raw float64 angle_max, raw float64 angle_min, raw float64 perimeter"
+        "raw float64 angle_max, raw float64 angle_min, raw float64 perimeter, "
+        "raw float64 box_size, raw float64 box_center, raw float64 box_angle"
     )
     return cp.ElementwiseKernel(
         inputs, outputs, source, name="cucim_feret_calipers_2d"
     )
 
 
-def _feret_calipers_2d(chains, offsets, max_label, spacing=None):
+def _feret_calipers_2d(chains, offsets, bbox, max_label, spacing=None):
     """Minimum Feret diameter, the width perpendicular to it, the angles of
-    the maximum and minimum Feret diameters, and the perimeter of the convex
-    hull of each 2D region, from the hull chains of its convex image (see
+    the maximum and minimum Feret diameters, the perimeter of the convex
+    hull and its minimum-area enclosing rectangle (size, center and angle) of
+    each 2D region, from the hull chains of its convex image (see
     `_get_feret_calipers_2d_kernel`).
     """
     spacing = (1.0, 1.0) if spacing is None else spacing
     out = [cp.empty((max_label,), dtype=cp.float64) for _ in range(5)]
+    out += [
+        cp.empty((max_label, 2), dtype=cp.float64),
+        cp.empty((max_label, 2), dtype=cp.float64),
+        cp.empty((max_label,), dtype=cp.float64),
+    ]
     _get_feret_calipers_2d_kernel()(
         *chains,
         offsets,
+        bbox,
         0.5 * float(spacing[0]),
         0.5 * float(spacing[1]),
         *out,
@@ -806,6 +879,9 @@ def _feret_calipers_2d(chains, offsets, max_label, spacing=None):
                 "feret_angle_max",
                 "feret_angle_min",
                 "perimeter_convex",
+                "min_area_bbox_size",
+                "min_area_bbox_center",
+                "min_area_bbox_angle",
             ),
             out,
         )
@@ -2605,8 +2681,10 @@ def _regionprops_convex(
     writes "area_convex" to props_dict if `compute_area`
     writes "feret_diameter_max" to props_dict if `compute_feret`
     writes "feret_diameter_min", "feret_diameter_min_perpendicular",
-        "feret_angle_max", "feret_angle_min" and "perimeter_convex" to
-        props_dict if `compute_feret_calipers` (2D only)
+        "feret_angle_max", "feret_angle_min", "perimeter_convex",
+        "min_area_bbox_size", "min_area_bbox_center" and
+        "min_area_bbox_angle" to props_dict if `compute_feret_calipers`
+        (2D only)
 
     In 2D and 3D, all properties are computed for all labels at once from
     the hull of each region's row extents (see `_get_hull_chains_2d_kernel`,
@@ -2678,7 +2756,9 @@ def _regionprops_convex(
                 )
             if compute_feret_calipers:
                 props_dict.update(
-                    _feret_calipers_2d(chains, offsets, max_label, spacing)
+                    _feret_calipers_2d(
+                        chains, offsets, bbox, max_label, spacing
+                    )
                 )
         elif compute_feret:
             props_dict["feret_diameter_max"] = _feret_diameter_max_3d(
@@ -2701,6 +2781,9 @@ def _regionprops_convex(
             "feret_angle_max",
             "feret_angle_min",
             "perimeter_convex",
+            "min_area_bbox_size",
+            "min_area_bbox_center",
+            "min_area_bbox_angle",
         ):
             props_dict[name] = cp.zeros((0,), dtype=cp.float64)
     # bounding-box slices given explicitly: one convex image per label
