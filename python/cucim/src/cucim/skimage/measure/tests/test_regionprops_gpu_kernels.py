@@ -510,9 +510,10 @@ def test_convex_hull_candidates_3d(kind):
         assert {tuple(p) for p in diamond_points[hull.vertices]} <= candidates
 
 
+@pytest.mark.parametrize("max_threads", [None, 256])
 @pytest.mark.parametrize("group", ["warp", "block"])
 @pytest.mark.parametrize("kind", ["blobs", "large_blobs", "lines", "wide"])
-def test_convex_hulls_3d(group, kind, monkeypatch):
+def test_convex_hulls_3d(group, kind, max_threads, monkeypatch):
     # the facets of the device hulls are those of qhull's hulls of the same
     # points (merging qhull's coplanar triangles)
     from scipy.spatial import ConvexHull
@@ -545,6 +546,31 @@ def test_convex_hulls_3d(group, kind, monkeypatch):
         cp.asnumpy(bbox).astype(np.int64),
         max_label,
     )
+    if max_threads is not None:
+        # as on a device where a block of more than max_threads threads does
+        # not fit (as for sm_100 and sm_120 with the ~250 registers per thread
+        # of an earlier version of the kernel): fewer warps per block
+        get_kernel = _regionprops_gpu_convex._get_convex_hulls_3d_kernel
+
+        class LimitedKernel:
+            def __init__(self, *args):
+                self.kernel = get_kernel(*args)
+                self.max_threads_per_block = min(
+                    max_threads, self.kernel.max_threads_per_block
+                )
+
+            def __call__(self, *args):
+                return self.kernel(*args)
+
+        monkeypatch.setattr(
+            _regionprops_gpu_convex,
+            "_get_convex_hulls_3d_kernel",
+            LimitedKernel,
+        )
+        _, warps = _regionprops_gpu_convex._convex_hulls_3d_kernel(
+            points.dtype, bbox.dtype
+        )
+        assert warps == max_threads // 32
     equations, num_faces = _regionprops_gpu_convex._convex_hulls_3d(
         points, point_offsets, bbox, max_label
     )

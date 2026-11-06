@@ -1608,8 +1608,17 @@ __device__ int cucim_convex_hull_3d(const T* points, int n, bool narrow,
 """
 
 
+# C types of the point and bounding-box arrays of the 3D hull kernel
+_hull_3d_ctypes = {
+    cp.dtype(cp.int32): "int",
+    cp.dtype(cp.int64): "long long",
+    cp.dtype(cp.uint32): "unsigned int",
+    cp.dtype(cp.uint64): "unsigned long long",
+}
+
+
 @cp.memoize(for_each_device=True)
-def _get_convex_hulls_3d_kernel(warps_per_block):
+def _get_convex_hulls_3d_kernel(warps_per_block, point_dtype, bbox_dtype):
     """Kernel computing the convex hull of each label's 3D points.
 
     On the candidates of `_convex_hull_candidates_3d` (distinct points with
@@ -1639,6 +1648,11 @@ def _get_convex_hulls_3d_kernel(warps_per_block):
     for exact 64-bit arithmetic or the hull did not fit (which should not
     happen); such labels need another method.
 
+    The kernel is launched with blocks of ``32 * warps_per_block`` threads.
+    It is a raw kernel (rather than an elementwise kernel) so that
+    `_convex_hulls_3d_kernel` can check that such a block fits on the device
+    (``max_threads_per_block``). The arrays must be C-contiguous.
+
     References
     ----------
     .. [1] D. R. Chand and S. S. Kapur, "An algorithm for convex polytopes",
@@ -1647,78 +1661,76 @@ def _get_convex_hulls_3d_kernel(warps_per_block):
            finite set of points in the plane", Information Processing
            Letters 2(1), 18-21, 1973.
     """
-    source = f"""
-      const int W = {warps_per_block};
-      __shared__ cucim_hull_shared cucim_hull_block;
-      long long b = i / (32 * W);
-      int rank = static_cast<int>(i % (32 * W));
-      bool whole_block = b < num_large;
-      long long l = -1;
-      if (whole_block) {{
-        l = large_labels[b];
-      }} else {{
-        long long j = (b - num_large) * W + rank / 32;
-        if (j < num_small) {{
-          l = small_labels[j];
-        }}
-      }}
-      if (l >= 0) {{
-        long long start = point_offsets[l];
-        int n = static_cast<int>(point_offsets[l + 1] - start);
-        long long extent = 0;
-        for (int d = 0; d < 3; d++) {{
-          extent = max(extent, static_cast<long long>(bbox[l * 6 + 3 + d]
-                                                      - bbox[l * 6 + d]));
-        }}
-        // (coordinates relative to the bounding box are in [-1, 2 extent];
-        // the virtual first edge reaches 2 extent + 1)
-        bool narrow = extent < (1 << 13);
-        int faces = 0;
-        const E* p = &points[3 * start];
-        int* face = &face_points[start];
-        int* polygon = &polygons[start];
-        // (the edge table has 8n slots, of which it uses the smallest power
-        // of 2 >= 4n, at most 75 % full with the at most 3n edges)
-        unsigned int table_size = 1;
-        while (table_size < 4u * static_cast<unsigned int>(n)) {{
-          table_size <<= 1;
-        }}
-        cucim_hull_edges edges = {{&edge_table[8 * start], table_size - 1,
-                                  &edge_stack[3 * start], 0, 3 * n}};
-        long long* plane = &planes[8 * start];
-        if (extent > max_extent) {{
-          faces = -1;
-        }} else if (n > 0 && whole_block) {{
-          cucim_group<W> g = {{rank, rank & 31, rank >> 5, &cucim_hull_block}};
-          faces = cucim_convex_hull_3d(p, n, narrow, g, face, polygon,
-                                       edges, plane);
-        }} else if (n > 0) {{
-          cucim_group<1> g = {{rank & 31, rank & 31, 0, nullptr}};
-          faces = cucim_convex_hull_3d(p, n, narrow, g, face, polygon,
-                                       edges, plane);
-        }}
-        if ((whole_block ? rank : (rank & 31)) == 0) {{
-          num_faces[l] = faces;
-        }}
-      }}\n"""
-    inputs = (
-        "raw E points, raw int64 point_offsets, raw B bbox, int64 max_extent, "
-        "raw int64 large_labels, int64 num_large, raw int64 small_labels, "
-        "int64 num_small"
-    )
+    E = _hull_3d_ctypes[cp.dtype(point_dtype)]
+    B = _hull_3d_ctypes[cp.dtype(bbox_dtype)]
     # (face_points, polygons, edge_table and edge_stack are scratch space;
     # edge_table must be zero)
-    outputs = (
-        "raw int32 face_points, raw int32 polygons, raw int64 edge_table, "
-        "raw int32 edge_stack, raw int64 planes, raw int32 num_faces"
+    code = (
+        _hull_3d_includes
+        + f"""
+extern "C" __global__ void cucim_convex_hulls_3d(
+    const {E}* points, const long long* point_offsets, const {B}* bbox,
+    long long max_extent, const long long* large_labels, long long num_large,
+    const long long* small_labels, long long num_small, int* face_points,
+    int* polygons, long long* edge_table, int* edge_stack, long long* planes,
+    int* num_faces) {{
+  const int W = {warps_per_block};
+  __shared__ cucim_hull_shared cucim_hull_block;
+  long long b = blockIdx.x;
+  int rank = threadIdx.x;
+  bool whole_block = b < num_large;
+  long long l = -1;
+  if (whole_block) {{
+    l = large_labels[b];
+  }} else {{
+    long long j = (b - num_large) * W + rank / 32;
+    if (j < num_small) {{
+      l = small_labels[j];
+    }}
+  }}
+  if (l >= 0) {{
+    long long start = point_offsets[l];
+    int n = static_cast<int>(point_offsets[l + 1] - start);
+    long long extent = 0;
+    for (int d = 0; d < 3; d++) {{
+      extent = max(extent, static_cast<long long>(bbox[l * 6 + 3 + d]
+                                                  - bbox[l * 6 + d]));
+    }}
+    // (coordinates relative to the bounding box are in [-1, 2 extent];
+    // the virtual first edge reaches 2 extent + 1)
+    bool narrow = extent < (1 << 13);
+    int faces = 0;
+    const {E}* p = &points[3 * start];
+    int* face = &face_points[start];
+    int* polygon = &polygons[start];
+    // (the edge table has 8n slots, of which it uses the smallest power
+    // of 2 >= 4n, at most 75 % full with the at most 3n edges)
+    unsigned int table_size = 1;
+    while (table_size < 4u * static_cast<unsigned int>(n)) {{
+      table_size <<= 1;
+    }}
+    cucim_hull_edges edges = {{&edge_table[8 * start], table_size - 1,
+                              &edge_stack[3 * start], 0, 3 * n}};
+    long long* plane = &planes[8 * start];
+    if (extent > max_extent) {{
+      faces = -1;
+    }} else if (n > 0 && whole_block) {{
+      cucim_group<W> g = {{rank, rank & 31, rank >> 5, &cucim_hull_block}};
+      faces = cucim_convex_hull_3d(p, n, narrow, g, face, polygon, edges,
+                                   plane);
+    }} else if (n > 0) {{
+      cucim_group<1> g = {{rank & 31, rank & 31, 0, nullptr}};
+      faces = cucim_convex_hull_3d(p, n, narrow, g, face, polygon, edges,
+                                   plane);
+    }}
+    if ((whole_block ? rank : (rank & 31)) == 0) {{
+      num_faces[l] = faces;
+    }}
+  }}
+}}
+"""
     )
-    return cp.ElementwiseKernel(
-        inputs,
-        outputs,
-        source,
-        preamble=_hull_3d_includes,
-        name=f"cucim_convex_hulls_3d_{warps_per_block}",
-    )
+    return cp.RawKernel(code, "cucim_convex_hulls_3d")
 
 
 @cp.memoize(for_each_device=True)
@@ -1748,9 +1760,34 @@ def _get_hull_equations_kernel():
 # `_get_convex_hulls_3d_kernel`, the others a warp. (On an RTX A6000, 16
 # warps per block was about 20 % faster than 8 for labels of 10,000 points
 # or more, and about 25 % slower for 512 labels of about 700 points, which
-# use warps but have fewer resident warps with larger blocks.)
+# use warps but have fewer resident warps with larger blocks.) Where a block
+# of this many warps does not fit on the device, fewer warps are used (see
+# `_convex_hulls_3d_kernel`).
 _HULL_3D_BLOCK_POINTS = 1024
 _HULL_3D_WARPS_PER_BLOCK = 16
+
+
+def _convex_hulls_3d_kernel(point_dtype, bbox_dtype):
+    """The 3D hull kernel with the most warps per block, at most
+    `_HULL_3D_WARPS_PER_BLOCK`, whose blocks fit on the current device, and
+    its number of warps per block.
+
+    A block needs registers for all its threads, and the compiler chooses
+    the number of registers per thread. As an elementwise kernel, this
+    kernel had about 250 registers per thread for sm_100 and sm_120 with
+    NVRTC 13.0 and 13.3 (about 120 for sm_80 to sm_90), too many for a block
+    of 512 threads with 64 K registers; as a raw kernel it has 96 to 120 on
+    all of these. Other compilers and devices may differ, so the kernel's
+    ``max_threads_per_block`` is checked for each number of warps, halving
+    it until a block fits. (A thread has at most 255 registers, so blocks of
+    8 warps always fit.)
+    """
+    warps = _HULL_3D_WARPS_PER_BLOCK
+    while True:
+        kernel = _get_convex_hulls_3d_kernel(warps, point_dtype, bbox_dtype)
+        if warps == 1 or kernel.max_threads_per_block >= 32 * warps:
+            return kernel, warps
+        warps //= 2
 
 
 def _convex_hulls_3d(points, point_offsets, bbox, max_label):
@@ -1761,34 +1798,38 @@ def _convex_hulls_3d(points, point_offsets, bbox, max_label):
     each label's equations (-1 where the kernel could not compute the hull).
     """
     num_points = points.shape[0]
+    bbox = cp.ascontiguousarray(bbox)
     counts = point_offsets[1:] - point_offsets[:-1]
     large = counts > _HULL_3D_BLOCK_POINTS
     large_labels = cp.flatnonzero(large)
     # largest first, so that they do not start last
     large_labels = large_labels[cp.argsort(-counts[large_labels])]
     small_labels = cp.flatnonzero(~large)
-    warps = _HULL_3D_WARPS_PER_BLOCK
+    kernel, warps = _convex_hulls_3d_kernel(points.dtype, bbox.dtype)
     num_blocks = large_labels.size + -(-small_labels.size // warps)
     planes = cp.empty((2 * num_points, 4), dtype=cp.int64)
     num_faces = cp.empty((max_label,), dtype=cp.int32)
-    _get_convex_hulls_3d_kernel(warps)(
-        points,
-        point_offsets,
-        bbox,
-        _HULL_3D_MAX_EXTENT,
-        large_labels,
-        large_labels.size,
-        small_labels,
-        small_labels.size,
-        cp.empty((num_points,), dtype=cp.int32),
-        cp.empty((num_points,), dtype=cp.int32),
-        cp.zeros((8 * num_points,), dtype=cp.int64),
-        cp.empty((3 * num_points,), dtype=cp.int32),
-        planes,
-        num_faces,
-        size=32 * warps * num_blocks,
-        block_size=32 * warps,
-    )
+    if num_blocks > 0:
+        kernel(
+            (num_blocks,),
+            (32 * warps,),
+            (
+                cp.ascontiguousarray(points),
+                point_offsets,
+                bbox,
+                np.int64(_HULL_3D_MAX_EXTENT),
+                large_labels,
+                np.int64(large_labels.size),
+                small_labels,
+                np.int64(small_labels.size),
+                cp.empty((num_points,), dtype=cp.int32),
+                cp.empty((num_points,), dtype=cp.int32),
+                cp.zeros((8 * num_points,), dtype=cp.int64),
+                cp.empty((3 * num_points,), dtype=cp.int32),
+                planes,
+                num_faces,
+            ),
+        )
     equations = cp.empty((2 * num_points, 4), dtype=cp.float64)
     if num_points > 0:
         _get_hull_equations_kernel()(planes, equations, size=2 * num_points)
