@@ -879,7 +879,18 @@ def slic(
       of the pixels (about 0.7% in the case tested), even when the rest of the
       algorithm matches.
       With ``force_kmeans2=True`` the labels before connectivity cleanup
-      match scikit-image.
+      match scikit-image, except as noted next.
+
+    * The initial maskSLIC centroids are refined by k-means on a random subset
+      of ``10**ndim * n_segments`` mask coordinates, where ``ndim`` is the
+      number of spatial dimensions here. scikit-image instead uses
+      ``mask.ndim - 1`` for multichannel images and ``mask.ndim`` otherwise,
+      although its mask has no channel axis and is made 3D for 2D images. This
+      appears to be a scikit-image bug. Its exponent is therefore 3 rather than
+      2 for 2D grayscale images and 2 rather than 3 for 3D multichannel images,
+      and the results differ, even with ``force_kmeans2=True``, when the mask
+      has more than ``100 * n_segments`` and fewer than ``1000 * n_segments``
+      pixels.
 
     * When ``enforce_connectivity=True``, cuCIM uses a GPU connectivity cleanup
       by default. It splits each label into its connected components and
