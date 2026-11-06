@@ -127,6 +127,48 @@ __device__ __forceinline__ void NAME(T &v, bool f, int lane)                 \
 SEG_SCAN_ADD(seg_scan_sum, SUM_DTYPE)
 SEG_SCAN_ADD(seg_scan_count, unsigned int)
 
+// Appends `value` to `list` (in order of thread index) for every thread of the
+// block whose `keep` is true. All threads of the block must call it. `list`
+// needs room for blockDim.x * blockDim.y * blockDim.z entries beyond
+// *list_size and `warp_counts` for 32 warps.
+__device__ __forceinline__ void block_ordered_append(const bool keep,
+                                                     const int value,
+                                                     int* __restrict__ list,
+                                                     int* __restrict__ warp_counts,
+                                                     int* __restrict__ list_size)
+{
+    const int tid = threadIdx.x + blockDim.x * (threadIdx.y + blockDim.y * threadIdx.z);
+    const int n_warps = (blockDim.x * blockDim.y * blockDim.z + 31) >> 5;
+    const int warp = tid >> 5;
+    const int lane = tid & 31;
+    const unsigned int ballot = __ballot_sync(FULL_MASK, keep);
+    if (lane == 0)
+    {
+        warp_counts[warp] = __popc(ballot);
+    }
+    __syncthreads();
+    int offset = *list_size;
+    int total = 0;
+    for (int w = 0; w < n_warps; w++)
+    {
+        if (w < warp)
+        {
+            offset += warp_counts[w];
+        }
+        total += warp_counts[w];
+    }
+    if (keep)
+    {
+        list[offset + __popc(ballot & ((1u << lane) - 1))] = value;
+    }
+    __syncthreads();
+    if (tid == 0)
+    {
+        *list_size += total;
+    }
+    __syncthreads();
+}
+
 __forceinline__ __device__ INTERNAL_FLOAT_DTYPE slic_distance(const int2 idx,
                                                               const FLOAT_DTYPE* __restrict__ pixel,
                                                               const long linear_cidx,
@@ -185,82 +227,118 @@ __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
     int2 idx;
     idx.y = threadIdx.x + (blockIdx.x * blockDim.x);
     idx.x = threadIdx.y + (blockIdx.y * blockDim.y);
+    const bool inside = idx.x < im_shape_x && idx.y < im_shape_y;
 
-    if (idx.x >= im_shape_x || idx.y >= im_shape_y)
-    {
-        return;
-    }
+    const int c_stride = N_PIXEL_FEATURES + 2;
+    const int n_threads = blockDim.x * blockDim.y;
+    const int tid = threadIdx.x + blockDim.x * threadIdx.y;
 
-    long y_stride = im_shape_x;
+    // Bounding box of the block's pixels, and the range of grid cells that
+    // contains every center that any of those pixels searches.
+    const int box_lo_y = blockIdx.x * blockDim.x;
+    const int box_hi_y = min(box_lo_y + (int)blockDim.x, im_shape_y) - 1;
+    const int box_lo_x = blockIdx.y * blockDim.y;
+    const int box_hi_x = min(box_lo_x + (int)blockDim.y, im_shape_x) - 1;
+    const int R = 2 + EXTRA_CELLS;
+    const int cell_lo_y = max(0, min(box_lo_y / sp_shape_y, sp_grid_y - 1));
+    const int cell_hi_y = max(0, min(box_hi_y / sp_shape_y, sp_grid_y - 1));
+    const int cell_lo_x = max(0, min(box_lo_x / sp_shape_x, sp_grid_x - 1));
+    const int cell_hi_x = max(0, min(box_hi_x / sp_shape_x, sp_grid_x - 1));
+    const int y_start = max(cell_lo_y - R, 0);
+    const int y_end = min(cell_hi_y + R, sp_grid_y);
+    const int x_start = max(cell_lo_x - R, 0);
+    const int x_end = min(cell_hi_x + R, sp_grid_x);
+    const int n_x = max(x_end - x_start, 0);
+    const int n_cells = max(y_end - y_start, 0) * n_x;
 
-    const long linear_idx = idx.y * y_stride + idx.x;
-    const long pixel_addr = linear_idx * N_PIXEL_FEATURES;
-
+    long linear_idx = 0;
     FLOAT_DTYPE pixel[N_PIXEL_FEATURES];
+    INTERNAL_FLOAT_DTYPE inv_ss = 0;
+    // a pixel that is in no window keeps its previous label, as in scikit-image
+    long closest_linear_cidx = 0;
+    INTERNAL_FLOAT_DTYPE minimum_distance = DIST_LIMIT;
+    if (inside)
+    {
+        linear_idx = (long)idx.y * im_shape_x + idx.x;
+        const long pixel_addr = linear_idx * N_PIXEL_FEATURES;
 #if N_PIXEL_FEATURES <= 8
 #    pragma unroll
 #else
 #    pragma unroll 8
 #endif
-    for (int w = 0; w < N_PIXEL_FEATURES; w++)
-    {
-        pixel[w] = data[pixel_addr + w];
-    }
-    INTERNAL_FLOAT_DTYPE inv_ss = static_cast<INTERNAL_FLOAT_DTYPE>(1) / static_cast<INTERNAL_FLOAT_DTYPE>(*ss);
-
-    int2 cidx;
-    // a pixel that is in no window keeps its previous label, as in scikit-image
-    long closest_linear_cidx = (long)labels[linear_idx] - START_LABEL;
-
-    // approx center grid position
-    cidx.y = max(0, min(idx.y / sp_shape_y, sp_grid_y - 1));
-    cidx.x = max(0, min(idx.x / sp_shape_x, sp_grid_x - 1));
-
-    const int c_stride = N_PIXEL_FEATURES + 2;
-    INTERNAL_FLOAT_DTYPE minimum_distance = DIST_LIMIT;
-    // Centers move during the iterations, so also consider EXTRA_CELLS more
-    // grid cells on each side of the initial 4 x 4 neighborhood.
-    const int R = 2 + EXTRA_CELLS;
-    const int y_start = max(cidx.y - R, 0);
-    const int y_end = min(cidx.y + R, sp_grid_y);
-    const int x_start = max(cidx.x - R, 0);
-    const int x_end = min(cidx.x + R, sp_grid_x);
-    for (int j = y_start; j < y_end; j++)
-    {
-        long offset_y = j * sp_grid_x;
-        for (int i = x_start; i < x_end; i++)
+        for (int w = 0; w < N_PIXEL_FEATURES; w++)
         {
-            long iter_linear_cidx = offset_y + i;
-            long iter_center_addr = iter_linear_cidx * c_stride;
+            pixel[w] = data[pixel_addr + w];
+        }
+        inv_ss = static_cast<INTERNAL_FLOAT_DTYPE>(1) / static_cast<INTERNAL_FLOAT_DTYPE>(*ss);
+        closest_linear_cidx = (long)labels[linear_idx] - START_LABEL;
+    }
 
-            if (centers[iter_center_addr] == CENTER_LIMIT)
+    // Centers whose window overlaps the block's bounding box are selected
+    // cooperatively, n_threads cells at a time and in grid order (so ties are
+    // broken as if every pixel looped over all cells). Each pixel then applies
+    // its own window test to the selected centers.
+    __shared__ int selected[1024];
+    __shared__ int warp_counts[32];
+    __shared__ int n_selected;
+    for (int first = 0; first < n_cells; first += n_threads)
+    {
+        const int cell = first + tid;
+        bool keep = false;
+        int linear_cidx = 0;
+        if (cell < n_cells)
+        {
+            linear_cidx = (y_start + cell / n_x) * sp_grid_x + x_start + cell % n_x;
+            const long center_addr = (long)linear_cidx * c_stride;
+            if (centers[center_addr] != CENTER_LIMIT)
             {
-                continue;
-            }
-
-            // The pixel must be inside the window (+- 2 steps) around the
-            // current center, as in scikit-image.
-            const int center_y = (int)centers[iter_center_addr + N_PIXEL_FEATURES];
-            const int center_x = (int)centers[iter_center_addr + N_PIXEL_FEATURES + 1];
-            if (idx.y < center_y - 2 * win_shape_y || idx.y > center_y + 2 * win_shape_y ||
-                idx.x < center_x - 2 * win_shape_x || idx.x > center_x + 2 * win_shape_x)
-            {
-                continue;
-            }
-
-            INTERNAL_FLOAT_DTYPE dist =
-                slic_distance(idx, pixel, iter_linear_cidx, iter_center_addr, centers, spacing, inv_ss, max_dist_color);
-
-            // Wrapup
-            if (dist < minimum_distance)
-            {
-                minimum_distance = dist;
-                closest_linear_cidx = iter_linear_cidx;
+                const int center_y = (int)centers[center_addr + N_PIXEL_FEATURES];
+                const int center_x = (int)centers[center_addr + N_PIXEL_FEATURES + 1];
+                keep = box_hi_y >= center_y - 2 * win_shape_y && box_lo_y <= center_y + 2 * win_shape_y &&
+                       box_hi_x >= center_x - 2 * win_shape_x && box_lo_x <= center_x + 2 * win_shape_x;
             }
         }
+        if (tid == 0)
+        {
+            n_selected = 0;
+        }
+        __syncthreads();
+        block_ordered_append(keep, linear_cidx, selected, warp_counts, &n_selected);
+        if (inside)
+        {
+            for (int s = 0; s < n_selected; s++)
+            {
+                const long iter_linear_cidx = selected[s];
+                const long iter_center_addr = iter_linear_cidx * c_stride;
+
+                // The pixel must be inside the window (+- 2 steps) around the
+                // current center, as in scikit-image.
+                const int center_y = (int)centers[iter_center_addr + N_PIXEL_FEATURES];
+                const int center_x = (int)centers[iter_center_addr + N_PIXEL_FEATURES + 1];
+                if (idx.y < center_y - 2 * win_shape_y || idx.y > center_y + 2 * win_shape_y ||
+                    idx.x < center_x - 2 * win_shape_x || idx.x > center_x + 2 * win_shape_x)
+                {
+                    continue;
+                }
+
+                INTERNAL_FLOAT_DTYPE dist = slic_distance(
+                    idx, pixel, iter_linear_cidx, iter_center_addr, centers, spacing, inv_ss, max_dist_color);
+
+                // Wrapup
+                if (dist < minimum_distance)
+                {
+                    minimum_distance = dist;
+                    closest_linear_cidx = iter_linear_cidx;
+                }
+            }
+        }
+        __syncthreads();
     }
 
-    labels[linear_idx] = closest_linear_cidx + START_LABEL;
+    if (inside)
+    {
+        labels[linear_idx] = closest_linear_cidx + START_LABEL;
+    }
 }
 
 #if USE_MASK

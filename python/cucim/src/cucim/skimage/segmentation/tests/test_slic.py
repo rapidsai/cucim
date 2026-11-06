@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 from cupy.testing import assert_array_equal
 from numpy.testing import assert_equal
+from scipy import ndimage as ndi
 from skimage import data
 
 from cucim.skimage import filters, img_as_float
@@ -346,6 +347,25 @@ def test_slic_matches_skimage_without_connectivity(
         **kwargs,
     )
     assert float((cp.asnumpy(seg) == expected).mean()) > min_agreement
+
+
+@pytest.mark.parametrize("image_kind", ["2d", "3d"])
+def test_slic_matches_skimage_many_small_segments(image_kind):
+    # With segments of a few pixels, a block of the assignment kernel spans
+    # many grid cells and must select its candidate centers over several
+    # rounds.
+    from skimage.segmentation import slic as slic_cpu
+
+    rng = np.random.default_rng(4)
+    if image_kind == "2d":
+        img = data.astronaut()[:100, :120]
+        kwargs = dict(n_segments=2500, compactness=10)
+    else:
+        img = ndi.gaussian_filter(rng.random((30, 36, 40)), 2)
+        kwargs = dict(n_segments=1500, compactness=0.1, channel_axis=None)
+    expected = slic_cpu(img, enforce_connectivity=False, **kwargs)
+    seg = slic(cp.asarray(img), enforce_connectivity=False, **kwargs)
+    assert float((cp.asnumpy(seg) == expected).mean()) > 0.999
 
 
 @pytest.mark.parametrize("compactness", [1, 10])
