@@ -228,6 +228,38 @@ def test_slic_channel_axis_2d_rgb(channel_axis):
     assert_array_equal(seg, expected)
 
 
+@pytest.mark.parametrize("image_kind", ["2d", "3d"])
+def test_mask_slic_matches_skimage(image_kind):
+    # With the same initial centroids (SciPy kmeans2), maskSLIC should agree
+    # with scikit-image up to rounding differences. This depends on the size
+    # of the search window, which scikit-image takes from the grid step of
+    # the full image.
+    from skimage.segmentation import slic as slic_cpu
+
+    if image_kind == "2d":
+        img = data.astronaut()
+        mask = np.zeros(img.shape[:2], dtype=bool)
+        mask[50:400, 80:450] = True
+        kwargs = dict(n_segments=60, compactness=10)
+    else:
+        rng = np.random.default_rng(0)
+        img = data.binary_blobs(length=48, n_dim=3, rng=2).astype(float)
+        img += 0.2 * rng.standard_normal(img.shape)
+        mask = np.zeros(img.shape, dtype=bool)
+        mask[6:42, 8:38, 4:44] = True
+        kwargs = dict(n_segments=30, compactness=0.1, channel_axis=None)
+    expected = slic_cpu(img, mask=mask, enforce_connectivity=False, **kwargs)
+    seg = slic(
+        cp.asarray(img),
+        mask=cp.asarray(mask),
+        enforce_connectivity=False,
+        force_kmeans2=True,
+        maximization_algorithm="scan",
+        **kwargs,
+    )
+    assert float((cp.asnumpy(seg) == expected).mean()) > 0.99
+
+
 def test_slic_connectivity_algorithm_gpu():
     img = cp.asarray(data.cat()[:64, :64])
 

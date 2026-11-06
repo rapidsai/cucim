@@ -950,7 +950,19 @@ def slic(
     #   check step and ratio parameters and grid generation to make it closely
     #   match scikit-image
 
-    sp_shape = tuple(max(1, math.ceil(step)) for step in steps)
+    if use_mask:
+        # As in scikit-image, the size of the search window is the grid step
+        # of the full image (with a singleton leading axis for 2D images),
+        # not the spacing of the mask-based centroids.
+        grid_shape = (1,) * (3 - ndim_spatial) + tuple(spatial_shape)
+        window_slices = regular_grid(grid_shape, n_centroids)[
+            3 - ndim_spatial :
+        ]
+        sp_shape = tuple(
+            int(sl.step) if sl.step is not None else 1 for sl in window_slices
+        )
+    else:
+        sp_shape = tuple(max(1, math.ceil(step)) for step in steps)
     n_centers = n_centroids
 
     # TODO(grelee): spacing currently on CPU for use with jinja2.Template
