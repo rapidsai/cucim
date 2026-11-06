@@ -28,13 +28,23 @@ except Exception:
     KMeansParams = None
     cuvs_kmeans_fit = None
 
-slic_available = True
-try:
-    from skimage.segmentation.slic_superpixels import (
-        _enforce_label_connectivity_cython,
-    )
-except ImportError:
-    slic_available = False
+
+def _get_enforce_label_connectivity_cython():
+    """Import scikit-image's private CPU connectivity cleanup on demand."""
+    try:
+        from skimage.segmentation.slic_superpixels import (
+            _enforce_label_connectivity_cython,
+        )
+    except ImportError as e:
+        import skimage
+
+        raise ImportError(
+            "Could not import the private _enforce_label_connectivity_cython "
+            f"function from scikit-image version '{skimage.__version__}', so "
+            "connectivity_algorithm='host' is unavailable. Use "
+            "connectivity_algorithm='gpu' instead."
+        ) from e
+    return _enforce_label_connectivity_cython
 
 
 def _estimate_centroid_steps(centroids):
@@ -708,8 +718,9 @@ def slic(
         Whether to raise an error if any NaN or infinite values are present in
         the image. This check is always done in the scikit-image implementation
         (for regions inside any provided mask), but has device synchronization
-        overhead for CuPy, so is disabled by default in cuCIM. When True, also
-        checks for the case where all values in the image are constant.
+        overhead for CuPy, so is disabled by default in cuCIM. Without it,
+        NaN or infinite values give meaningless labels instead of an error.
+        A constant image is handled in either case.
     maximization_algorithm : {"scan", "atomic"}, optional
         Algorithm used to update cluster centers after assigning pixels to
         their closest center. ``"atomic"`` uses a faster pixel-parallel
@@ -814,12 +825,6 @@ def slic(
     >>> vol = cp.asarray(data.binary_blobs(length=50, n_dim=3, rng=2))
     >>> labels = slic(vol, n_segments=100, channel_axis=None, compactness=0.1)
     """
-    if not slic_available:
-        raise ImportError(
-            "Could not import the private _enforce_label_connectivity_cython "
-            "function from scikit-image version '{skimage.__version__}', so "
-            "the `slic` algorithm is unavailable."
-        )
     if maximization_algorithm not in {"scan", "atomic"}:
         raise ValueError(
             "maximization_algorithm must be either 'scan' or 'atomic'"
@@ -880,12 +885,11 @@ def slic(
             raise ValueError(
                 "unmasked infinite values in image are not supported"
             )
-        constant_valued = imax_host == imin_host
-    else:
-        constant_valued = False
     image -= imin
-    if not constant_valued:
-        image /= imax - imin
+    # A constant image is left at zero. The test is done on the device to
+    # avoid a synchronization.
+    scale = imax - imin
+    image /= cp.where(scale > 0, scale, 1).astype(image.dtype, copy=False)
 
     dtype = image.dtype
 
@@ -980,8 +984,8 @@ def slic(
                         FutureWarning,
                         stacklevel=2,
                     )
-                    # drop channel dimensions
-                    spacing = spacing[:-1]
+                    # as in scikit-image, interpret as (z, y, x) and drop z
+                    spacing = spacing[1:]
                 else:
                     raise ValueError(
                         f"Input image is 2D, but spacing has {spacing.size} "
@@ -1010,8 +1014,8 @@ def slic(
                         FutureWarning,
                         stacklevel=2,
                     )
-                    # drop channel dimensions
-                    sigma = sigma[:-1]
+                    # as in scikit-image, interpret as (z, y, x) and drop z
+                    sigma = sigma[1:]
                 else:
                     raise ValueError(
                         f"Input image is 2D, but sigma has {sigma.size} "
@@ -1078,13 +1082,16 @@ def slic(
                 relabel=relabel_connectivity,
             )
         else:
+            enforce_label_connectivity = (
+                _get_enforce_label_connectivity_cython()
+            )
             labels = cp.asnumpy(labels).astype(cp.intp, copy=False)
 
             if is_2d:
                 # prepend singleton axis for 2D case
                 # (Cython function only supports 3D spatial images)
                 labels = labels[cp.newaxis, ...]
-            labels = _enforce_label_connectivity_cython(
+            labels = enforce_label_connectivity(
                 labels, min_size, max_size, start_label=start_label
             )
             if is_2d:

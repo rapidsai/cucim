@@ -260,6 +260,36 @@ def test_mask_slic_matches_skimage(image_kind):
     assert float((cp.asnumpy(seg) == expected).mean()) > 0.99
 
 
+def test_slic_constant_image():
+    # a constant image must not give NaN values (division by zero)
+    img = cp.ones((40, 40))
+    for check in (False, True):
+        seg = slic(
+            img,
+            n_segments=9,
+            channel_axis=None,
+            check_finite_and_constant=check,
+        )
+        assert len(cp.unique(seg)) == 9
+        assert int(seg.min()) == 1
+
+
+@pytest.mark.parametrize("argument", ["spacing", "sigma"])
+def test_slic_2d_three_element_arguments(argument):
+    # deprecated: a 3-element spacing or sigma for a 2D image is interpreted
+    # as (z, y, x), as in scikit-image
+    from skimage.segmentation import slic as slic_cpu
+
+    img = data.astronaut()[:128, :128]
+    kwargs = dict(n_segments=16, compactness=30, enforce_connectivity=False)
+    value = (1, 2, 3) if argument == "spacing" else (0, 1, 2)
+    with pytest.warns(FutureWarning, match="2D"):
+        expected = slic_cpu(img, **{argument: value}, **kwargs)
+    with pytest.warns(FutureWarning, match="2D"):
+        seg = slic(cp.asarray(img), **{argument: value}, **kwargs)
+    assert float((cp.asnumpy(seg) == expected).mean()) > 0.99
+
+
 def test_slic_connectivity_algorithm_gpu():
     img = cp.asarray(data.cat()[:64, :64])
 
@@ -938,10 +968,6 @@ def test_dtype_support(dtype):
     slic(img, start_label=1, channel_axis=None)
 
 
-# TODO: fix and remove xfail
-@pytest.mark.xfail(
-    reason="bug fix needed in cuCIM. labels should not contain 0"
-)
 def test_start_label_fix():
     """Tests the fix for a bug producing a label < start_label (gh-6240).
 
