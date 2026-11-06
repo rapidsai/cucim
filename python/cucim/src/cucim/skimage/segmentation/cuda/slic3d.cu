@@ -417,57 +417,111 @@ __global__ void expectation_mask(const FLOAT_DTYPE* __restrict__ data,
     idx.z = threadIdx.x + (blockIdx.x * blockDim.x);
     idx.y = threadIdx.y + (blockIdx.y * blockDim.y);
     idx.x = threadIdx.z + (blockIdx.z * blockDim.z);
+    const bool inside = idx.x < im_shape_x && idx.y < im_shape_y && idx.z < im_shape_z;
+    const int n_threads = blockDim.x * blockDim.y * blockDim.z;
+    const int tid = threadIdx.x + blockDim.x * (threadIdx.y + blockDim.y * threadIdx.z);
 
-    if (idx.x >= im_shape_x || idx.y >= im_shape_y || idx.z >= im_shape_z)
-    {
-        return;
-    }
+    // bounding box of the block's voxels
+    const int box_lo[3] = {(int)(blockIdx.x * blockDim.x),
+                           (int)(blockIdx.y * blockDim.y),
+                           (int)(blockIdx.z * blockDim.z)};
+    const int box_hi[3] = {min(box_lo[0] + (int)blockDim.x, im_shape_z) - 1,
+                           min(box_lo[1] + (int)blockDim.y, im_shape_y) - 1,
+                           min(box_lo[2] + (int)blockDim.z, im_shape_x) - 1};
+    const int win[3] = {sp_shape_z, sp_shape_y, sp_shape_x};
+    const int pos[3] = {idx.z, idx.y, idx.x};
 
-    const long linear_idx = idx.z * im_shape_y * im_shape_x + idx.y * im_shape_x + idx.x;
-    if (!mask[linear_idx])
-    {
-        labels[linear_idx] = START_LABEL - 1;
-        return;
-    }
-
-    const long pixel_addr = linear_idx * N_PIXEL_FEATURES;
+    long linear_idx = 0;
+    bool active = false;  // inside the image and the mask
     FLOAT_DTYPE pixel[N_PIXEL_FEATURES];
+    INTERNAL_FLOAT_DTYPE inv_ss = 0;
+    if (inside)
+    {
+        linear_idx = ((long)idx.z * im_shape_y + idx.y) * im_shape_x + idx.x;
+        active = mask[linear_idx] != 0;
+        if (active)
+        {
+            const long pixel_addr = linear_idx * N_PIXEL_FEATURES;
 #    if N_PIXEL_FEATURES <= 8
 #        pragma unroll
 #    else
 #        pragma unroll 8
 #    endif
-    for (int w = 0; w < N_PIXEL_FEATURES; w++)
-    {
-        pixel[w] = data[pixel_addr + w];
+            for (int w = 0; w < N_PIXEL_FEATURES; w++)
+            {
+                pixel[w] = data[pixel_addr + w];
+            }
+            inv_ss = static_cast<INTERNAL_FLOAT_DTYPE>(1) / static_cast<INTERNAL_FLOAT_DTYPE>(*ss);
+        }
+        else
+        {
+            labels[linear_idx] = START_LABEL - 1;
+        }
     }
-    INTERNAL_FLOAT_DTYPE inv_ss = static_cast<INTERNAL_FLOAT_DTYPE>(1) / static_cast<INTERNAL_FLOAT_DTYPE>(*ss);
 
     INTERNAL_FLOAT_DTYPE minimum_distance = DIST_LIMIT;
     long closest_linear_cidx = -1;
-    for (long linear_cidx = 0; linear_cidx < n_clusters; linear_cidx++)
+
+    // The centers whose window overlaps the block's bounding box are selected
+    // cooperatively, n_threads centers at a time and in index order (so ties
+    // are broken as if every pixel looped over all centers). Each pixel then
+    // applies its own window test to the selected centers.
+    __shared__ int selected[1024];
+    __shared__ int warp_counts[32];
+    __shared__ int n_selected;
+    for (long first = 0; first < n_clusters; first += n_threads)
     {
-        long center_addr = linear_cidx * CENTER_STRIDE;
-        if (centers[center_addr] == CENTER_LIMIT)
+        const long linear_cidx = first + tid;
+        bool keep = false;
+        if (linear_cidx < n_clusters)
         {
-            continue;
+            const long center_addr = linear_cidx * CENTER_STRIDE;
+            keep = centers[center_addr] != CENTER_LIMIT;
+            for (int d = 0; d < 3; d++)
+            {
+                const int c = (int)centers[center_addr + N_PIXEL_FEATURES + d];
+                keep = keep && box_hi[d] >= c - 2 * win[d] && box_lo[d] <= c + 2 * win[d];
+            }
         }
-        const int center_z = (int)centers[center_addr + N_PIXEL_FEATURES];
-        const int center_y = (int)centers[center_addr + N_PIXEL_FEATURES + 1];
-        const int center_x = (int)centers[center_addr + N_PIXEL_FEATURES + 2];
-        if (idx.z < center_z - 2 * sp_shape_z || idx.z > center_z + 2 * sp_shape_z || idx.y < center_y - 2 * sp_shape_y ||
-            idx.y > center_y + 2 * sp_shape_y || idx.x < center_x - 2 * sp_shape_x || idx.x > center_x + 2 * sp_shape_x)
+        if (tid == 0)
         {
-            continue;
+            n_selected = 0;
         }
-        INTERNAL_FLOAT_DTYPE dist =
-            slic_distance(idx, pixel, linear_cidx, center_addr, centers, spacing, inv_ss, max_dist_color);
-        if (dist < minimum_distance)
+        __syncthreads();
+        block_ordered_append(keep, (int)linear_cidx, selected, warp_counts, &n_selected);
+        if (active)
         {
-            minimum_distance = dist;
-            closest_linear_cidx = linear_cidx;
+            for (int s = 0; s < n_selected; s++)
+            {
+                const long selected_cidx = selected[s];
+                const long center_addr = selected_cidx * CENTER_STRIDE;
+                bool in_window = true;
+                for (int d = 0; d < 3; d++)
+                {
+                    const int c = (int)centers[center_addr + N_PIXEL_FEATURES + d];
+                    in_window = in_window && pos[d] >= c - 2 * win[d] && pos[d] <= c + 2 * win[d];
+                }
+                if (!in_window)
+                {
+                    continue;
+                }
+                INTERNAL_FLOAT_DTYPE dist =
+                    slic_distance(idx, pixel, selected_cidx, center_addr, centers, spacing, inv_ss, max_dist_color);
+                if (dist < minimum_distance)
+                {
+                    minimum_distance = dist;
+                    closest_linear_cidx = selected_cidx;
+                }
+            }
         }
+        __syncthreads();
     }
+
+    if (!active)
+    {
+        return;
+    }
+    // a pixel that is in no window is assigned to the closest center overall
     if (closest_linear_cidx < 0)
     {
         for (long linear_cidx = 0; linear_cidx < n_clusters; linear_cidx++)

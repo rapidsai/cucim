@@ -420,14 +420,16 @@ def line_kernel_config(threads_total, block_size=64):
     return block, grid
 
 
-def box_kernel_config(im_shape, block=None):
+def box_kernel_config(im_shape, block=None, use_mask=False):
     """determine launch parameters"""
     if len(im_shape) == 2:
         if block is None:
             # The 2D CUDA kernel maps threadIdx.x -> image y and
             # threadIdx.y -> image x. Keep threadIdx.y wide so each warp
             # touches consecutive x locations in memory.
-            block = (1, 64)
+            # The mask kernel selects its candidate centers once per block,
+            # so it uses taller blocks to share that cost.
+            block = (4, 64) if use_mask else (1, 64)
         grid = (
             (im_shape[0] + block[0] - 1) // block[0],
             (im_shape[1] + block[1] - 1) // block[1],
@@ -488,7 +490,9 @@ def _slic(
         cuda_source = f.read()
 
     center_block, center_grid = line_kernel_config(n_centers)
-    image_block, image_grid = box_kernel_config(shape_spatial)
+    image_block, image_grid = box_kernel_config(
+        shape_spatial, use_mask=use_mask
+    )
 
     ss = spatial_weight * spatial_weight
 
