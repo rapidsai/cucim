@@ -84,7 +84,7 @@ CuPy prepends the following defines in slic_superpixels.py:
 #define DIST_LIMIT ((INTERNAL_FLOAT_DTYPE)1.0e30)
 
 #ifndef EXTRA_CELLS
-#    define EXTRA_CELLS 2 // extra grid cells searched for moved centers
+#    define EXTRA_CELLS 4 // extra grid cells searched for moved centers
 #endif
 
 #ifndef START_LABEL

@@ -320,7 +320,12 @@ def test_slic_2d_three_element_arguments(argument):
 
 @pytest.mark.parametrize(
     "image_kind, compactness, min_agreement",
-    [("2d", 1, 0.97), ("2d", 10, 0.999), ("3d", 0.03, 0.999)],
+    [
+        ("2d", 0.3, 0.999),
+        ("2d", 1, 0.999),
+        ("2d", 10, 0.999),
+        ("3d", 0.03, 0.999),
+    ],
 )
 def test_slic_matches_skimage_without_connectivity(
     image_kind, compactness, min_agreement

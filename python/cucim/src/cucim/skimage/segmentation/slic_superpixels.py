@@ -476,10 +476,12 @@ def _slic(
         os.environ.get("CUCIM_SLIC_MAXIMIZATION_PIXELS_PER_THREAD", "8")
     )
     # Number of additional grid cells (on each side) searched for centers that
-    # moved away from their initial grid position. 2 reproduces scikit-image
-    # for the cases tested; 0 is the fastest but only looks at the initial
-    # 4 x 4 (x 4) neighborhood.
-    extra_cells = int(os.environ.get("CUCIM_SLIC_EXTRA_CELLS", "2"))
+    # moved away from their initial grid position. 4 reproduces scikit-image
+    # for the cases tested, down to compactness 0.3 (2 differs from it on
+    # about 1% of the pixels there); the candidate centers are selected once
+    # per block, so the cost of a larger value is small. 0 only looks at the
+    # initial 4 x 4 (x 4) neighborhood.
+    extra_cells = int(os.environ.get("CUCIM_SLIC_EXTRA_CELLS", "4"))
 
     __dirname__ = os.path.dirname(__file__)
     if len(shape_spatial) == 2:
