@@ -1862,13 +1862,19 @@ def _get_hull_rows_3d_kernel():
     )
 
 
+# upper bound of the threads launched for the 3D Feret diameters of all labels
+_FERET_MAX_THREADS = 2**24
+
+
 @cp.memoize(for_each_device=True)
 def _get_feret_diameter_max_points_kernel(ndim):
     """Kernel computing the largest distance between each label's points.
 
-    One warp per label; each lane takes every 32nd point and its distances to
-    all later points of the label. The points are in doubled coordinates,
-    and the distances are scaled by half the spacing.
+    Each label has `threads` threads; thread t takes every `threads`-th point
+    and its distances to all later points of the label, and the largest
+    squared distances are combined with `atomicMax`. (The bits of a
+    non-negative double order like integers.) The points are in doubled
+    coordinates, and the distances are scaled by half the spacing.
     """
     load = "".join(
         f"""
@@ -1883,30 +1889,28 @@ def _get_feret_diameter_max_points_kernel(ndim):
         for d in range(ndim)
     )
     source = f"""
-      long long l = i / 32;
-      int lane = static_cast<int>(i & 31);
+      long long l = i / threads;
       long long start = point_offsets[l];
       long long n = point_offsets[l + 1] - start;
       double best = 0.0;
-      for (long long p = lane; p < n; p += 32) {{{load}
+      for (long long p = i % threads; p < n; p += threads) {{{load}
         for (long long q = p + 1; q < n; q++) {{
           const E* q_point = &points[{ndim} * (start + q)];
           double d2 = 0.0;{distance}
           best = fmax(best, d2);
         }}
       }}
-      for (int offset = 16; offset > 0; offset >>= 1) {{
-        best = fmax(best, __shfl_xor_sync(0xffffffffu, best, offset));
-      }}
-      if (lane == 0) {{
-        feret[l] = sqrt(best);
+      if (best > 0.0) {{
+        atomicMax(reinterpret_cast<unsigned long long*>(&best_bits[l]),
+                  static_cast<unsigned long long>(__double_as_longlong(best)));
       }}\n"""
-    inputs = "raw E points, raw int64 point_offsets, " + ", ".join(
-        f"float64 half_spacing{d}" for d in range(ndim)
+    inputs = (
+        "raw E points, raw int64 point_offsets, int64 threads, "
+        + ", ".join(f"float64 half_spacing{d}" for d in range(ndim))
     )
     return cp.ElementwiseKernel(
         inputs,
-        "raw float64 feret",
+        "raw uint64 best_bits",
         source,
         name=f"cucim_feret_diameter_max_points_{ndim}d",
     )
@@ -1928,15 +1932,23 @@ def _feret_diameter_max_3d(
         row_lo, row_hi, offsets, num_rows, bbox, bbox_host, max_label
     )
     spacing = (1.0, 1.0, 1.0) if spacing is None else spacing
-    feret = cp.empty((max_label,), dtype=cp.float64)
+    # enough threads per label to cover its points (a multiple of 32), with
+    # at most _FERET_MAX_THREADS in all, so that many small labels stay cheap
+    most_points = int(cp.diff(point_offsets).max())
+    threads = min(
+        -(-most_points // 32) * 32,
+        max(32, (_FERET_MAX_THREADS // max_label) // 32 * 32),
+    )
+    best_bits = cp.zeros((max_label,), dtype=cp.uint64)
     _get_feret_diameter_max_points_kernel(3)(
         points,
         point_offsets,
+        threads,
         *(0.5 * float(s) for s in spacing),
-        feret,
-        size=32 * max_label,
+        best_bits,
+        size=threads * max_label,
     )
-    return feret
+    return cp.sqrt(best_bits.view(cp.float64))
 
 
 def _convex_hull_rows_3d(

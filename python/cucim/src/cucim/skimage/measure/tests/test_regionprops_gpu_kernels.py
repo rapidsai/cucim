@@ -2108,6 +2108,18 @@ def test_feret_diameter_max_batch_3d(spacing, kind):
     assert n_compared > 0
 
 
+def test_feret_diameter_max_batch_3d_thread_cap(monkeypatch):
+    # with many labels, the number of threads per label is capped (down to
+    # one warp); the result does not depend on it
+    labels = _convex_test_labels("large_blobs", 3)
+    expected = regionprops_dict(labels, properties=["feret_diameter_max"])
+    monkeypatch.setattr(_regionprops_gpu_convex, "_FERET_MAX_THREADS", 1)
+    result = regionprops_dict(labels, properties=["feret_diameter_max"])
+    assert_array_equal(
+        result["feret_diameter_max"], expected["feret_diameter_max"]
+    )
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 def test_feret_diameter_max_absent_label(ndim):
     # label 2 does not occur: its row gets 0, like its area_convex
