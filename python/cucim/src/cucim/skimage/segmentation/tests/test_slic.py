@@ -290,6 +290,37 @@ def test_slic_2d_three_element_arguments(argument):
     assert float((cp.asnumpy(seg) == expected).mean()) > 0.99
 
 
+@pytest.mark.parametrize(
+    "image_kind, compactness, min_agreement",
+    [("2d", 1, 0.97), ("2d", 10, 0.999), ("3d", 0.03, 0.999)],
+)
+def test_slic_matches_skimage_without_connectivity(
+    image_kind, compactness, min_agreement
+):
+    # At low compactness, centers move far from their initial grid position.
+    # The labels before connectivity cleanup should still match scikit-image.
+    from skimage.segmentation import slic as slic_cpu
+
+    if image_kind == "2d":
+        img = data.astronaut()
+        kwargs = dict(n_segments=100, compactness=compactness)
+    else:
+        rng = np.random.default_rng(2)
+        img = data.binary_blobs(length=48, n_dim=3, rng=2).astype(float)
+        img += 0.2 * rng.standard_normal(img.shape)
+        kwargs = dict(
+            n_segments=100, compactness=compactness, channel_axis=None
+        )
+    expected = slic_cpu(img, enforce_connectivity=False, **kwargs)
+    seg = slic(
+        cp.asarray(img),
+        enforce_connectivity=False,
+        maximization_algorithm="scan",
+        **kwargs,
+    )
+    assert float((cp.asnumpy(seg) == expected).mean()) > min_agreement
+
+
 def test_slic_connectivity_algorithm_gpu():
     img = cp.asarray(data.cat()[:64, :64])
 

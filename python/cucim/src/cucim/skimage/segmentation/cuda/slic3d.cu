@@ -77,6 +77,10 @@ CuPy prepends the following defines in slic_superpixels.py:
 #define CENTER_LIMIT ((FLOAT_DTYPE)1.0e30)
 #define DIST_LIMIT ((INTERNAL_FLOAT_DTYPE)1.0e30)
 
+#ifndef EXTRA_CELLS
+#    define EXTRA_CELLS 2 // extra grid cells searched for moved centers
+#endif
+
 #ifndef START_LABEL
 #    define START_LABEL 1 // starting label (must be 0 or 1)
 #endif
@@ -185,6 +189,9 @@ __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
                             int sp_grid_z,
                             int sp_grid_y,
                             int sp_grid_x,
+                            int win_shape_z,
+                            int win_shape_y,
+                            int win_shape_x,
                             const FLOAT_DTYPE* __restrict__ spacing,
                             const FLOAT_DTYPE* __restrict__ ss,
                             const FLOAT_DTYPE* __restrict__ max_dist_color)
@@ -219,7 +226,8 @@ __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
     INTERNAL_FLOAT_DTYPE inv_ss = static_cast<INTERNAL_FLOAT_DTYPE>(1) / static_cast<INTERNAL_FLOAT_DTYPE>(*ss);
 
     int3 cidx;
-    long closest_linear_cidx = 0;
+    // a voxel that is in no window keeps its previous label, as in scikit-image
+    long closest_linear_cidx = (long)labels[linear_idx] - START_LABEL;
 
     // approx center grid position
     cidx.z = max(0, min(idx.z / sp_shape_z, sp_grid_z - 1));
@@ -228,7 +236,9 @@ __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
 
     const int c_stride = N_PIXEL_FEATURES + 3;
     INTERNAL_FLOAT_DTYPE minimum_distance = DIST_LIMIT;
-    const int R = 2;
+    // Centers move during the iterations, so also consider EXTRA_CELLS more
+    // grid cells on each side of the initial 4 x 4 x 4 neighborhood.
+    const int R = 2 + EXTRA_CELLS;
     const int z_start = max(cidx.z - R, 0);
     const int z_end = min(cidx.z + R, sp_grid_z);
     const int y_start = max(cidx.y - R, 0);
@@ -247,6 +257,18 @@ __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
                 long iter_center_addr = iter_linear_cidx * c_stride;
 
                 if (centers[iter_center_addr] == CENTER_LIMIT)
+                {
+                    continue;
+                }
+
+                // The voxel must be inside the window (+- 2 steps) around the
+                // current center, as in scikit-image.
+                const int center_z = (int)centers[iter_center_addr + N_PIXEL_FEATURES];
+                const int center_y = (int)centers[iter_center_addr + N_PIXEL_FEATURES + 1];
+                const int center_x = (int)centers[iter_center_addr + N_PIXEL_FEATURES + 2];
+                if (idx.z < center_z - 2 * win_shape_z || idx.z > center_z + 2 * win_shape_z ||
+                    idx.y < center_y - 2 * win_shape_y || idx.y > center_y + 2 * win_shape_y ||
+                    idx.x < center_x - 2 * win_shape_x || idx.x > center_x + 2 * win_shape_x)
                 {
                     continue;
                 }
@@ -529,9 +551,9 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
         const int from_z = __max(center_z - sp_shape_z * ratio, 0);
         const int from_y = __max(center_y - sp_shape_y * ratio, 0);
         const int from_x = __max(center_x - sp_shape_x * ratio, 0);
-        const int to_z = __min(center_z + sp_shape_z * ratio, im_shape_z);
-        const int to_y = __min(center_y + sp_shape_y * ratio, im_shape_y);
-        const int to_x = __min(center_x + sp_shape_x * ratio, im_shape_x);
+        const int to_z = __min(center_z + 2 * sp_shape_z + 1, im_shape_z);
+        const int to_y = __min(center_y + 2 * sp_shape_y + 1, im_shape_y);
+        const int to_x = __min(center_x + 2 * sp_shape_x + 1, im_shape_x);
         if (z < from_z || z >= to_z || y < from_y || y >= to_y || x < from_x || x >= to_x)
         {
             continue;
@@ -645,9 +667,9 @@ __global__ void maximization(const FLOAT_DTYPE* __restrict__ data,
     to.y = im_shape_y;
     to.x = im_shape_x;
 #else
-    to.z = __min(cidx.z + sp_shape_z * ratio, im_shape_z);
-    to.y = __min(cidx.y + sp_shape_y * ratio, im_shape_y);
-    to.x = __min(cidx.x + sp_shape_x * ratio, im_shape_x);
+    to.z = __min(cidx.z + 2 * sp_shape_z + 1, im_shape_z);
+    to.y = __min(cidx.y + 2 * sp_shape_y + 1, im_shape_y);
+    to.x = __min(cidx.x + 2 * sp_shape_x + 1, im_shape_x);
 #endif
 
     FLOAT_DTYPE f[c_stride];

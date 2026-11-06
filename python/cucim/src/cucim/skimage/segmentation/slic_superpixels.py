@@ -434,6 +434,7 @@ def _slic(
     image,
     sp_shape,
     sp_grid,
+    window_shape,
     spacing,
     compactness,
     max_num_iter,
@@ -455,6 +456,11 @@ def _slic(
     maximization_pixels_per_thread = int(
         os.environ.get("CUCIM_SLIC_MAXIMIZATION_PIXELS_PER_THREAD", "8")
     )
+    # Number of additional grid cells (on each side) searched for centers that
+    # moved away from their initial grid position. 2 reproduces scikit-image
+    # for the cases tested; 0 is the fastest but only looks at the initial
+    # 4 x 4 (x 4) neighborhood.
+    extra_cells = int(os.environ.get("CUCIM_SLIC_EXTRA_CELLS", "2"))
 
     __dirname__ = os.path.dirname(__file__)
     if len(shape_spatial) == 2:
@@ -478,6 +484,7 @@ def _slic(
 #define SLIC_ZERO {1 if slic_zero else 0}
 #define USE_MASK {1 if use_mask else 0}
 #define IGNORE_COLOR {1 if ignore_color else 0}
+#define EXTRA_CELLS {extra_cells}
 """
     cuda_source = (
         '#include "cupy/atomics.cuh"\n'
@@ -536,7 +543,7 @@ def _slic(
         )
         if use_mask:
             expectation_args += (
-                *sp_shape,
+                *window_shape,
                 spacing,
                 ss,
                 max_dist_color_gpu,
@@ -547,6 +554,7 @@ def _slic(
             expectation_args += (
                 *sp_shape,
                 *sp_grid,
+                *window_shape,
                 spacing,
                 ss,
                 max_dist_color_gpu,
@@ -572,7 +580,7 @@ def _slic(
                     labels_gpu,
                     centers_gpu,
                     *shape_spatial,
-                    *sp_shape,
+                    *window_shape,
                     n_centers,
                     center_sums_gpu,
                     center_counts_gpu,
@@ -599,7 +607,7 @@ def _slic(
                     labels_gpu,
                     centers_gpu,
                     *shape_spatial,
-                    *sp_shape,
+                    *window_shape,
                     n_centers,
                     *((mask,) if use_mask else ()),
                 ),
@@ -954,17 +962,19 @@ def slic(
     #   check step and ratio parameters and grid generation to make it closely
     #   match scikit-image
 
+    # As in scikit-image, the size of the search window around each center is
+    # the grid step for the number of centroids actually created (with a
+    # singleton leading axis for 2D images). Without a mask this can differ
+    # from the spacing of the initial centroids, which is sp_shape. With a mask
+    # it is not related to the spacing of the mask-based centroids.
+    window_slices = regular_grid(
+        (1,) * (3 - ndim_spatial) + tuple(spatial_shape), n_centroids
+    )[3 - ndim_spatial :]
+    window_shape = tuple(
+        int(sl.step) if sl.step is not None else 1 for sl in window_slices
+    )
     if use_mask:
-        # As in scikit-image, the size of the search window is the grid step
-        # of the full image (with a singleton leading axis for 2D images),
-        # not the spacing of the mask-based centroids.
-        grid_shape = (1,) * (3 - ndim_spatial) + tuple(spatial_shape)
-        window_slices = regular_grid(grid_shape, n_centroids)[
-            3 - ndim_spatial :
-        ]
-        sp_shape = tuple(
-            int(sl.step) if sl.step is not None else 1 for sl in window_slices
-        )
+        sp_shape = window_shape
     else:
         sp_shape = tuple(max(1, math.ceil(step)) for step in steps)
     n_centers = n_centroids
@@ -1039,6 +1049,7 @@ def slic(
             image,
             sp_shape,
             sp_grid,
+            window_shape,
             spacing,
             compactness,
             max_num_iter,
@@ -1055,6 +1066,7 @@ def slic(
         image,
         sp_shape,
         sp_grid,
+        window_shape,
         spacing,
         compactness,
         max_num_iter,

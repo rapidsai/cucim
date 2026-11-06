@@ -72,6 +72,10 @@ CuPy prepends the following defines in slic_superpixels.py:
 #define CENTER_LIMIT ((FLOAT_DTYPE)1.0e30)
 #define DIST_LIMIT ((INTERNAL_FLOAT_DTYPE)1.0e30)
 
+#ifndef EXTRA_CELLS
+#    define EXTRA_CELLS 2 // extra grid cells searched for moved centers
+#endif
+
 #ifndef START_LABEL
 #    define START_LABEL 1 // starting label (must be 0 or 1)
 #endif
@@ -142,6 +146,8 @@ __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
                             int sp_shape_x,
                             int sp_grid_y,
                             int sp_grid_x,
+                            int win_shape_y,
+                            int win_shape_x,
                             const FLOAT_DTYPE* __restrict__ spacing,
                             const FLOAT_DTYPE* __restrict__ ss,
                             const FLOAT_DTYPE* __restrict__ max_dist_color)
@@ -174,7 +180,8 @@ __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
     INTERNAL_FLOAT_DTYPE inv_ss = static_cast<INTERNAL_FLOAT_DTYPE>(1) / static_cast<INTERNAL_FLOAT_DTYPE>(*ss);
 
     int2 cidx;
-    long closest_linear_cidx = 0 - START_LABEL;
+    // a pixel that is in no window keeps its previous label, as in scikit-image
+    long closest_linear_cidx = (long)labels[linear_idx] - START_LABEL;
 
     // approx center grid position
     cidx.y = max(0, min(idx.y / sp_shape_y, sp_grid_y - 1));
@@ -182,7 +189,9 @@ __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
 
     const int c_stride = N_PIXEL_FEATURES + 2;
     INTERNAL_FLOAT_DTYPE minimum_distance = DIST_LIMIT;
-    const int R = 2;
+    // Centers move during the iterations, so also consider EXTRA_CELLS more
+    // grid cells on each side of the initial 4 x 4 neighborhood.
+    const int R = 2 + EXTRA_CELLS;
     const int y_start = max(cidx.y - R, 0);
     const int y_end = min(cidx.y + R, sp_grid_y);
     const int x_start = max(cidx.x - R, 0);
@@ -196,6 +205,16 @@ __global__ void expectation(const FLOAT_DTYPE* __restrict__ data,
             long iter_center_addr = iter_linear_cidx * c_stride;
 
             if (centers[iter_center_addr] == CENTER_LIMIT)
+            {
+                continue;
+            }
+
+            // The pixel must be inside the window (+- 2 steps) around the
+            // current center, as in scikit-image.
+            const int center_y = (int)centers[iter_center_addr + N_PIXEL_FEATURES];
+            const int center_x = (int)centers[iter_center_addr + N_PIXEL_FEATURES + 1];
+            if (idx.y < center_y - 2 * win_shape_y || idx.y > center_y + 2 * win_shape_y ||
+                idx.x < center_x - 2 * win_shape_x || idx.x > center_x + 2 * win_shape_x)
             {
                 continue;
             }
@@ -464,8 +483,8 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
         const float ratio = 2.0f;
         const int from_y = __max(center_y - sp_shape_y * ratio, 0);
         const int from_x = __max(center_x - sp_shape_x * ratio, 0);
-        const int to_y = __min(center_y + sp_shape_y * ratio, im_shape_y);
-        const int to_x = __min(center_x + sp_shape_x * ratio, im_shape_x);
+        const int to_y = __min(center_y + 2 * sp_shape_y + 1, im_shape_y);
+        const int to_x = __min(center_x + 2 * sp_shape_x + 1, im_shape_x);
         if (y < from_y || y >= to_y || x < from_x || x >= to_x)
         {
             continue;
@@ -571,8 +590,8 @@ __global__ void maximization(const FLOAT_DTYPE* __restrict__ data,
     to.y = im_shape_y;
     to.x = im_shape_x;
 #else
-    to.y = __min(cidx.y + sp_shape_y * ratio, im_shape_y);
-    to.x = __min(cidx.x + sp_shape_x * ratio, im_shape_x);
+    to.y = __min(cidx.y + 2 * sp_shape_y + 1, im_shape_y);
+    to.x = __min(cidx.x + 2 * sp_shape_x + 1, im_shape_x);
 #endif
 
     FLOAT_DTYPE f[c_stride];
