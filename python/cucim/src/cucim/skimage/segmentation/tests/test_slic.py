@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 from itertools import product
@@ -170,6 +170,33 @@ def test_slic_maximization_algorithm():
 
     with pytest.raises(ValueError, match="maximization_algorithm"):
         slic(img, maximization_algorithm="unsupported")
+
+
+@pytest.mark.parametrize("image_kind, compactness", [("2d", 1), ("3d", 0.01)])
+def test_slic_atomic_matches_scan(image_kind, compactness):
+    # At low compactness, the segments drift far from their initial centers.
+    # The atomic center update must then agree with the scan update.
+    if image_kind == "2d":
+        img = cp.asarray(data.astronaut())
+        kwargs = {}
+    else:
+        rng = np.random.default_rng(2)
+        vol = data.binary_blobs(length=48, n_dim=3, rng=2).astype(float)
+        vol += 0.2 * rng.standard_normal(vol.shape)
+        img = cp.asarray(vol)
+        kwargs = {"channel_axis": None}
+    segs = [
+        slic(
+            img,
+            n_segments=100,
+            compactness=compactness,
+            enforce_connectivity=False,
+            maximization_algorithm=algorithm,
+            **kwargs,
+        )
+        for algorithm in ("scan", "atomic")
+    ]
+    assert float((segs[0] == segs[1]).mean()) > 0.99
 
 
 def test_slic_connectivity_algorithm_gpu():

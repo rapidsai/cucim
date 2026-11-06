@@ -445,18 +445,7 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
             n_encountered += 1;
         }
 
-        const unsigned long pixel_addr = linear_idx * N_PIXEL_FEATURES;
         const long base = offset * CENTER_STRIDE;
-#if N_PIXEL_FEATURES <= 8
-#    pragma unroll
-#else
-#    pragma unroll 8
-#endif
-        for (int w = 0; w < N_PIXEL_FEATURES; w++)
-        {
-            local_sums[base + w] += data[pixel_addr + w];
-        }
-
         const int y = linear_idx / im_shape_x;
         const int x = linear_idx - (unsigned long)y * im_shape_x;
 
@@ -474,6 +463,17 @@ __global__ void accumulate_centers(const FLOAT_DTYPE* __restrict__ data,
             continue;
         }
 #endif
+
+        const unsigned long pixel_addr = linear_idx * N_PIXEL_FEATURES;
+#if N_PIXEL_FEATURES <= 8
+#    pragma unroll
+#else
+#    pragma unroll 8
+#endif
+        for (int w = 0; w < N_PIXEL_FEATURES; w++)
+        {
+            local_sums[base + w] += data[pixel_addr + w];
+        }
 
         local_sums[base + N_PIXEL_FEATURES] += y;
         local_sums[base + N_PIXEL_FEATURES + 1] += x;
