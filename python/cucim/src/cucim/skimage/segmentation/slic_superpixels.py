@@ -774,14 +774,16 @@ def slic(
         Algorithm used to update cluster centers after assigning pixels to
         their closest center. ``"atomic"`` uses a faster pixel-parallel
         accumulation implementation and is the default for performance.
-        Floating point atomic accumulation order can make the exact
-        segmentation non-deterministic across repeated runs. Use ``"scan"``
-        when exact deterministic results are required.
+        The sums are accumulated as fixed-point integers, so repeated runs
+        give identical labels. ``"scan"`` sums in floating point, so the two
+        algorithms can differ slightly in the centers they compute.
     force_kmeans2 : bool, optional
         When ``mask`` is provided, force the initial maskSLIC centroid
         placement to use SciPy's host-side ``kmeans2`` implementation. By
         default, cuCIM uses cuVS k-means when it can be imported and falls back
-        to SciPy otherwise.
+        to SciPy otherwise. The cuVS centroids are close to, but not identical
+        to, those of ``scipy.cluster.vq.kmeans2`` (see Notes). Use this option
+        to reproduce scikit-image's maskSLIC labels exactly.
     connectivity_algorithm : {"host", "gpu"}, optional
         Algorithm used when ``enforce_connectivity=True``. ``"gpu"`` is the
         default and keeps cleanup on device using a deterministic
@@ -829,7 +831,14 @@ def slic(
     * When ``mask`` is provided, initial centroid placement uses cuVS k-means
       when available. If cuVS cannot be imported, or if ``force_kmeans2=True``,
       it falls back to SciPy's host-side ``kmeans2`` implementation, requiring
-      a mask transfer to host and CPU work on each call.
+      a mask transfer to host and CPU work on each call. Both start from the
+      same randomly sampled mask coordinates as scikit-image, but cuVS k-means
+      converges to slightly different centroids than
+      ``scipy.cluster.vq.kmeans2``, so maskSLIC labels with the default cuVS
+      path differ from scikit-image's on a small fraction of the pixels (about
+      0.7% in the case tested), even when the rest of the algorithm matches.
+      With ``force_kmeans2=True`` the labels before connectivity cleanup
+      match scikit-image.
 
     * When ``enforce_connectivity=True``, cuCIM uses a GPU connectivity cleanup
       by default. It splits each label into its connected components and
