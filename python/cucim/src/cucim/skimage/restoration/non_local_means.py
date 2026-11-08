@@ -50,6 +50,10 @@ def denoise_nl_means(
         If True (default value), a fast version of the non-local means
         algorithm is used. If False, the original version of non-local means is
         used. See the Notes section for more details about the algorithms.
+        scikit-image raises ``NotImplementedError`` for ``fast_mode=False``
+        with 4D images or multichannel 3D images; cuCIM computes them (this is
+        specific to cuCIM, and there is no scikit-image result to compare
+        with).
     sigma : float, optional
         The standard deviation of the (Gaussian) noise.  If provided, a more
         robust computation of patch weights is computed that takes the expected
@@ -246,14 +250,6 @@ def denoise_nl_means(
             "Non-local means denoising is only implemented for 2D, "
             "3D or 4D grayscale or multichannel images."
         )
-    if not fast_mode:
-        if ndim_no_channel == 3 and multichannel:
-            raise NotImplementedError(
-                "Multichannel 3D requires fast_mode to be True."
-            )
-        if ndim_no_channel == 4:
-            raise NotImplementedError("4D requires fast_mode to be True.")
-
     patch_size = operator.index(patch_size)
     patch_distance = operator.index(patch_distance)
     if patch_size < 0:

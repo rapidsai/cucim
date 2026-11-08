@@ -366,25 +366,50 @@ def test_denoise_nl_means_wrong_dimension():
     with pytest.raises(NotImplementedError):
         restoration.denoise_nl_means(img, channel_axis=-1)
 
-    # 3D + channels only for fast mode
-    img = cp.zeros((5, 5, 5, 5))
-    with pytest.raises(NotImplementedError):
-        restoration.denoise_nl_means(img, channel_axis=-1, fast_mode=False)
-
-    # 4D only for fast mode
-    img = cp.zeros((5, 5, 5, 5))
-    with pytest.raises(NotImplementedError):
-        restoration.denoise_nl_means(img, channel_axis=None, fast_mode=False)
-
-    # 4D + channels only for fast mode
-    img = cp.zeros((5, 5, 5, 5, 5))
-    with pytest.raises(NotImplementedError):
-        restoration.denoise_nl_means(img, channel_axis=-1, fast_mode=False)
-
     # 5D not implemented
     img = cp.zeros((5, 5, 5, 5, 5))
     with pytest.raises(NotImplementedError):
         restoration.denoise_nl_means(img, channel_axis=None)
+
+
+def test_denoise_nl_means_slow_mode_4d_and_3d_multichannel():
+    # scikit-image raises NotImplementedError for these cases
+    rng = cp.random.default_rng(5)
+    img = cp.zeros((10, 10, 10))
+    img[3:7, 3:7, 3:7] = 1.0
+    img3 = img + 0.2 * rng.standard_normal(img.shape)
+    kwargs = dict(patch_size=3, patch_distance=2, h=0.2, sigma=0.2)
+    ref = restoration.denoise_nl_means(
+        img3, channel_axis=None, fast_mode=False, **kwargs
+    )
+
+    # 3D + channels: identical channels give the grayscale result
+    rgb = cp.repeat(img3[..., None], 3, axis=-1)
+    out = restoration.denoise_nl_means(
+        rgb, channel_axis=-1, fast_mode=False, **kwargs
+    )
+    assert out.shape == rgb.shape
+    cp.testing.assert_allclose(out[..., 0], ref, rtol=1e-10, atol=1e-12)
+
+    # 4D (and 4D + channels): denoised and finite
+    img4 = cp.zeros((8, 8, 8, 8))
+    img4[2:6, 2:6, 2:6, 2:6] = 1.0
+    img4n = img4 + 0.2 * rng.standard_normal(img4.shape)
+    out4 = restoration.denoise_nl_means(
+        img4n, channel_axis=None, fast_mode=False, **kwargs
+    )
+    assert out4.shape == img4n.shape
+    assert bool(cp.isfinite(out4).all())
+    assert peak_signal_noise_ratio(
+        img4, out4, data_range=1.0
+    ) > peak_signal_noise_ratio(img4, img4n, data_range=1.0)
+    out5 = restoration.denoise_nl_means(
+        img4n[:4, :4, :4, :4, None] * cp.ones(2),
+        channel_axis=-1,
+        fast_mode=False,
+        **kwargs,
+    )
+    assert out5.shape == (4, 4, 4, 4, 2)
 
 
 @pytest.mark.parametrize("fast_mode", [False, True])
