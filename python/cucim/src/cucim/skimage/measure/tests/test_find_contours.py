@@ -365,8 +365,9 @@ def test_cpp_assemble_contours_matches_python():
         assert_array_equal(result_contour, expected_contour)
 
 
+@pytest.mark.parametrize("output_kind", ["packed", "packed_device"])
 @pytest.mark.parametrize("positive_orientation", ["low", "high"])
-def test_find_contours_return_packed_matches_list(positive_orientation):
+def test_find_contours_packed_matches_list(positive_orientation, output_kind):
     image = (np.sin(8 * x) + np.cos(5 * y)).astype(np.float32)
 
     expected = find_contours(
@@ -378,8 +379,12 @@ def test_find_contours_return_packed_matches_list(positive_orientation):
         cp.asarray(image),
         0.0,
         positive_orientation=positive_orientation,
-        return_packed=True,
+        output_kind=output_kind,
     )
+    xp = cp if output_kind == "packed_device" else np
+    assert isinstance(points, xp.ndarray)
+    assert isinstance(offsets, xp.ndarray)
+    points, offsets = cp.asnumpy(points), cp.asnumpy(offsets)
     result = _unpack_contours(points, offsets)
 
     assert points.flags.c_contiguous
@@ -392,11 +397,16 @@ def test_find_contours_return_packed_matches_list(positive_orientation):
         assert_array_equal(result_contour, expected_contour)
 
 
-@pytest.mark.parametrize("return_packed", [False, True])
-def test_find_contours_requires_extension(monkeypatch, return_packed):
+def test_find_contours_invalid_output_kind():
+    with pytest.raises(ValueError, match="output_kind"):
+        find_contours(cp.asarray(r), 0.5, output_kind="packed_host")
+
+
+@pytest.mark.parametrize("output_kind", ["list", "packed", "packed_device"])
+def test_find_contours_requires_extension(monkeypatch, output_kind):
     monkeypatch.setattr(_fc, "_skimage_cpp", None)
     with pytest.raises(ImportError, match="requires the compiled extension"):
-        find_contours(cp.asarray(r), 0.5, return_packed=return_packed)
+        find_contours(cp.asarray(r), 0.5, output_kind=output_kind)
 
 
 def _segments_of(image, level, fully_connected="low", mask=None):
@@ -426,6 +436,7 @@ def test_linked_contours_match_sequential_assembler(seed, fully_connected):
 
     assert packed is not None
     points, offsets = packed
+    points = cp.asnumpy(points)  # the points of the assembly are on the device
     assert len(offsets) > 3
     assert_array_equal(offsets, expected_offsets)
     assert_array_equal(points, expected_points)
@@ -438,6 +449,7 @@ def test_linked_contours_closed_contour():
     segments, segment_keys = _segments_of(image, 0.5)
 
     points, offsets = _fc._assemble_linked(segments, segment_keys)
+    points = cp.asnumpy(points)
 
     assert_array_equal(offsets, [0, 5])
     assert_array_equal(points[0], points[-1])
@@ -452,7 +464,7 @@ def test_linked_contours_fall_back_when_a_vertex_is_on_the_level():
     assert _fc._link_segments(segments, segment_keys) is None
 
     expected = _assemble_contours_python(cp.asnumpy(segments))
-    result = _fc._assemble_contours(segments, segment_keys)
+    result = _fc._assemble_contours(segments, segment_keys, reverse=False)
 
     assert len(result) == len(expected)
     for result_contour, expected_contour in zip(result, expected):
@@ -470,6 +482,7 @@ def test_linked_contours_long_contours():
         cp.asnumpy(segments), cp.asnumpy(segment_keys)
     )
     points, offsets = _fc._assemble_linked(segments, segment_keys)
+    points = cp.asnumpy(points)
 
     assert np.diff(offsets).max() > 5000
     assert_array_equal(offsets, expected_offsets)
@@ -495,10 +508,10 @@ def test_plan_linked_contours_rejects_invalid_sublists():
         )
 
 
-@pytest.mark.parametrize("return_packed", [False, True])
+@pytest.mark.parametrize("output_kind", ["list", "packed", "packed_device"])
 @pytest.mark.parametrize("positive_orientation", ["low", "high"])
 def test_find_contours_device_and_host_assembly_agree(
-    monkeypatch, positive_orientation, return_packed
+    monkeypatch, positive_orientation, output_kind
 ):
     image = cp.asarray((np.sin(8 * x) + np.cos(5 * y)).astype(np.float32))
     results = []
@@ -510,14 +523,15 @@ def test_find_contours_device_and_host_assembly_agree(
                 image,
                 0.0,
                 positive_orientation=positive_orientation,
-                return_packed=return_packed,
+                output_kind=output_kind,
             )
         )
     device, host = results
-    if return_packed:
-        device, host = list(device), list(host)
-    else:
+    if output_kind == "list":
         assert len(device) == len(host)
+    else:
+        device = [cp.asnumpy(a) for a in device]
+        host = [cp.asnumpy(a) for a in host]
     for device_part, host_part in zip(device, host):
         assert_array_equal(device_part, host_part)
 

@@ -36,12 +36,12 @@ def test_wide_kernels_match_narrow(
         mask=mask if use_mask else None,
     )
     narrow = find_contours(image, **kwargs)
-    narrow_packed = find_contours(image, return_packed=True, **kwargs)
+    narrow_packed = find_contours(image, output_kind="packed", **kwargs)
 
     monkeypatch.setattr(_find_contours, "_WIDE_LIMIT", 0)
     assert _find_contours._wide(1)
     wide = find_contours(image, **kwargs)
-    wide_packed = find_contours(image, return_packed=True, **kwargs)
+    wide_packed = find_contours(image, output_kind="packed", **kwargs)
     assert len(wide) == len(narrow)
     for a, b in zip(narrow, wide):
         np.testing.assert_array_equal(a, b)

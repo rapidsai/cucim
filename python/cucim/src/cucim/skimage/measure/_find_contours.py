@@ -21,6 +21,7 @@ def _require_extension():
 
 
 _PARAM_OPTIONS = ("high", "low")
+_OUTPUT_KINDS = ("list", "packed", "packed_device")
 
 # The contours of fewer segments than this are put together on the host. The
 # assembly on the device has a fixed cost of about 1 ms (a dozen kernels and a
@@ -460,17 +461,26 @@ def find_contours(
     positive_orientation="low",
     *,
     mask=None,
-    return_packed=False,
+    output_kind="list",
 ):
     """Find iso-valued contours in a 2D CuPy array.
 
     This implementation extracts marching-squares line segments on the GPU and
     links them into contours there as well (small images, and images with
     levels that are exactly the value of a vertex, are assembled by compiled
-    host code). The points are then copied to the host, so the returned
-    contours are NumPy arrays. It requires the compiled extension
-    ``cucim.skimage._cucim_skimage_cpp_ext``, and raises an ``ImportError``
-    if that is not available.
+    host code). By default the points are copied to the host and returned as
+    a list of NumPy arrays, as in scikit-image. It requires the compiled
+    extension ``cucim.skimage._cucim_skimage_cpp_ext``, and raises an
+    ``ImportError`` if that is not available.
+
+    .. note::
+        For better performance, especially for images with many contours,
+        use ``output_kind="packed"`` (one NumPy array of points and an array
+        of offsets) or ``output_kind="packed_device"`` (the same arrays on
+        the GPU, without the copy to the host). Creating the list of many
+        small arrays can be the largest part of the time of the default
+        ``output_kind="list"``, which is only the default for compatibility
+        with scikit-image.
 
     Parameters
     ----------
@@ -493,22 +503,26 @@ def find_contours(
         A boolean mask, True where we want to draw contours.
         Note that NaN values are always excluded from the considered region
         (``mask`` is set to ``False`` wherever ``array`` is ``NaN``).
-    return_packed : bool, optional
-        If False (default), return the scikit-image-compatible list of NumPy
-        contour arrays. If True, return a tuple ``(points, offsets)`` where
-        ``points`` is one contiguous NumPy array of shape ``(K, 2)`` and
-        ``offsets`` has shape ``(n_contours + 1,)``. Contour ``i`` is
-        ``points[offsets[i]:offsets[i + 1]]``. If contour coordinates are needed on
-        the GPU, packed output is recommended so that ``cupy.asarray(points)``
-        and ``cupy.asarray(offsets)`` can transfer the data with two bulk
-        copies instead of many small contour-array copies.
+    output_kind : {'list', 'packed', 'packed_device'}, optional
+        The form of the result. **'packed' and 'packed_device' are faster than
+        the default, in particular for images with many contours.**
+
+        - 'list' (default): the scikit-image-compatible list of NumPy contour
+          arrays.
+        - 'packed': a tuple ``(points, offsets)`` of NumPy arrays, where
+          ``points`` is one contiguous array of shape ``(K, 2)`` and
+          ``offsets`` has shape ``(n_contours + 1,)``. Contour ``i`` is
+          ``points[offsets[i]:offsets[i + 1]]``.
+        - 'packed_device': the same tuple as 'packed', but of CuPy arrays
+          (on the GPU). Use this if the contours are processed by other
+          device code.
 
     Returns
     -------
-    contours : list of (ndarray of shape (K, 2)) or tuple
-        If ``return_packed`` is False, each contour is a ndarray of
-        ``(row, column)`` coordinates along the contour. If ``return_packed``
-        is True, returns ``(points, offsets)`` as described above.
+    contours : list of (ndarray of shape (K, 2)) or tuple of two arrays
+        For ``output_kind='list'``, each contour is a NumPy array of
+        ``(row, column)`` coordinates along the contour. Otherwise
+        ``(points, offsets)`` as described above, of dtypes float64 and int64.
 
     See Also
     --------
@@ -587,6 +601,10 @@ def find_contours(
            [0.5, 0. ]])]
     """
     _require_extension()
+    if output_kind not in _OUTPUT_KINDS:
+        raise ValueError(
+            f"output_kind must be one of {_OUTPUT_KINDS}, got {output_kind!r}"
+        )
     image, level, vertex_connect_high, positive_orientation_high, mask = (
         _validate_find_contours_inputs(
             image, level, fully_connected, positive_orientation, mask
@@ -594,16 +612,13 @@ def find_contours(
     )
 
     segments = _get_contour_segments(image, level, vertex_connect_high, mask)
-    if return_packed:
-        contours = _assemble_contours_packed(*segments)
-    else:
-        contours = _assemble_contours(*segments)
-    if positive_orientation_high:
-        if return_packed:
-            contours = _reverse_packed_contours(*contours)
-        else:
-            contours = [contour[::-1] for contour in contours]
-    return contours
+    if output_kind == "list":
+        return _assemble_contours(*segments, reverse=positive_orientation_high)
+    return _assemble_packed(
+        *segments,
+        on_device=output_kind == "packed_device",
+        reverse=positive_orientation_high,
+    )
 
 
 def _validate_find_contours_inputs(
@@ -780,7 +795,7 @@ def _assemble_linked(segments, segment_keys):
     segments, next_segment = linked
     n_segments = segments.shape[0]
     if n_segments == 0:
-        return np.empty((0, 2)), np.zeros(1, dtype=np.int64)
+        return cp.empty((0, 2), dtype=cp.float64), np.zeros(1, dtype=np.int64)
     threads = 256
     blocks = ((n_segments + threads - 1) // threads,)
 
@@ -884,39 +899,74 @@ def _assemble_linked(segments, segment_keys):
             np.int32(n_contours),
         ),
     )
-    return cp.asnumpy(points), offsets
+    return points, offsets
 
 
 def _assemble_on_device(segments, segment_keys):
-    """Packed ``(points, offsets)`` of the device assembly, if it applies."""
+    """Packed ``(points, offsets)`` of the device assembly, if it applies.
+
+    The points are on the device and the offsets on the host.
+    """
     if segments.shape[0] < _GPU_ASSEMBLY_MIN_SEGMENTS:
         return None
     return _assemble_linked(segments, segment_keys)
 
 
-def _assemble_contours(segments, segment_keys):
+def _assemble_contours(segments, segment_keys, reverse):
     packed = _assemble_on_device(segments, segment_keys)
     if packed is not None:
         points, offsets = packed
+        if reverse:
+            points, offsets = _reverse_packed_contours(points, offsets)
+        points = cp.asnumpy(points)
         # Python ints are faster to slice with than NumPy scalars
         offsets = offsets.tolist()
         return [points[start:stop] for start, stop in zip(offsets, offsets[1:])]
-    return _skimage_cpp.assemble_contours(
+    contours = _skimage_cpp.assemble_contours(
         cp.asnumpy(segments), cp.asnumpy(segment_keys)
     )
+    if reverse:
+        contours = [contour[::-1] for contour in contours]
+    return contours
 
 
-def _assemble_contours_packed(segments, segment_keys):
+def _assemble_packed(segments, segment_keys, on_device, reverse):
+    """Packed ``(points, offsets)``, on the device or on the host."""
     packed = _assemble_on_device(segments, segment_keys)
     if packed is not None:
-        return packed
-    return _skimage_cpp.assemble_contours_packed(
-        cp.asnumpy(segments), cp.asnumpy(segment_keys)
-    )
+        points, offsets = packed
+        if reverse:
+            # on the device, before the copy to the host
+            points, offsets = _reverse_packed_contours(points, offsets)
+        if not on_device:
+            points = cp.asnumpy(points)
+    else:
+        points, offsets = _skimage_cpp.assemble_contours_packed(
+            cp.asnumpy(segments), cp.asnumpy(segment_keys)
+        )
+        if reverse:
+            points, offsets = _reverse_packed_contours(points, offsets)
+        if on_device:
+            points = cp.asarray(points)
+    if on_device:
+        offsets = cp.asarray(offsets)
+    return points, offsets
 
 
 def _reverse_packed_contours(points, offsets):
-    reversed_points = np.empty_like(points)
-    for start, stop in zip(offsets[:-1], offsets[1:]):
-        reversed_points[start:stop] = points[start:stop][::-1]
-    return reversed_points, offsets
+    """Reverse every contour of the packed arrays.
+
+    The points may be on the device or on the host, the offsets are on the host.
+    """
+    xp = cp.get_array_module(points)
+    offsets_xp = xp.asarray(offsets)
+    lengths = offsets_xp[1:] - offsets_xp[:-1]
+    contour = xp.repeat(xp.arange(lengths.size), lengths)
+    # the point at position j of contour i comes from start + stop - 1 - j
+    source = (
+        offsets_xp[:-1][contour]
+        + offsets_xp[1:][contour]
+        - 1
+        - xp.arange(points.shape[0], dtype=offsets_xp.dtype)
+    )
+    return points[source], offsets
