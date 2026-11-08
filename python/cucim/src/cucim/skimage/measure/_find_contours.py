@@ -504,8 +504,8 @@ def find_contours(
         Note that NaN values are always excluded from the considered region
         (``mask`` is set to ``False`` wherever ``array`` is ``NaN``).
     output_kind : {'list', 'packed', 'packed_device'}, optional
-        The form of the result. **'packed' and 'packed_device' are faster than
-        the default, in particular for images with many contours.**
+        The form of the result. **'packed' and 'packed_device' can be much
+        faster than the default for images with many contours.**
 
         - 'list' (default): the scikit-image-compatible list of NumPy contour
           arrays.
@@ -515,7 +515,9 @@ def find_contours(
           ``points[offsets[i]:offsets[i + 1]]``.
         - 'packed_device': the same tuple as 'packed', but of CuPy arrays
           (on the GPU). Use this if the contours are processed by other
-          device code.
+          device code. Small images (fewer than about 25,000 contour
+          segments) are assembled on the host, and the result is then
+          uploaded, so for those 'packed' is slightly faster.
 
     Returns
     -------
