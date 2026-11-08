@@ -2,8 +2,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
-from collections import deque
-
 import cupy as cp
 import numpy as np
 
@@ -11,6 +9,16 @@ try:
     from cucim.skimage import _cucim_skimage_cpp_ext as _skimage_cpp
 except ImportError:
     _skimage_cpp = None
+
+
+def _require_extension():
+    if _skimage_cpp is None:
+        raise ImportError(
+            "find_contours requires the compiled extension "
+            "cucim.skimage._cucim_skimage_cpp_ext, which is not available in "
+            "this installation of cuCIM."
+        )
+
 
 _PARAM_OPTIONS = ("high", "low")
 
@@ -457,10 +465,12 @@ def find_contours(
     """Find iso-valued contours in a 2D CuPy array.
 
     This implementation extracts marching-squares line segments on the GPU and
-    links them into contours there as well. The points are then copied to the
-    host, so the returned contours are NumPy arrays. (Without the optional
-    compiled extension, or for images with levels that are exactly the value of
-    a vertex, the contours are assembled on the host.)
+    links them into contours there as well (small images, and images with
+    levels that are exactly the value of a vertex, are assembled by compiled
+    host code). The points are then copied to the host, so the returned
+    contours are NumPy arrays. It requires the compiled extension
+    ``cucim.skimage._cucim_skimage_cpp_ext``, and raises an ``ImportError``
+    if that is not available.
 
     Parameters
     ----------
@@ -488,8 +498,7 @@ def find_contours(
         contour arrays. If True, return a tuple ``(points, offsets)`` where
         ``points`` is one contiguous NumPy array of shape ``(K, 2)`` and
         ``offsets`` has shape ``(n_contours + 1,)``. Contour ``i`` is
-        ``points[offsets[i]:offsets[i + 1]]``. Packed output requires the
-        optional C++ contour assembler. If contour coordinates are needed on
+        ``points[offsets[i]:offsets[i + 1]]``. If contour coordinates are needed on
         the GPU, packed output is recommended so that ``cupy.asarray(points)``
         and ``cupy.asarray(offsets)`` can transfer the data with two bulk
         copies instead of many small contour-array copies.
@@ -577,6 +586,7 @@ def find_contours(
     [array([[0. , 0.5],
            [0.5, 0. ]])]
     """
+    _require_extension()
     image, level, vertex_connect_high, positive_orientation_high, mask = (
         _validate_find_contours_inputs(
             image, level, fully_connected, positive_orientation, mask
@@ -884,28 +894,19 @@ def _assemble_on_device(segments, segment_keys):
     return _assemble_linked(segments, segment_keys)
 
 
-def _assemble_contours(segments, segment_keys=None):
-    if _skimage_cpp is not None and segment_keys is not None:
-        packed = _assemble_on_device(segments, segment_keys)
-        if packed is not None:
-            points, offsets = packed
-            # Python ints are faster to slice with than NumPy scalars
-            offsets = offsets.tolist()
-            return [
-                points[start:stop] for start, stop in zip(offsets, offsets[1:])
-            ]
-        return _skimage_cpp.assemble_contours(
-            cp.asnumpy(segments), cp.asnumpy(segment_keys)
-        )
-    return _assemble_contours_python(cp.asnumpy(segments))
+def _assemble_contours(segments, segment_keys):
+    packed = _assemble_on_device(segments, segment_keys)
+    if packed is not None:
+        points, offsets = packed
+        # Python ints are faster to slice with than NumPy scalars
+        offsets = offsets.tolist()
+        return [points[start:stop] for start, stop in zip(offsets, offsets[1:])]
+    return _skimage_cpp.assemble_contours(
+        cp.asnumpy(segments), cp.asnumpy(segment_keys)
+    )
 
 
-def _assemble_contours_packed(segments, segment_keys=None):
-    if _skimage_cpp is None or segment_keys is None:
-        raise RuntimeError(
-            "return_packed=True requires the optional "
-            "cucim.skimage C++ contour assembler"
-        )
+def _assemble_contours_packed(segments, segment_keys):
     packed = _assemble_on_device(segments, segment_keys)
     if packed is not None:
         return packed
@@ -919,50 +920,3 @@ def _reverse_packed_contours(points, offsets):
     for start, stop in zip(offsets[:-1], offsets[1:]):
         reversed_points[start:stop] = points[start:stop][::-1]
     return reversed_points, offsets
-
-
-def _assemble_contours_python(segments):
-    current_index = 0
-    contours = {}
-    starts = {}
-    ends = {}
-    for from_point, to_point in segments:
-        from_point = tuple(from_point)
-        to_point = tuple(to_point)
-
-        # Ignore degenerate segments. This matches scikit-image's behavior for
-        # vertices exactly on the requested level.
-        if from_point == to_point:
-            continue
-
-        tail, tail_num = starts.pop(to_point, (None, None))
-        head, head_num = ends.pop(from_point, (None, None))
-
-        if tail is not None and head is not None:
-            if tail is head:
-                head.append(to_point)
-            elif tail_num > head_num:
-                head.extend(tail)
-                contours.pop(tail_num, None)
-                starts[head[0]] = (head, head_num)
-                ends[head[-1]] = (head, head_num)
-            else:
-                tail.extendleft(reversed(head))
-                starts.pop(head[0], None)
-                contours.pop(head_num, None)
-                starts[tail[0]] = (tail, tail_num)
-                ends[tail[-1]] = (tail, tail_num)
-        elif tail is None and head is None:
-            new_contour = deque((from_point, to_point))
-            contours[current_index] = new_contour
-            starts[from_point] = (new_contour, current_index)
-            ends[to_point] = (new_contour, current_index)
-            current_index += 1
-        elif head is None:
-            tail.appendleft(from_point)
-            starts[from_point] = (tail, tail_num)
-        else:
-            head.append(to_point)
-            ends[to_point] = (head, head_num)
-
-    return [np.array(contour) for _, contour in sorted(contours.items())]

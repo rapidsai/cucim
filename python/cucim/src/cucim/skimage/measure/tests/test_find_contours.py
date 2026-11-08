@@ -1,17 +1,15 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+from collections import deque
+
 import cupy as cp
 import numpy as np
 import pytest
 from skimage._shared.testing import assert_array_equal
 
+from cucim.skimage import _cucim_skimage_cpp_ext as _skimage_cpp
 from cucim.skimage.measure import _find_contours as _fc, find_contours
-
-try:
-    from cucim.skimage import _cucim_skimage_cpp_ext as _skimage_cpp
-except ImportError:
-    _skimage_cpp = None
 
 a = np.ones((8, 8), dtype=np.float32)
 a[1:-1, 1] = 0
@@ -25,6 +23,54 @@ def _unpack_contours(points, offsets):
     return [
         points[start:stop] for start, stop in zip(offsets[:-1], offsets[1:])
     ]
+
+
+def _assemble_contours_python(segments):
+    """Sequential reference assembler (scikit-image's algorithm in Python)."""
+    current_index = 0
+    contours = {}
+    starts = {}
+    ends = {}
+    for from_point, to_point in segments:
+        from_point = tuple(from_point)
+        to_point = tuple(to_point)
+
+        # Ignore degenerate segments. This matches scikit-image's behavior for
+        # vertices exactly on the requested level.
+        if from_point == to_point:
+            continue
+
+        tail, tail_num = starts.pop(to_point, (None, None))
+        head, head_num = ends.pop(from_point, (None, None))
+
+        if tail is not None and head is not None:
+            if tail is head:
+                head.append(to_point)
+            elif tail_num > head_num:
+                head.extend(tail)
+                contours.pop(tail_num, None)
+                starts[head[0]] = (head, head_num)
+                ends[head[-1]] = (head, head_num)
+            else:
+                tail.extendleft(reversed(head))
+                starts.pop(head[0], None)
+                contours.pop(head_num, None)
+                starts[tail[0]] = (tail, tail_num)
+                ends[tail[-1]] = (tail, tail_num)
+        elif tail is None and head is None:
+            new_contour = deque((from_point, to_point))
+            contours[current_index] = new_contour
+            starts[from_point] = (new_contour, current_index)
+            ends[to_point] = (new_contour, current_index)
+            current_index += 1
+        elif head is None:
+            tail.appendleft(from_point)
+            starts[from_point] = (tail, tail_num)
+        else:
+            head.append(to_point)
+            ends[to_point] = (head, head_num)
+
+    return [np.array(contour) for _, contour in sorted(contours.items())]
 
 
 def test_binary():
@@ -297,10 +343,6 @@ def test_keyerror_fix(image):
     find_contours(cp.asarray(np.array(image, np.float32)), 0)
 
 
-@pytest.mark.skipif(
-    _skimage_cpp is None,
-    reason="optional cucim.skimage C++ extension is not available",
-)
 def test_cpp_assemble_contours_matches_python():
     x, y = np.mgrid[-1:1:32j, -1:1:32j]
     image = (np.sin(8 * x) + np.cos(5 * y)).astype(np.float32)
@@ -315,7 +357,7 @@ def test_cpp_assemble_contours_matches_python():
     segments = cp.asnumpy(segments)
     segment_keys = cp.asnumpy(segment_keys)
 
-    expected = _fc._assemble_contours_python(segments)
+    expected = _assemble_contours_python(segments)
     result = _skimage_cpp.assemble_contours(segments, segment_keys)
 
     assert len(result) == len(expected)
@@ -323,10 +365,6 @@ def test_cpp_assemble_contours_matches_python():
         assert_array_equal(result_contour, expected_contour)
 
 
-@pytest.mark.skipif(
-    _skimage_cpp is None,
-    reason="optional cucim.skimage C++ extension is not available",
-)
 @pytest.mark.parametrize("positive_orientation", ["low", "high"])
 def test_find_contours_return_packed_matches_list(positive_orientation):
     image = (np.sin(8 * x) + np.cos(5 * y)).astype(np.float32)
@@ -354,10 +392,11 @@ def test_find_contours_return_packed_matches_list(positive_orientation):
         assert_array_equal(result_contour, expected_contour)
 
 
-def test_find_contours_return_packed_requires_cpp(monkeypatch):
+@pytest.mark.parametrize("return_packed", [False, True])
+def test_find_contours_requires_extension(monkeypatch, return_packed):
     monkeypatch.setattr(_fc, "_skimage_cpp", None)
-    with pytest.raises(RuntimeError, match="requires the optional"):
-        find_contours(cp.asarray(r), 0.5, return_packed=True)
+    with pytest.raises(ImportError, match="requires the compiled extension"):
+        find_contours(cp.asarray(r), 0.5, return_packed=return_packed)
 
 
 def _segments_of(image, level, fully_connected="low", mask=None):
@@ -369,10 +408,6 @@ def _segments_of(image, level, fully_connected="low", mask=None):
     return _fc._get_contour_segments(image, level, vertex_connect_high, mask)
 
 
-@pytest.mark.skipif(
-    _skimage_cpp is None,
-    reason="optional cucim.skimage C++ extension is not available",
-)
 @pytest.mark.parametrize("fully_connected", ["low", "high"])
 @pytest.mark.parametrize("seed", range(6))
 def test_linked_contours_match_sequential_assembler(seed, fully_connected):
@@ -396,10 +431,6 @@ def test_linked_contours_match_sequential_assembler(seed, fully_connected):
     assert_array_equal(points, expected_points)
 
 
-@pytest.mark.skipif(
-    _skimage_cpp is None,
-    reason="optional cucim.skimage C++ extension is not available",
-)
 def test_linked_contours_closed_contour():
     # A one pixel peak gives a diamond, a closed contour of four segments
     image = np.zeros((5, 5))
@@ -413,10 +444,6 @@ def test_linked_contours_closed_contour():
     assert len(np.unique(points, axis=0)) == 4
 
 
-@pytest.mark.skipif(
-    _skimage_cpp is None,
-    reason="optional cucim.skimage C++ extension is not available",
-)
 def test_linked_contours_fall_back_when_a_vertex_is_on_the_level():
     # Several segments end at the vertices that are exactly on the level, so
     # the segments cannot be linked by sorting their end points.
@@ -424,7 +451,7 @@ def test_linked_contours_fall_back_when_a_vertex_is_on_the_level():
     segments, segment_keys = _segments_of(image, 1.0)
     assert _fc._link_segments(segments, segment_keys) is None
 
-    expected = _fc._assemble_contours_python(cp.asnumpy(segments))
+    expected = _assemble_contours_python(cp.asnumpy(segments))
     result = _fc._assemble_contours(segments, segment_keys)
 
     assert len(result) == len(expected)
@@ -432,10 +459,6 @@ def test_linked_contours_fall_back_when_a_vertex_is_on_the_level():
         assert_array_equal(result_contour, expected_contour)
 
 
-@pytest.mark.skipif(
-    _skimage_cpp is None,
-    reason="optional cucim.skimage C++ extension is not available",
-)
 def test_linked_contours_long_contours():
     # Spiral arms are single contours with thousands of segments, that the
     # assembly on the device has to cut into many sublists.
@@ -453,10 +476,6 @@ def test_linked_contours_long_contours():
     assert_array_equal(points, expected_points)
 
 
-@pytest.mark.skipif(
-    _skimage_cpp is None,
-    reason="optional cucim.skimage C++ extension is not available",
-)
 def test_plan_linked_contours_rejects_invalid_sublists():
     ints = [np.array(x, dtype=np.int32) for x in ([0, 1], [1, 1], [0, 0])]
     first, length, min_id = ints[0], ints[1], ints[2]
@@ -476,10 +495,6 @@ def test_plan_linked_contours_rejects_invalid_sublists():
         )
 
 
-@pytest.mark.skipif(
-    _skimage_cpp is None,
-    reason="optional cucim.skimage C++ extension is not available",
-)
 @pytest.mark.parametrize("return_packed", [False, True])
 @pytest.mark.parametrize("positive_orientation", ["low", "high"])
 def test_find_contours_device_and_host_assembly_agree(
