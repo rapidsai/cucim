@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <string>
 
 #include <cucim/cache/image_cache.h>
 
@@ -49,6 +50,9 @@ public:
     virtual void set_output_buffer_provider(OutputBufferProvider provider);
 
     virtual void shutdown();
+
+    /** JSON provenance for the most recently completed batch, if provided. */
+    virtual std::string decoder_provenance() const;
 
 protected:
     uint32_t batch_size_ = 1;

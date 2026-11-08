@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,6 +7,6 @@
 #define CUSLIDE_CUSLIDE_H
 
 // cuslide2: GPU-accelerated whole slide imaging with nvImageCodec
-// This plugin provides pure GPU decoding for JPEG/JPEG2000 compressed WSI files
+// nvImageCodec may select GPU, hybrid CPU/GPU, or CPU decoder backends.
 
 #endif // CUSLIDE_CUSLIDE_H

@@ -115,6 +115,43 @@ To enable the cuslide2 plugin, set the `ENABLE_CUSLIDE2` environment variable:
 ENABLE_CUSLIDE2=1 python your_script.py
 ```
 
+### Decoder provenance
+
+Every materialized cuslide2 region exposes `CuImage.decoder_provenance`. For a
+lazy batch, inspect the property after advancing the iterator so it describes
+the batch that was just completed:
+
+```python
+region = image.read_region(location=(0, 0), size=(512, 512), device="cuda")
+print(region.decoder_provenance)
+
+regions = image.read_region(
+    location=[(0, 0), (512, 0)], size=(512, 512), batch_size=2, device="cuda"
+)
+batch = next(regions)
+print(batch.decoder_provenance)
+```
+
+The report distinguishes `gpu`, `hybrid_cpu_gpu`, `cpu_fallback`, `unknown`,
+and `decoder_failure`. It records the TIFF compression codec, nvImageCodec
+processing status, host or CUDA output placement, future wait, CUDA stream
+synchronization, and tile-cache hits and misses. JPEG, JPEG 2000, LZW, and
+uncompressed TIFF are reported when the installed nvImageCodec plugins say
+they can decode the requested stream and output format.
+
+cuCIM selects through decoders restricted to one documented nvImageCodec
+backend kind, so a reported backend is direct evidence. The nvImageCodec 0.9
+generic decoder API does not disclose the plugin identifier that ultimately
+handled a sample; `plugin_id` is therefore null with an explicit status instead
+of being inferred. The missing result is tracked in
+[NVIDIA/nvImageCodec#64](https://github.com/NVIDIA/nvImageCodec/issues/64).
+Likewise, `nvimgcodecCodeStreamCreateFromFile` owns file I/O,
+but 0.9 does not expose whether compressed TIFF data was staged in host memory,
+so that boundary is reported as unknown. Direct placement into a caller-owned
+output buffer is not a claim of zero-copy input or GPU-only execution. See the
+[nvImageCodec C API](https://docs.nvidia.com/cuda/nvimagecodec/c_api.html) for
+the backend and processing-status contracts.
+
 ### Test Scripts
 
 cuCIM provides test scripts to verify cuslide2 functionality with different TIFF formats:

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -47,12 +47,12 @@ struct RoiDecodeRequest
  * This processor uses nvImageCodec's batch decoding API to decode multiple
  * ROI regions from a TIFF file in a single decoder.decode() call, writing
  * decoded pixels directly into the ThreadBatchDataLoader's raster ring buffer
- * (zero-copy path via the OutputBufferProvider callback).
+ * via the OutputBufferProvider callback.
  *
  * Key features:
  * - Uses get_sub_code_stream() with ROI for each region
  * - Batches multiple ROI decodes into a single decode call
- * - Zero-copy: decodes directly into the loader's pre-allocated raster slots
+ * - Direct output placement into the loader's pre-allocated raster slots
  * - Integrates with ThreadBatchDataLoader for multi-threaded loading
  */
 class NvImageCodecProcessor : public cucim::loader::BatchDataProcessor
@@ -94,7 +94,7 @@ public:
     /**
      * @brief Wait for processing of a specific ROI.
      *
-     * With the zero-copy path, decoded data is written directly into the raster
+     * With the direct-output path, decoded data is written into the raster
      * buffer, so this method always returns nullptr.  It is retained for
      * interface compatibility.
      */
@@ -104,9 +104,11 @@ public:
      * @brief Set the callback that maps location_index → raster buffer address.
      *
      * Called by ThreadBatchDataLoader after construction so that schedule_roi_batch()
-     * can pass the output addresses directly to nvImageCodec (zero-copy decode).
+     * can pass the output addresses directly to nvImageCodec.
      */
     void set_output_buffer_provider(OutputBufferProvider provider) override;
+
+    std::string decoder_provenance() const override;
 
     /**
      * @brief Shutdown the processor
@@ -152,6 +154,8 @@ private:
 
     // Request queue
     std::mutex request_mutex_;
+    mutable std::mutex provenance_mutex_;
+    std::string last_provenance_json_;
 
     // Output buffer provider (set by ThreadBatchDataLoader after construction)
     OutputBufferProvider output_buffer_provider_;

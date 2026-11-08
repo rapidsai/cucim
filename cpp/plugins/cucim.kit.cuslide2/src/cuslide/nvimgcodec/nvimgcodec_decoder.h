@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,7 +12,9 @@
 #endif
 
 #include <cucim/io/device.h>
+#include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace cuslide2::nvimgcodec
@@ -20,6 +22,64 @@ namespace cuslide2::nvimgcodec
 
 // Forward declaration (needed in both cases)
 struct IfdInfo;
+
+/**
+ * Backend class that actually executed a decode.
+ *
+ * nvImageCodec 0.9 exposes backend filters and processing status, but does
+ * not expose the selected decoder plugin identifier after generic dispatch.
+ * cuCIM therefore restricts each decode to one backend class and records that
+ * class exactly; it never guesses the plugin identifier.
+ */
+enum class DecodeBackend
+{
+    kUnknown,
+    kCpuOnly,
+    kGpuOnly,
+    kHybridCpuGpu,
+    kHardwareGpuOnly,
+};
+
+struct DecodeProvenance
+{
+    std::string codec;
+    std::string plugin_id; // Empty when the nvImageCodec API cannot disclose it.
+    DecodeBackend backend = DecodeBackend::kUnknown;
+    uint32_t processing_status = 0;
+    int api_status = 0;
+    bool success = false;
+    std::string failure_reason;
+    std::string output_memory; // "host" or "cuda"
+    std::string cuda_stream; // Output stream: "none", "default", or "dedicated".
+    bool future_wait_attempted = false;
+    bool future_wait_completed = false;
+    bool cuda_stream_synchronize_attempted = false;
+    bool cuda_stream_synchronize_completed = false;
+};
+
+struct DecodeProvenanceReport
+{
+    std::vector<DecodeProvenance> samples;
+    size_t cache_hits = 0;
+    size_t cache_misses = 0;
+};
+
+struct BackendProbe
+{
+    DecodeBackend backend = DecodeBackend::kUnknown;
+    uint32_t processing_status = 0;
+    bool decoder_available = false;
+};
+
+/** Select the first successful backend probe, or kUnknown when none succeeds. */
+DecodeBackend select_decode_backend(const std::vector<BackendProbe>& probes);
+
+const char* decode_backend_name(DecodeBackend backend);
+const char* decode_execution_name(DecodeBackend backend, bool success);
+std::string processing_status_name(uint32_t status);
+std::string decode_provenance_json(const std::vector<DecodeProvenance>& samples,
+                                   size_t cache_hits = 0,
+                                   size_t cache_misses = 0);
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 // nvImageCodec types are only available when CUCIM_HAS_NVIMGCODEC is defined
@@ -59,11 +119,14 @@ typedef void* cudaStream_t;
  */
 bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
                                   nvimgcodecCodeStream_t main_code_stream,
-                                  uint32_t x, uint32_t y,
-                                  uint32_t width, uint32_t height,
+                                  uint32_t x,
+                                  uint32_t y,
+                                  uint32_t width,
+                                  uint32_t height,
                                   uint8_t*& output_buffer,
                                   const cucim::io::Device& out_device,
-                                  cudaStream_t cuda_stream = nullptr);
+                                  cudaStream_t cuda_stream = nullptr,
+                                  DecodeProvenance* provenance = nullptr);
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 
@@ -86,6 +149,7 @@ struct BatchDecodeResult
     uint8_t* buffer;     // Decoded pixel data (caller must free)
     size_t buffer_size;  // Size of buffer in bytes
     bool success;        // Whether decoding succeeded
+    DecodeProvenance provenance;
 };
 
 // Forward declaration for implementation details

@@ -410,6 +410,26 @@ Metadata CuImage::metadata() const
     }
     return Metadata{};
 }
+Metadata CuImage::decoder_provenance() const
+{
+    if (auto* batch_loader = loader())
+    {
+        Metadata provenance = batch_loader->decoder_provenance();
+        if (!provenance.empty())
+        {
+            return provenance;
+        }
+    }
+    if (image_metadata_ && image_metadata_->json_data)
+    {
+        const Metadata metadata(image_metadata_->json_data);
+        if (metadata.find("\"decoder_provenance\"") != Metadata::npos)
+        {
+            return metadata;
+        }
+    }
+    return Metadata{};
+}
 uint16_t CuImage::ndim() const
 {
     return image_metadata_->ndim;
@@ -751,6 +771,10 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
     auto image_data = std::unique_ptr<io::format::ImageDataDesc, decltype(cucim_free)*>(
         reinterpret_cast<io::format::ImageDataDesc*>(cucim_malloc(sizeof(io::format::ImageDataDesc))), cucim_free);
     memset(image_data.get(), 0, sizeof(io::format::ImageDataDesc));
+    // Existing reader ABI already provides an optional metadata output. Use it
+    // for read-specific details such as decoder provenance, while continuing
+    // to construct standard shape/spacing metadata below.
+    io::format::ImageMetadata reader_metadata{};
 
     try
     {
@@ -762,7 +786,7 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
                 throw std::runtime_error("[Error] The image file is closed!");
             }
             if (!image_format_->image_reader.read(
-                    file_handle_.get(), image_metadata_, &request, image_data.get(), nullptr /*out_metadata*/))
+                    file_handle_.get(), image_metadata_, &request, image_data.get(), &reader_metadata.desc()))
             {
                 throw std::runtime_error("[Error] Failed to read image!");
             }
@@ -932,8 +956,20 @@ CuImage CuImage::read_region(std::vector<int64_t>&& location,
 
     // Partial image doesn't include raw metadata
     std::string_view raw_data{ "" };
-    // Partial image doesn't include json metadata
+    // A format reader may attach read-specific JSON (for example cuslide2
+    // decoder provenance). It is copied into the returned CuImage metadata.
     std::string_view json_data{ "" };
+    if (reader_metadata.desc().json_data)
+    {
+        const size_t json_size = std::strlen(reader_metadata.desc().json_data);
+        char* json_copy = static_cast<char*>(cucim_malloc(json_size + 1));
+        if (!json_copy)
+        {
+            throw std::bad_alloc();
+        }
+        std::memcpy(json_copy, reader_metadata.desc().json_data, json_size + 1);
+        json_data = std::string_view(json_copy, json_size);
+    }
 
     out_metadata.ndim(ndim);
     out_metadata.dims(std::move(dims));

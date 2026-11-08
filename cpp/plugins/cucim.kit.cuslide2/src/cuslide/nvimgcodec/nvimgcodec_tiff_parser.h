@@ -11,6 +11,7 @@
 
 #include <string>
 #include <vector>
+#include <array>
 #include <memory>
 #include <map>
 #include <unordered_map>
@@ -74,6 +75,7 @@ struct IfdInfo
     uint32_t num_channels;                   // Number of channels (typically 3 for RGB)
     uint32_t bits_per_sample;                // Bits per channel (8, 16, etc.)
     std::string codec;                       // Compression codec (jpeg, jpeg2k, deflate, etc.) - replace with int  : 0,1,2, for each codec type
+    std::string compression_codec; // Exact TIFF compression name for provenance; does not affect decoder routing
     nvimgcodecCodeStream_t sub_code_stream;  // nvImageCodec code stream for this IFD
 
     // Metadata fields (extracted from nvImageCodec metadata API)
@@ -376,6 +378,9 @@ public:
      */
     nvimgcodecDecoder_t get_decoder() const { return decoder_; }
 
+    /** Return a decoder whose allowed backends contain only @p backend_kind. */
+    nvimgcodecDecoder_t get_backend_decoder(nvimgcodecBackendKind_t backend_kind) const;
+
     /**
      * @brief Check if nvImageCodec is available and initialized
      *
@@ -411,6 +416,7 @@ private:
 
     nvimgcodecInstance_t instance_;
     nvimgcodecDecoder_t decoder_;
+    std::array<nvimgcodecDecoder_t, 4> backend_decoders_{};
     bool initialized_;
     std::string status_message_;
 };

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -17,6 +17,7 @@
 #include <cucim/io/format/image_format.h>
 #include <cucim/io/device.h>
 #include <cucim/loader/thread_batch_data_loader.h>
+#include "cuslide/nvimgcodec/nvimgcodec_decoder.h"
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 #include <nvimgcodec.h>
@@ -46,7 +47,8 @@ public:
     bool read(const TIFF* tiff,
               const cucim::io::format::ImageMetadataDesc* metadata,
               const cucim::io::format::ImageReaderRegionRequestDesc* request,
-              cucim::io::format::ImageDataDesc* out_image_data);
+              cucim::io::format::ImageDataDesc* out_image_data,
+              cuslide2::nvimgcodec::DecodeProvenanceReport* provenance = nullptr);
 
 
     uint32_t index() const;

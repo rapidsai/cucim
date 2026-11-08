@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -134,6 +134,12 @@ void NvImageCodecProcessor::set_output_buffer_provider(OutputBufferProvider prov
     output_buffer_provider_ = std::move(provider);
 }
 
+std::string NvImageCodecProcessor::decoder_provenance() const
+{
+    std::lock_guard<std::mutex> lock(provenance_mutex_);
+    return last_provenance_json_;
+}
+
 uint32_t NvImageCodecProcessor::preferred_loader_prefetch_factor() const
 {
     return preferred_loader_prefetch_factor_;
@@ -190,7 +196,19 @@ uint32_t NvImageCodecProcessor::request(std::deque<uint32_t>& batch_item_counts,
         // but impl->future is null when scheduling fails).
         if (!decode_state.is_valid())
         {
-            #ifdef DEBUG
+            const auto failed_results = cuslide2::nvimgcodec::wait_batch_decode(decode_state);
+            std::vector<cuslide2::nvimgcodec::DecodeProvenance> failed_provenance;
+            failed_provenance.reserve(failed_results.size());
+            for (const auto& result : failed_results)
+            {
+                failed_provenance.push_back(result.provenance);
+            }
+            const std::string provenance = cuslide2::nvimgcodec::decode_provenance_json(failed_provenance);
+            {
+                std::lock_guard<std::mutex> provenance_lock(provenance_mutex_);
+                last_provenance_json_ = provenance;
+            }
+#    ifdef DEBUG
             fmt::print("❌ Failed to schedule batch decode\n");
             #endif
             return 0;
@@ -242,6 +260,17 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     std::vector<cuslide2::nvimgcodec::BatchDecodeResult> results =
         cuslide2::nvimgcodec::wait_batch_decode(decode_state);
 
+    std::vector<cuslide2::nvimgcodec::DecodeProvenance> provenance_records;
+    provenance_records.reserve(results.size());
+    for (const auto& result : results)
+    {
+        provenance_records.push_back(result.provenance);
+    }
+    {
+        std::lock_guard<std::mutex> provenance_lock(provenance_mutex_);
+        last_provenance_json_ = cuslide2::nvimgcodec::decode_provenance_json(provenance_records);
+    }
+
     // Count successful decodes (log failures even in release builds)
     size_t success_count = 0;
     for (const auto& r : results)
@@ -257,9 +286,9 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     }
 
     #ifdef DEBUG
-    fmt::print("  ✅ wait_batch[{}]: {}/{} regions decoded successfully (zero-copy)\n",
-               index_in_task, success_count, results.size());
-    #endif
+    fmt::print("  ✅ wait_batch[{}]: {}/{} regions decoded successfully (direct output placement)\n", index_in_task,
+               success_count, results.size());
+#    endif
 
     return batch_size_;
 }
@@ -267,10 +296,10 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
 std::shared_ptr<cucim::cache::ImageCacheValue> NvImageCodecProcessor::wait_for_processing(uint32_t index)
 {
     (void)index;
-    // Zero-copy path: decoded data is written directly into the raster ring
+    // Direct-output path: decoded data is written into the raster ring
     // buffer via OutputBufferProvider.  This method should never be called on
     // NvImageCodecProcessor — use next_data() instead.
-    assert(false && "wait_for_processing() should not be called in zero-copy mode; use next_data() instead");
+    assert(false && "wait_for_processing() should not be called in direct-output mode; use next_data() instead");
     return nullptr;
 }
 
@@ -318,7 +347,7 @@ cuslide2::nvimgcodec::BatchDecodeState NvImageCodecProcessor::schedule_roi_batch
 
     // Schedule batch decode asynchronously on the dedicated CUDA stream.
     // When output_buffers is non-empty, nvImageCodec decodes directly into
-    // those caller-owned buffers (zero-copy).
+    // those caller-owned buffers.
     state = cuslide2::nvimgcodec::schedule_batch_decode(
         ifd_info,
         tiff_parser_.get_main_code_stream(),

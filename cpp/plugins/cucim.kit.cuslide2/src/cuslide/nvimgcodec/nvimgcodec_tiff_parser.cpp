@@ -304,6 +304,23 @@ static int compute_max_decoder_threads()
     return fair_share;
 }
 
+static int backend_decoder_index(nvimgcodecBackendKind_t backend_kind)
+{
+    switch (backend_kind)
+    {
+    case NVIMGCODEC_BACKEND_KIND_CPU_ONLY:
+        return 0;
+    case NVIMGCODEC_BACKEND_KIND_GPU_ONLY:
+        return 1;
+    case NVIMGCODEC_BACKEND_KIND_HYBRID_CPU_GPU:
+        return 2;
+    case NVIMGCODEC_BACKEND_KIND_HW_GPU_ONLY:
+        return 3;
+    default:
+        return -1;
+    }
+}
+
 
 // Helper: convert typed TIFF tag value to a string representation.
 static std::string tiff_tag_value_to_string(const TiffTagValue& value)
@@ -512,7 +529,45 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         {
             status_message_ = "nvImageCodec TIFF parser initialized successfully (with metadata extraction support)";
         }
-        #ifdef DEBUG
+
+        // The generic decoder does not report which backend handled a sample.
+        // Create one decoder per backend kind so decode-time selection can be
+        // constrained and the reported backend is direct evidence, not an
+        // inference from the codec or output memory.
+        const std::array<nvimgcodecBackendKind_t, 4> backend_kinds = {
+            NVIMGCODEC_BACKEND_KIND_CPU_ONLY,
+            NVIMGCODEC_BACKEND_KIND_GPU_ONLY,
+            NVIMGCODEC_BACKEND_KIND_HYBRID_CPU_GPU,
+            NVIMGCODEC_BACKEND_KIND_HW_GPU_ONLY,
+        };
+        for (const auto backend_kind : backend_kinds)
+        {
+            nvimgcodecBackend_t backend{};
+            backend.struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND;
+            backend.struct_size = sizeof(nvimgcodecBackend_t);
+            backend.struct_next = nullptr;
+            backend.kind = backend_kind;
+            backend.params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND_PARAMS;
+            backend.params.struct_size = sizeof(nvimgcodecBackendParams_t);
+            backend.params.struct_next = nullptr;
+            backend.params.load_hint = 1.0f;
+            backend.params.load_hint_policy = NVIMGCODEC_LOAD_HINT_POLICY_IGNORE;
+
+            nvimgcodecExecutionParams_t restricted_params = exec_params;
+            restricted_params.device_id = backend_kind == NVIMGCODEC_BACKEND_KIND_CPU_ONLY ? NVIMGCODEC_DEVICE_CPU_ONLY :
+                                                                                             NVIMGCODEC_DEVICE_CURRENT;
+            restricted_params.num_backends = 1;
+            restricted_params.backends = &backend;
+
+            const int index = backend_decoder_index(backend_kind);
+            nvimgcodecDecoder_t restricted_decoder = nullptr;
+            if (nvimgcodecDecoderCreate(instance_, &restricted_decoder, &restricted_params, nullptr) ==
+                NVIMGCODEC_STATUS_SUCCESS)
+            {
+                backend_decoders_[index] = restricted_decoder;
+            }
+        }
+#ifdef DEBUG
         fmt::print("✅ {}\n", status_message_);
         #endif // DEBUG
 
@@ -548,6 +603,15 @@ void NvImageCodecTiffParserManager::shutdown()
     fmt::print("[nvimgcodec] Shutting down NvImageCodecTiffParserManager...\n");
     #endif
 
+    for (auto& backend_decoder : backend_decoders_)
+    {
+        if (backend_decoder)
+        {
+            nvimgcodecDecoderDestroy(backend_decoder);
+            backend_decoder = nullptr;
+        }
+    }
+
     if (decoder_)
     {
         nvimgcodecDecoderDestroy(decoder_);
@@ -565,6 +629,12 @@ void NvImageCodecTiffParserManager::shutdown()
     #ifdef DEBUG
     fmt::print("[nvimgcodec] Shutdown complete.\n");
     #endif
+}
+
+nvimgcodecDecoder_t NvImageCodecTiffParserManager::get_backend_decoder(nvimgcodecBackendKind_t backend_kind) const
+{
+    const int index = backend_decoder_index(backend_kind);
+    return index >= 0 ? backend_decoders_[index] : nullptr;
 }
 
 NvImageCodecTiffParserManager::~NvImageCodecTiffParserManager()
@@ -782,6 +852,7 @@ bool TiffFileParser::parse_tiff_structure()
         if (image_info.codec_name[0] != '\0')
         {
             ifd_info.codec = image_info.codec_name;
+            ifd_info.compression_codec = image_info.codec_name;
         }
 
         // Extract metadata for this IFD using nvimgcodecDecoderGetMetadata
@@ -812,13 +883,15 @@ bool TiffFileParser::parse_tiff_structure()
                     {
                         case 1:    // COMPRESSION_NONE
                             // Keep as "tiff" for uncompressed
-                            #ifdef DEBUG
+                            ifd_info.compression_codec = "uncompressed";
+#ifdef DEBUG
                             fmt::print("  ℹ️  Detected uncompressed TIFF\n");
                             #endif // DEBUG
                             compression_inferred = true;
                             break;
                         case 5:    // COMPRESSION_LZW
                             ifd_info.codec = "tiff";  // nvImageCodec handles as tiff
+                            ifd_info.compression_codec = "lzw";
                             compression_inferred = true;
                             #ifdef DEBUG
                             fmt::print("  ℹ️  Detected LZW compression (TIFF codec)\n");
@@ -826,6 +899,7 @@ bool TiffFileParser::parse_tiff_structure()
                             break;
                         case 7:    // COMPRESSION_JPEG
                             ifd_info.codec = "jpeg";  // Use JPEG decoder!
+                            ifd_info.compression_codec = "jpeg";
                             compression_inferred = true;
                             #ifdef DEBUG
                             fmt::print("  ℹ️  Detected JPEG compression → using JPEG codec\n");
@@ -834,6 +908,7 @@ bool TiffFileParser::parse_tiff_structure()
                         case 8:    // COMPRESSION_DEFLATE (Adobe-style)
                         case 32946: // COMPRESSION_DEFLATE (old-style)
                             ifd_info.codec = "tiff";
+                            ifd_info.compression_codec = "deflate";
                             compression_inferred = true;
                             #ifdef DEBUG
                             fmt::print("  ℹ️  Detected DEFLATE compression (TIFF codec)\n");
@@ -843,6 +918,7 @@ bool TiffFileParser::parse_tiff_structure()
                         case 33005: // Aperio JPEG2000 RGB
                         case 34712: // JPEG2000
                             ifd_info.codec = "jpeg2000";
+                            ifd_info.compression_codec = "jpeg2000";
                             compression_inferred = true;
                             #ifdef DEBUG
                             fmt::print("  ℹ️  Detected JPEG2000 compression\n");
@@ -871,7 +947,8 @@ bool TiffFileParser::parse_tiff_structure()
                     file_path_.find("jp2k") != std::string::npos)
                 {
                     ifd_info.codec = "jpeg2000";
-                    #ifdef DEBUG
+                    ifd_info.compression_codec = "jpeg2000";
+#ifdef DEBUG
                     fmt::print("  ℹ️  Inferred codec 'jpeg2000' from filename (JP2K pattern)\n");
                     #endif // DEBUG
                     compression_inferred = true;

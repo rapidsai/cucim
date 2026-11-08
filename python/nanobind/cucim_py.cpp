@@ -138,6 +138,7 @@ NB_MODULE(_cucim, m)
         .def_prop_ro("raw_metadata", &CuImage::raw_metadata, doc::CuImage::doc_raw_metadata,
                      nb::call_guard<nb::gil_scoped_release>()) //
         .def_prop_ro("metadata", &py_metadata, doc::CuImage::doc_metadata) //
+        .def_prop_ro("decoder_provenance", &py_decoder_provenance, doc::CuImage::doc_decoder_provenance) //
         .def_prop_ro("ndim", &CuImage::ndim, doc::CuImage::doc_ndim, nb::call_guard<nb::gil_scoped_release>()) //
         .def_prop_ro("dims", &CuImage::dims, doc::CuImage::doc_dims, nb::call_guard<nb::gil_scoped_release>()) //
         .def_prop_ro("shape", &CuImage::shape, doc::CuImage::doc_shape, nb::call_guard<nb::gil_scoped_release>()) //
@@ -401,6 +402,27 @@ nb::object py_metadata(const CuImage& cuimg)
         cucim_metadata.emplace("associated_images", cuimg.associated_images());
     }
     return json2py(json_obj);
+}
+
+nb::object py_decoder_provenance(const CuImage& cuimg)
+{
+    json report;
+    bool found = false;
+    {
+        nb::gil_scoped_release release;
+        const auto provenance = cuimg.decoder_provenance();
+        if (!provenance.empty())
+        {
+            const json document = json::parse(provenance);
+            auto item = document.find("decoder_provenance");
+            if (item != document.end())
+            {
+                report = *item;
+                found = true;
+            }
+        }
+    }
+    return found ? json2py(report) : nb::none();
 }
 
 nb::dict py_resolutions(const CuImage& cuimg)

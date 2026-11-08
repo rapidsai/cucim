@@ -117,6 +117,16 @@ A metadata object as `dict`.
 It would be a dictionary(key-value pair) in general but can be a complex object (e.g., OME-TIFF metadata).
 )doc")
 
+PYDOC(decoder_provenance, R"doc(
+Decoder provenance for the latest TIFF read or materialized batch.
+
+Returns ``None`` when the active image format does not provide provenance.
+For cuslide2 the dictionary records the codec, restricted nvImageCodec backend,
+processing status, output memory, and synchronization boundaries. A null
+``plugin_id`` means the pinned nvImageCodec API cannot disclose the selected
+plugin; it is not inferred from the codec name.
+)doc")
+
 // uint16_t ndim() const;
 PYDOC(ndim, R"doc(
 The number of dimensions.

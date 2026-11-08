@@ -20,6 +20,7 @@ add_executable(cuslide2_tests
         test_philips_tiff.cpp
         test_ome_xml.cpp
         test_nvimgcodec_version.cpp
+        test_decoder_provenance.cpp
         )
 set_target_properties(cuslide2_tests
     PROPERTIES

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -337,6 +337,11 @@ uint8_t* ThreadBatchDataLoader::next_data()
 BatchDataProcessor* ThreadBatchDataLoader::batch_data_processor()
 {
     return batch_data_processor_.get();
+}
+
+std::string ThreadBatchDataLoader::decoder_provenance() const
+{
+    return batch_data_processor_ ? batch_data_processor_->decoder_provenance() : std::string{};
 }
 
 std::shared_ptr<cucim::cache::ImageCacheValue> ThreadBatchDataLoader::wait_for_processing(uint32_t index)

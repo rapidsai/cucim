@@ -127,16 +127,16 @@ find_package(cucim CONFIG REQUIRED
 ################################################################################
 
 message(STATUS "=============================================================")
-message(STATUS "cuslide2 PURE nvImageCodec - Dependencies:")
+message(STATUS "cuslide2 nvImageCodec - Dependencies:")
 message(STATUS "  ✓ fmt (logging)")
-message(STATUS "  ✓ nvImageCodec (GPU JPEG/JPEG2000/deflate/LZW decoding)")
+message(STATUS "  ✓ nvImageCodec (backend-selected TIFF decoding)")
 message(STATUS "  ✓ pugixml (XML metadata)")
 message(STATUS "  ✓ json (JSON metadata)")
 message(STATUS "  ✓ openslide (testing)")
 message(STATUS "  ✓ googletest, catch2, googlebenchmark, cli11 (testing)")
 message(STATUS "")
 message(STATUS "NOTE: No codec libraries needed (libjpeg/libtiff/libdeflate)")
-message(STATUS "      All decoding handled by nvImageCodec GPU acceleration!")
+message(STATUS "      nvImageCodec may select GPU, hybrid CPU/GPU, or CPU backends")
 message(STATUS "=============================================================")
 
 # Core implementation library (linkable by tests/benchmarks).

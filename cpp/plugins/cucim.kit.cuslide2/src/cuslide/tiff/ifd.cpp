@@ -311,7 +311,8 @@ IFD::~IFD()
 bool IFD::read([[maybe_unused]] const TIFF* tiff,
                [[maybe_unused]] const cucim::io::format::ImageMetadataDesc* metadata,
                [[maybe_unused]] const cucim::io::format::ImageReaderRegionRequestDesc* request,
-               [[maybe_unused]] cucim::io::format::ImageDataDesc* out_image_data)
+               [[maybe_unused]] cucim::io::format::ImageDataDesc* out_image_data,
+               [[maybe_unused]] cuslide2::nvimgcodec::DecodeProvenanceReport* provenance)
 {
     PROF_SCOPED_RANGE(PROF_EVENT(ifd_read));
 
@@ -549,6 +550,16 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     // produce it directly instead of consulting the decoder.
     if (ex < 0 || ey < 0 || sx >= static_cast<int64_t>(width_) || sy >= static_cast<int64_t>(height_))
     {
+        if (provenance)
+        {
+            cuslide2::nvimgcodec::DecodeProvenance record;
+            record.codec = ifd_info.compression_codec.empty() ? ifd_info.codec : ifd_info.compression_codec;
+            record.success = true;
+            record.output_memory = out_device.type() == cucim::io::DeviceType::kCUDA ? "cuda" : "host";
+            record.cuda_stream = out_device.type() == cucim::io::DeviceType::kCUDA ? "default" : "none";
+            record.failure_reason = "decoder_not_run_out_of_bounds";
+            provenance->samples.push_back(std::move(record));
+        }
         if (!output_buffer)
         {
             if (out_device.type() == cucim::io::DeviceType::kCUDA)
@@ -784,6 +795,10 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
 
                 if (cached_value)
                 {
+                    if (provenance)
+                    {
+                        ++provenance->cache_hits;
+                    }
                     // *** Cache hit ***
                     tile_lock.unlock();
                     tile_data = static_cast<uint8_t*>(cached_value->data);
@@ -794,6 +809,10 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                 }
                 else
                 {
+                    if (provenance)
+                    {
+                        ++provenance->cache_misses;
+                    }
                     // *** Cache miss — decode this tile via nvImageCodec ***
                     void* tile_mem = image_cache.allocate(tile_buf_size);
                     if (!tile_mem)
@@ -817,11 +836,14 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                         assemble_on_device ? cucim::io::DeviceType::kCUDA : cucim::io::DeviceType::kCPU);
                     uint8_t* tile_buf = static_cast<uint8_t*>(tile_value->data);
 
+                    cuslide2::nvimgcodec::DecodeProvenance tile_provenance;
                     bool decode_ok = ::cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
-                        ifd_info, main_code_stream,
-                        tile_origin_x, tile_origin_y, actual_tw, actual_th,
-                        tile_buf,
-                        assemble_on_device ? out_device : cucim::io::Device("cpu"));
+                        ifd_info, main_code_stream, tile_origin_x, tile_origin_y, actual_tw, actual_th, tile_buf,
+                        assemble_on_device ? out_device : cucim::io::Device("cpu"), nullptr, &tile_provenance);
+                    if (provenance)
+                    {
+                        provenance->samples.push_back(std::move(tile_provenance));
+                    }
 
                     if (decode_ok)
                     {
@@ -926,12 +948,13 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     // This is intentional: IFD::read() for a single location is the read_region()
     // API, which returns decoded data immediately.  The asynchronous batch path
     // is handled separately by NvImageCodecProcessor.
+    cuslide2::nvimgcodec::DecodeProvenance decode_provenance;
     bool success = ::cuslide2::nvimgcodec::decode_ifd_region_nvimgcodec(
-        ifd_info,
-        main_code_stream,
-        sx, sy, w, h,
-        output_buffer,
-        out_device);
+        ifd_info, main_code_stream, sx, sy, w, h, output_buffer, out_device, nullptr, &decode_provenance);
+    if (provenance)
+    {
+        provenance->samples.push_back(decode_provenance);
+    }
 
     if (success)
     {
@@ -972,9 +995,9 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             }
         }
 
-        throw std::runtime_error(fmt::format(
-            "Failed to decode IFD[{}] with nvImageCodec. ROI: ({},{}) {}x{}",
-            ifd_index_, sx, sy, w, h));
+        throw std::runtime_error(
+            fmt::format("Failed to decode IFD[{}] with nvImageCodec. ROI: ({},{}) {}x{}. Provenance: {}", ifd_index_,
+                        sx, sy, w, h, ::cuslide2::nvimgcodec::decode_provenance_json({ decode_provenance })));
     }
 #else
     // If nvImageCodec not available, throw error

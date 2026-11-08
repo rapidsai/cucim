@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -1399,7 +1399,23 @@ bool TIFF::read(const cucim::io::format::ImageMetadataDesc* metadata,
     {
         request->location[i] /= downsample_factor;
     }
-    return ifd->read(this, metadata, request, out_image_data);
+    cuslide2::nvimgcodec::DecodeProvenanceReport provenance;
+    const bool result = ifd->read(this, metadata, request, out_image_data, &provenance);
+    if (out_metadata && out_metadata->handle)
+    {
+        auto& read_metadata = *reinterpret_cast<cucim::io::format::ImageMetadata*>(out_metadata->handle);
+        const std::string provenance_json = cuslide2::nvimgcodec::decode_provenance_json(
+            provenance.samples, provenance.cache_hits, provenance.cache_misses);
+        char* provenance_copy = static_cast<char*>(cucim_malloc(provenance_json.size() + 1));
+        if (!provenance_copy)
+        {
+            throw std::bad_alloc();
+        }
+        std::memcpy(provenance_copy, provenance_json.data(), provenance_json.size());
+        provenance_copy[provenance_json.size()] = '\0';
+        read_metadata.json_data(std::string_view(provenance_copy, provenance_json.size()));
+    }
+    return result;
 }
 
 bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* metadata,

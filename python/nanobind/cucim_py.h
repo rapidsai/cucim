@@ -42,6 +42,7 @@ std::shared_ptr<cucim::cache::ImageCache> py_cache(nb::handle type, nb::kwargs k
 std::shared_ptr<cucim::profiler::Profiler> py_profiler(nb::kwargs kwargs);
 
 nb::object py_metadata(const CuImage& cuimg);
+nb::object py_decoder_provenance(const CuImage& cuimg);
 nb::dict py_resolutions(const CuImage& cuimg);
 nb::object py_read_region(const CuImage& cuimg,
                           nb::iterable location,

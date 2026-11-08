@@ -137,6 +137,9 @@ public:
 
     Metadata metadata() const;
 
+    /** JSON decoder provenance for the latest read or loaded batch. */
+    Metadata decoder_provenance() const;
+
     uint16_t ndim() const;
 
     std::string dims() const;

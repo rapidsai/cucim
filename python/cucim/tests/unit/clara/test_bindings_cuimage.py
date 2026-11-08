@@ -55,6 +55,7 @@ def test_open_image_properties(testimg_tiff_stripe_32x24_16_jpeg):
     assert [len(row) for row in img.direction] == [3, 3, 3]
     assert isinstance(img.coord_sys, str)
     assert isinstance(img.raw_metadata, str)
+    assert img.decoder_provenance is None
     assert type(img.associated_images) is set
     assert repr(img) == f"<cucim.CuImage path:{path}>"
 
