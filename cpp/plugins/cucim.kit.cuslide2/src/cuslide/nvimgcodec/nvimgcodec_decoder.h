@@ -48,6 +48,7 @@ struct DecodeProvenance
     uint32_t processing_status = 0;
     int api_status = 0;
     bool success = false;
+    std::string execution_detail;
     std::string failure_reason;
     std::string output_memory; // "host" or "cuda"
     std::string cuda_stream; // Output stream: "none", "default", or "dedicated".

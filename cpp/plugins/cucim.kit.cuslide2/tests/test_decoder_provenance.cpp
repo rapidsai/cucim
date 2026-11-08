@@ -60,6 +60,7 @@ TEST_CASE("provenance JSON preserves unknown backend and decoder failure", "[dec
     unknown.success = true;
     unknown.output_memory = "host";
     unknown.cuda_stream = "none";
+    unknown.execution_detail = "generic_dispatch_backend_not_exposed";
 
     DecodeProvenance failure;
     failure.codec = "jpeg2000";
@@ -74,6 +75,8 @@ TEST_CASE("provenance JSON preserves unknown backend and decoder failure", "[dec
 
     REQUIRE(samples.at(0).at("backend") == "unknown");
     REQUIRE(samples.at(0).at("execution") == "unknown");
+    REQUIRE(samples.at(0).at("execution_detail") == "generic_dispatch_backend_not_exposed");
+    REQUIRE(samples.at(0).at("failure_reason").is_null());
     REQUIRE(samples.at(0).at("plugin_id").is_null());
     REQUIRE(samples.at(0).at("plugin_id_status") == "not_exposed_by_nvimagecodec_0_9");
 

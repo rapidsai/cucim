@@ -557,7 +557,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             record.success = true;
             record.output_memory = out_device.type() == cucim::io::DeviceType::kCUDA ? "cuda" : "host";
             record.cuda_stream = out_device.type() == cucim::io::DeviceType::kCUDA ? "default" : "none";
-            record.failure_reason = "decoder_not_run_out_of_bounds";
+            record.execution_detail = "decoder_not_run_out_of_bounds";
             provenance->samples.push_back(std::move(record));
         }
         if (!output_buffer)

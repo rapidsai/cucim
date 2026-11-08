@@ -164,6 +164,7 @@ std::string decode_provenance_json(const std::vector<DecodeProvenance>& samples,
             { "plugin_id_status", sample.plugin_id.empty() ? "not_exposed_by_nvimagecodec_0_9" : "reported" },
             { "backend", decode_backend_name(sample.backend) },
             { "execution", decode_execution_name(sample.backend, sample.success) },
+            { "execution_detail", sample.execution_detail.empty() ? json(nullptr) : json(sample.execution_detail) },
             { "success", sample.success },
             { "processing_status", processing_status_name(sample.processing_status) },
             { "processing_status_value", sample.processing_status },
@@ -788,6 +789,10 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         if (provenance)
         {
             provenance->backend = decoder_choice.backend;
+            if (decoder_choice.decoder && decoder_choice.backend == DecodeBackend::kUnknown)
+            {
+                provenance->execution_detail = "generic_dispatch_backend_not_exposed";
+            }
         }
         if (!decoder_choice.decoder)
         {
@@ -1128,6 +1133,10 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
         {
             auto& provenance = results[valid_indices[vi]].provenance;
             provenance.backend = decoder_choice.backend;
+            if (decoder_choice.decoder && decoder_choice.backend == DecodeBackend::kUnknown)
+            {
+                provenance.execution_detail = "generic_dispatch_backend_not_exposed";
+            }
             provenance.api_status = decoder_choice.api_status;
             if (vi < decoder_choice.statuses.size())
                 provenance.processing_status = decoder_choice.statuses[vi];
@@ -1220,33 +1229,33 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
                 results[i].buffer = reinterpret_cast<uint8_t*>(decode_buffers[i].release());
                 results[i].success = true;
                 results[i].provenance.success = true;
-#ifdef DEBUG
+#    ifdef DEBUG
                 fmt::print("  ✅ Region {} decoded successfully\n", i);
-                #endif
+#endif
             }
             else
             {
                 results[i].provenance.failure_reason = "decoder_processing_failed";
-#ifdef DEBUG
+#    ifdef DEBUG
                 fmt::print("  ❌ Region {} decode failed (status: {})\n",
                           i, static_cast<int>(decode_statuses[vi]));
-                #endif
+#endif
             }
         }
 
-        #ifdef DEBUG
+#ifdef DEBUG
         size_t success_count = 0;
         for (const auto& r : results) if (r.success) ++success_count;
         fmt::print("✅ Batch decode complete: {}/{} regions successful\n", success_count, batch_size);
-        #endif
+#endif
 
         return results;
     }
     catch (const std::exception& e)
     {
-        #ifdef DEBUG
+#ifdef DEBUG
         fmt::print("❌ Exception in batch decoding: {}\n", e.what());
-        #endif
+#endif
         return results;
     }
 }
@@ -1291,9 +1300,9 @@ BatchDecodeState schedule_batch_decode(
         auto& manager = NvImageCodecTiffParserManager::instance();
         if (!manager.is_available())
         {
-            #ifdef DEBUG
+#ifdef DEBUG
             fmt::print("❌ Schedule batch: nvImageCodec manager not initialized\n");
-            #endif
+#endif
             return state;
         }
 
@@ -1489,6 +1498,10 @@ BatchDecodeState schedule_batch_decode(
         {
             auto& sample_provenance = impl->provenance[impl->valid_indices[vi]];
             sample_provenance.backend = decoder_choice.backend;
+            if (decoder_choice.decoder && decoder_choice.backend == DecodeBackend::kUnknown)
+            {
+                sample_provenance.execution_detail = "generic_dispatch_backend_not_exposed";
+            }
             sample_provenance.api_status = decoder_choice.api_status;
             if (vi < decoder_choice.statuses.size())
             {
@@ -1515,17 +1528,17 @@ BatchDecodeState schedule_batch_decode(
                 impl->provenance[index].api_status = status;
                 impl->provenance[index].failure_reason = "decode_scheduling_failed";
             }
-#ifdef DEBUG
+#    ifdef DEBUG
             fmt::print("❌ Failed to schedule batch decoding (status: {})\n", static_cast<int>(status));
-            #endif
+#endif
             // No manual cleanup needed — ~BatchDecodeStateImpl handles buffer
             // and future cleanup when `state` is destroyed by the caller.
             return state;
         }
 
-        #ifdef DEBUG
+#ifdef DEBUG
         fmt::print("✅ Scheduled batch decode of {} regions\n", impl->roi_streams.size());
-        #endif
+#endif
     }
 
     return state;
@@ -1567,9 +1580,9 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
             result.provenance.api_status = status;
             result.provenance.failure_reason = "decode_wait_failed";
         }
-#ifdef DEBUG
+#    ifdef DEBUG
         fmt::print("❌ Failed to wait for batch decode (status: {})\n", static_cast<int>(status));
-        #endif
+#endif
         // No manual cleanup — ~BatchDecodeStateImpl handles it.
         return results;
     }
@@ -1614,9 +1627,9 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
             result.provenance.api_status = status;
             result.provenance.failure_reason = "processing_status_query_failed";
         }
-#ifdef DEBUG
+#    ifdef DEBUG
         fmt::print("❌ Failed to get batch processing status (status: {})\n", static_cast<int>(status));
-        #endif
+#endif
         return results;  // All results already initialized to failure
     }
 
