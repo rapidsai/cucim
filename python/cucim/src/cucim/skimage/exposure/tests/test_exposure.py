@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import platform
@@ -923,3 +923,43 @@ def test_dask_histogram():
     expected_hist = [1, 2, 1]
     assert cp.allclose(expected_bins, output_bins)
     assert cp.allclose(expected_hist, output_hist)
+
+
+@pytest.mark.parametrize("dtype", [np.uint8, np.int8])
+@pytest.mark.parametrize("source_range", ["image", "dtype"])
+@pytest.mark.parametrize("kind", ["random", "narrow", "constant", "two"])
+@pytest.mark.parametrize("size", [1, 7, 1000, 100003])
+def test_histogram_1byte_integer_images(dtype, source_range, kind, size):
+    # one-pass histogram for 8-bit integer images (uint8 and int8)
+    rng = np.random.default_rng(0)
+    info = np.iinfo(dtype)
+    if kind == "random":
+        values = rng.integers(info.min, info.max + 1, size)
+    elif kind == "narrow":
+        values = rng.integers(info.min + 10, info.min + 30, size)
+    elif kind == "constant":
+        values = np.full(size, info.max - 3)
+    else:
+        values = rng.choice([info.min, info.max], size)
+    image = values.astype(dtype)
+    if source_range == "image":
+        low, high = int(image.min()), int(image.max())
+    else:
+        low, high = info.min, info.max
+    expected_bins = np.arange(low, high + 1)
+    expected_hist = np.bincount(
+        image.astype(np.int64) - low, minlength=high - low + 1
+    )
+
+    hist, bin_centers = exposure.histogram(
+        cp.asarray(image), source_range=source_range
+    )
+    assert_array_equal(bin_centers, expected_bins)
+    assert_array_equal(hist, expected_hist)
+
+    # an image that does not start at an aligned address
+    padded = cp.asarray(np.concatenate([[0], image, [0]]).astype(dtype))
+    hist, bin_centers = exposure.histogram(
+        padded[1:-1], source_range=source_range
+    )
+    assert_array_equal(hist, expected_hist)
