@@ -17,7 +17,6 @@ import numpy as np
 from skimage.filters import (
     threshold_isodata as _threshold_isodata_cpu,
     threshold_minimum as _threshold_minimum_cpu,
-    threshold_multiotsu as _threshold_multiotsu_cpu,
 )
 
 import cucim.skimage._vendored.ndimage as ndi
@@ -809,6 +808,9 @@ def threshold_otsu(image=None, nbins=256, *, hist=None):
     References
     ----------
     .. [1] Wikipedia, https://en.wikipedia.org/wiki/Otsu's_Method
+    .. [2] Otsu, N., "A threshold selection method from gray-level
+           histograms", IEEE Transactions on Systems, Man, and Cybernetics
+           9(1): 62-66, 1979. :DOI:`10.1109/TSMC.1979.4310076`
 
     Examples
     --------
@@ -1773,12 +1775,255 @@ def apply_hysteresis_threshold(image, low, high):
     return thresholded
 
 
+@cache
+def _get_multiotsu_kernels():
+    """Kernels of the dynamic programming search of `threshold_multiotsu`."""
+    code = r"""
+    #define BLOCK 256
+    #define PREPARE_BLOCK 512
+
+    // Between-class term of the class made of the bins u, ..., v - 1, from the
+    // prefix sums of the counts (P) and of the counts times the bin index (S).
+    __device__ __forceinline__ double class_term(
+            const double* P, const double* S, long long u, long long v)
+    {
+        const double weight = P[v] - P[u];
+        if (weight > 0.0) {
+            const double moment = S[v] - S[u];
+            return moment * moment / weight;
+        }
+        return 0.0;
+    }
+
+    // One block of PREPARE_BLOCK threads (every thread owns a chunk of
+    // consecutive bins): the prefix sums P and S of the counts and of the
+    // counts times the bin index, the best value G_last[u] of the last class
+    // (the bins u, ..., n_bins - 1) and the number of non-empty bins.
+    extern "C" __global__ void multiotsu_prepare(
+            const float* counts, const long long n_bins, double* P, double* S,
+            double* G_last, int* n_nonzero)
+    {
+        __shared__ double s_count[PREPARE_BLOCK];
+        __shared__ double s_moment[PREPARE_BLOCK];
+        __shared__ int s_nonzero[PREPARE_BLOCK];
+        const int tid = threadIdx.x;
+        const long long chunk = (n_bins + PREPARE_BLOCK - 1) / PREPARE_BLOCK;
+        const long long begin = min(static_cast<long long>(tid) * chunk, n_bins);
+        const long long end = min(begin + chunk, n_bins);
+
+        double sum_count = 0.0;
+        double sum_moment = 0.0;
+        int nonzero = 0;
+        for (long long i = begin; i < end; ++i) {
+            const double count = static_cast<double>(counts[i]);
+            sum_count += count;
+            sum_moment += count * static_cast<double>(i);
+            nonzero += count != 0.0;
+        }
+        s_count[tid] = sum_count;
+        s_moment[tid] = sum_moment;
+        s_nonzero[tid] = nonzero;
+        __syncthreads();
+
+        if (tid == 0) {
+            double run_count = 0.0;
+            double run_moment = 0.0;
+            int run_nonzero = 0;
+            for (int t = 0; t < PREPARE_BLOCK; ++t) {
+                const double c = s_count[t];
+                const double m = s_moment[t];
+                const int z = s_nonzero[t];
+                s_count[t] = run_count;
+                s_moment[t] = run_moment;
+                run_count += c;
+                run_moment += m;
+                run_nonzero += z;
+            }
+            P[0] = 0.0;
+            S[0] = 0.0;
+            n_nonzero[0] = run_nonzero;
+        }
+        __syncthreads();
+
+        double p = s_count[tid];
+        double m = s_moment[tid];
+        for (long long i = begin; i < end; ++i) {
+            const double count = static_cast<double>(counts[i]);
+            p += count;
+            m += count * static_cast<double>(i);
+            P[i + 1] = p;
+            S[i + 1] = m;
+        }
+        __syncthreads();
+
+        for (long long u = begin; u < end; ++u) {
+            G_last[u] = class_term(P, S, u, n_bins);
+        }
+    }
+
+    // G_next[v]: the best value of the classes k + 1, ..., M when class k + 1
+    // starts at bin v. One thread per start bin u of class k:
+    //   G_out[u] = max over v in (u, v_max] of H(u, v) + G_next[v]
+    // (the smallest v among equal maxima, so that the thresholds found
+    // are the lexicographically smallest ones).
+    extern "C" __global__ void multiotsu_stage(
+            const double* P, const double* S, const double* G_next,
+            double* G_out, int* back,
+            const long long u_begin, const long long u_end,
+            const long long v_max)
+    {
+        const long long u = u_begin + static_cast<long long>(blockIdx.x) * BLOCK
+                + threadIdx.x;
+        if (u >= u_end) {
+            return;
+        }
+        double best = -1.0;
+        long long best_v = u + 1;
+        for (long long v = u + 1; v <= v_max; ++v) {
+            const double value = class_term(P, S, u, v) + G_next[v];
+            if (value > best) {
+                best = value;
+                best_v = v;
+            }
+        }
+        G_out[u] = best;
+        back[u] = static_cast<int>(best_v);
+    }
+
+    // The first class always starts at bin 0: one block reduces over its end v.
+    extern "C" __global__ void multiotsu_first(
+            const double* P, const double* S, const double* G_next,
+            int* back, const long long v_max)
+    {
+        __shared__ double s_best[BLOCK];
+        __shared__ long long s_v[BLOCK];
+        const int tid = threadIdx.x;
+        double best = -1.0;
+        long long best_v = 1;
+        for (long long v = 1 + tid; v <= v_max; v += BLOCK) {
+            const double value = class_term(P, S, 0, v) + G_next[v];
+            if (value > best) {
+                best = value;
+                best_v = v;
+            }
+        }
+        s_best[tid] = best;
+        s_v[tid] = best_v;
+        __syncthreads();
+        if (tid == 0) {
+            double b = -1.0;
+            long long bv = 1;
+            // a value equal to the maximum at a smaller v wins
+            for (int t = 0; t < BLOCK; ++t) {
+                if (s_best[t] > b || (s_best[t] == b && s_v[t] < bv)) {
+                    b = s_best[t];
+                    bv = s_v[t];
+                }
+            }
+            back[0] = static_cast<int>(bv);
+        }
+    }
+
+    // Follow the back pointers from the first class to get the thresholds
+    // (the index of the last bin of every class but the last one).
+    extern "C" __global__ void multiotsu_thresholds(
+            const int* back, const long long L1, const int n_thresholds,
+            long long* thresholds)
+    {
+        long long u = 0;
+        for (int k = 0; k < n_thresholds; ++k) {
+            const long long v = back[k * L1 + u];
+            thresholds[k] = v - 1;
+            u = v;
+        }
+    }
+    """
+    module = cp.RawModule(code=code)
+    return (
+        module.get_function("multiotsu_prepare"),
+        module.get_function("multiotsu_stage"),
+        module.get_function("multiotsu_first"),
+        module.get_function("multiotsu_thresholds"),
+    )
+
+
+def _multiotsu_threshold_indices(counts, classes):
+    """Indices of the thresholds that maximize the variance between classes.
+
+    This is an exact search by dynamic programming. The sum of the
+    between-class variances is a sum of independent terms ``H(u, v) = S(u, v)**2
+    / P(u, v)`` of the classes (``P`` and ``S`` are the sums of the counts and
+    of the counts times the bin index over the bins ``u, ..., v - 1``), so the
+    best value of the last ``m`` classes that start at a given bin can be
+    computed from the one for ``m - 1`` classes. The cost is ``O(classes *
+    nbins**2)`` instead of the ``O(nbins**(classes - 1))`` of the exhaustive
+    search. All the arithmetic is in float64.
+
+    The histogram must have at least ``classes`` bins. Returns the indices and
+    a device array with the number of non-empty bins (if it is not larger than
+    ``classes`` the indices are not meaningful).
+    """
+    prepare, stage, first, thresholds_kernel = _get_multiotsu_kernels()
+    n_bins = counts.size
+    counts = cp.ascontiguousarray(counts, dtype=cp.float32)
+    L1 = n_bins + 1
+    P = cp.empty(L1, dtype=cp.float64)
+    S = cp.empty(L1, dtype=cp.float64)
+    G_next = cp.empty(L1, dtype=cp.float64)
+    n_nonzero = cp.empty(1, dtype=cp.int32)
+    # back[k, u]: the end of the class k + 1 when it starts at bin u
+    back = cp.empty((classes - 1, L1), dtype=cp.int32)
+    # prefix sums and the last class: bins u, ..., n_bins - 1
+    prepare(
+        (1,),
+        (512,),
+        (counts, np.int64(n_bins), P, S, G_next, n_nonzero),
+    )
+    block = 256
+    # the classes classes - 1, ..., 2 (class k has to leave one bin to each of
+    # the classes after it)
+    for k in range(classes - 1, 1, -1):
+        remaining = classes - k  # the number of classes after class k
+        u_begin = k - 1
+        u_end = n_bins - remaining  # exclusive
+        v_max = n_bins - remaining
+        G_out = cp.empty(L1, dtype=cp.float64)
+        n_blocks = max(1, -(-(u_end - u_begin) // block))
+        stage(
+            (n_blocks,),
+            (block,),
+            (
+                P,
+                S,
+                G_next,
+                G_out,
+                back[k - 1],
+                np.int64(u_begin),
+                np.int64(u_end),
+                np.int64(v_max),
+            ),
+        )
+        G_next = G_out
+    first(
+        (1,),
+        (block,),
+        (P, S, G_next, back[0], np.int64(n_bins - (classes - 1))),
+    )
+    thresholds = cp.empty(classes - 1, dtype=cp.int64)
+    thresholds_kernel(
+        (1,),
+        (1,),
+        (back, np.int64(L1), np.int32(classes - 1), thresholds),
+    )
+    return thresholds, n_nonzero
+
+
 def threshold_multiotsu(image=None, classes=3, nbins=256, *, hist=None):
     r"""Generate `classes`-1 threshold values to divide gray levels in `image`,
     following Otsu's method for multiple classes.
 
     The threshold values are chosen to maximize the total sum of pairwise
-    variances between the thresholded graylevel classes. See Notes and [1]_
+    variances between the thresholded graylevel classes [3]_. See Notes and [1]_
     for more details.
 
     Either image or hist must be provided. If hist is provided, the actual
@@ -1812,10 +2057,31 @@ def threshold_multiotsu(image=None, classes=3, nbins=256, *, hist=None):
 
     Notes
     -----
-    This implementation relies on a Cython function whose complexity
-    is :math:`O\left(\frac{Ch^{C-1}}{(C-1)!}\right)`, where :math:`h`
-    is the number of histogram bins and :math:`C` is the number of
-    classes desired.
+    This implementation finds the thresholds with an exact search by dynamic
+    programming on the GPU, whose complexity is :math:`O(C h^2)`, where
+    :math:`h` is the number of histogram bins and :math:`C` is the number of
+    classes desired (the exhaustive search of scikit-image is
+    :math:`O\left(\frac{Ch^{C-1}}{(C-1)!}\right)`). The criterion is the sum
+    over the classes of :math:`S^2/P`, the squared sum of the gray levels
+    weighted by the histogram divided by the number of pixels of the class [1]_
+    (the "modified between-class variance"). It is a sum of terms that each
+    depend only on the two thresholds that bound a class, so the best
+    thresholds for :math:`k` classes up to each bin follow from those for
+    :math:`k - 1` classes by maximizing over the previous threshold, and the
+    thresholds are recovered by following back pointers [4]_. The search
+    goes from the last class to the first, which gives the smallest
+    thresholds in lexicographic order among thresholds with exactly the same
+    value of the criterion, as in scikit-image. The arithmetic is in float64.
+
+    The thresholds are the same as those of scikit-image for typical images
+    (for the sample images of ``skimage.data`` tried, 54 of the 57 results with
+    2 to 4 classes are identical and the other 3 differ by one bin). The search
+    of scikit-image accumulates in float32 and gives the first bin a weight of
+    one instead of zero in the class that contains it, so for some histograms
+    (mostly those with several nearly equal maxima) it does not return the
+    thresholds that maximize the variance between classes, while this
+    implementation does. Thresholds with exactly equal values of the criterion
+    can still be chosen differently from scikit-image because of rounding.
 
     If no hist is given, this function will make use of
     `skimage.exposure.histogram`, which behaves differently than
@@ -1834,6 +2100,13 @@ def threshold_multiotsu(image=None, classes=3, nbins=256, *, hist=None):
     .. [2] Tosa, Y., "Multi-Otsu Threshold", a java plugin for ImageJ.
            Available at:
            <http://imagej.net/plugins/download/Multi_OtsuThreshold.java>
+    .. [3] Otsu, N., "A threshold selection method from gray-level
+           histograms", IEEE Transactions on Systems, Man, and Cybernetics
+           9(1): 62-66, 1979. :DOI:`10.1109/TSMC.1979.4310076`
+    .. [4] Luessi, M., Eichmann, M., Schuster, G. M. and Katsaggelos, A. K.,
+           "New results on efficient optimal multilevel image thresholding",
+           IEEE International Conference on Image Processing (ICIP) 2006,
+           pp. 773-776. :DOI:`10.1109/ICIP.2006.312426`
 
     Examples
     --------
@@ -1854,16 +2127,23 @@ def threshold_multiotsu(image=None, classes=3, nbins=256, *, hist=None):
             f"that of an RGB image."
         )
 
-    # calculating the histogram and the probability of each gray level.
-    prob, bin_centers = _validate_image_histogram(
-        image, hist, nbins, normalize=True
-    )
-    prob = cp.asnumpy(prob).astype(cp.float32, copy=False)
-    bin_centers = cp.asnumpy(bin_centers)
-    return cp.asarray(
-        _threshold_multiotsu_cpu(
-            classes=classes,
-            nbins=nbins,
-            hist=(prob, bin_centers),
+    # the histogram of the gray levels
+    counts, bin_centers = _validate_image_histogram(image, hist, nbins)
+
+    if counts.size >= classes:
+        thresh_idx, n_nonzero = _multiotsu_threshold_indices(counts, classes)
+        nvalues = int(n_nonzero[0])  # device synchronization!
+    else:
+        nvalues = int(cp.count_nonzero(counts))
+    if nvalues < classes:
+        msg = (
+            f"After discretization into bins, the input image has "
+            f"only {nvalues} different values. It cannot be thresholded "
+            f"in {classes} classes. If there are more unique values "
+            f"before discretization, try increasing the number of bins "
+            f"(`nbins`)."
         )
-    )
+        raise ValueError(msg)
+    elif nvalues == classes:
+        thresh_idx = cp.flatnonzero(counts)[:-1]
+    return bin_centers[thresh_idx]

@@ -900,3 +900,57 @@ def test_global_thresholds_many_bins_match_cpu(name, dtype):
     result = getattr(cu_filters, f"threshold_{name}")(cp.asarray(image))
     atol = 0 if dtype == np.uint8 else 1e-3 * scale
     assert_allclose(result, expected, rtol=1e-6, atol=atol)
+
+
+@pytest.mark.parametrize("classes, nbins", [(2, 40), (3, 40), (4, 30), (5, 20)])
+def test_multiotsu_matches_exhaustive_search(classes, nbins):
+    import itertools
+
+    rng = np.random.default_rng(classes)
+    for _ in range(10):
+        counts = rng.integers(0, 1000, nbins)
+        counts[0] += 1
+        counts[-1] += 1
+        c = counts.astype(np.float64)
+        P = np.concatenate(([0.0], np.cumsum(c)))
+        S = np.concatenate(([0.0], np.cumsum(c * np.arange(nbins))))
+
+        def term(u, v):
+            w = P[v] - P[u]
+            return np.where(
+                w > 0, (S[v] - S[u]) ** 2 / np.where(w > 0, w, 1), 0
+            )
+
+        cand = np.array(
+            list(itertools.combinations(range(nbins - 1), classes - 1))
+        )
+        edges = np.concatenate(
+            [
+                np.zeros((len(cand), 1), int),
+                cand + 1,
+                np.full((len(cand), 1), nbins),
+            ],
+            axis=1,
+        )
+        value = sum(term(edges[:, k], edges[:, k + 1]) for k in range(classes))
+        expected = cand[int(np.argmax(value))]  # first maximum
+        result = threshold_multiotsu(
+            classes=classes, hist=(cp.asarray(counts), cp.arange(nbins))
+        )
+        assert_array_equal(result, expected)
+
+
+def test_multiotsu_many_bins():
+    # 16-bit image: 65536 bins; two classes give Otsu's threshold
+    rng = np.random.default_rng(0)
+    image = np.concatenate(
+        [rng.normal(15000, 2000, 6000), rng.normal(40000, 3000, 4000)]
+    )
+    image = cp.asarray(np.clip(image, 0, 65535).astype(np.uint16)).reshape(
+        100, 100
+    )
+    assert threshold_multiotsu(image, 2) == threshold_otsu(image)
+    thresholds = threshold_multiotsu(image, 3)
+    assert thresholds.shape == (2,)
+    assert thresholds[0] < thresholds[1]
+    assert thresholds.dtype == image.dtype or thresholds.dtype.kind in "iuf"
