@@ -152,3 +152,74 @@ def test_cuslide2_reads_synthetic_pyramid(
         assert region.any(), f"all-zero region returned on {device}"
         mae = np.abs(region.astype(int) - expected.astype(int)).mean()
         assert mae <= max_mae, (device, mae)
+
+
+_CHECK_READ = textwrap.dedent(
+    """
+    import json, sys
+    import numpy as np
+    from cucim import CuImage
+
+    img = CuImage(sys.argv[1])
+    out = {}
+    for device in ("cpu", "cuda"):
+        try:
+            region = img.read_region((20, 30), (100, 80), level=0, device=device)
+        except RuntimeError as e:
+            out[device] = {"error": str(e)}
+            continue
+        if device == "cuda":
+            import cupy as cp
+            region = cp.asnumpy(cp.asarray(region))
+        out[device] = {"region": np.asarray(region).tolist()}
+    print("RESULT" + json.dumps(out))
+    """
+)
+
+
+@pytest.mark.parametrize(
+    "compression",
+    [33003, 33005, 34712],
+    ids=["aperio_33003", "aperio_33005", "jpeg2000_34712"],
+)
+def test_cuslide2_jpeg2000_is_decoded_or_an_error(tmp_path, compression):
+    """A JPEG 2000 TIFF is decoded correctly or the read raises an error.
+
+    If the nvJPEG2000 or nvTIFF library cannot be loaded, nvImageCodec falls
+    back to CPU decoders that cannot decode JPEG 2000 in TIFF but report
+    success. The plugin must not return an all-zero region then.
+    """
+    image = _make_image((256, 320, 3))
+    path = tmp_path / "jpeg2000.tif"
+    tifffile.imwrite(
+        path,
+        image,
+        photometric="rgb",
+        tile=(TILE, TILE),
+        compression=compression,
+    )
+
+    env = dict(os.environ, ENABLE_CUSLIDE2="1")
+    proc = subprocess.run(
+        [sys.executable, "-c", _CHECK_READ, str(path)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    assert proc.returncode == 0, proc.stderr[-4000:]
+    lines = [ln for ln in proc.stdout.splitlines() if ln.startswith("RESULT")]
+    assert lines, proc.stdout[-2000:] + proc.stderr[-2000:]
+    result = json.loads(lines[-1][len("RESULT") :])
+
+    expected = image[30:110, 20:120]
+    for device, outcome in result.items():
+        if "error" in outcome:
+            assert "nvImageCodec" in outcome["error"], outcome["error"]
+            continue
+        region = np.asarray(outcome["region"])
+        assert region.shape == expected.shape, device
+        mae = np.abs(region.astype(int) - expected.astype(int)).mean()
+        assert region.any() and mae <= 1, (
+            f"{device}: region is blank or wrong (mean abs error {mae})"
+        )
