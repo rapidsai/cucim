@@ -969,3 +969,49 @@ def test_constant_image_returns_the_pixel_value(name, dtype):
     # almost constant: one pixel is different
     image[3, 4] = 9
     assert 7 <= getattr(filters, f"threshold_{name}")(image) <= 9
+
+
+@pytest.mark.parametrize("nbins", [16, 100, 256, 1000, 4200])
+def test_threshold_minimum_matches_skimage_on_synthetic_histograms(nbins):
+    # the GPU smoothing loop gives the same threshold, or the same error, as
+    # scikit-image (4200 bins use the scikit-image function itself)
+    from skimage.filters import threshold_minimum as sk_threshold_minimum
+
+    rng = np.random.default_rng(nbins)
+    x = np.arange(nbins)
+    # (the scikit-image function is slow for many bins and iterations)
+    for kind in range(1 if nbins > 4096 else 4):
+        if kind in (1, 2) and nbins > 256:
+            continue  # (many iterations: slow for scikit-image)
+        if kind == 0:  # bimodal
+            counts = np.exp(-0.5 * ((x - nbins * 0.25) / (nbins * 0.07)) ** 2)
+            counts = counts * 1000 + 600 * np.exp(
+                -0.5 * ((x - nbins * 0.7) / (nbins * 0.1)) ** 2
+            )
+        elif kind == 1:  # noisy: many maxima
+            counts = rng.integers(0, 1000, nbins).astype(float)
+        elif kind == 2:  # unimodal: no second maximum
+            counts = 1000 * np.exp(
+                -0.5 * ((x - nbins * 0.5) / (nbins * 0.1)) ** 2
+            )
+        else:  # three modes
+            counts = sum(
+                a * np.exp(-0.5 * ((x - nbins * m) / (nbins * 0.05)) ** 2)
+                for a, m in ((900, 0.2), (700, 0.5), (800, 0.8))
+            )
+        counts = np.round(counts + rng.integers(0, 3, nbins)).astype(np.float32)
+        counts[0] += 1
+        counts[-1] += 1
+        centers = x * 1.5 + 2
+        try:
+            expected = sk_threshold_minimum(hist=(counts, centers))
+        except RuntimeError as e:
+            with pytest.raises(RuntimeError, match=str(e)[:20]):
+                threshold_minimum(
+                    hist=(cp.asarray(counts), cp.asarray(centers))
+                )
+        else:
+            result = threshold_minimum(
+                hist=(cp.asarray(counts), cp.asarray(centers))
+            )
+            assert float(result) == float(expected)

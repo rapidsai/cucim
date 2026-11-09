@@ -1228,6 +1228,133 @@ def threshold_li(
     return threshold
 
 
+# The largest histogram that `threshold_minimum` smooths in shared memory (two
+# float32 copies of it).
+_MINIMUM_MAX_BINS = 4096
+
+
+@cache
+def _get_threshold_minimum_kernel():
+    # The histogram is smoothed by repeated uniform filters of size 3 until
+    # it has at most two local maxima, as in scikit-image. All the iterations
+    # run in one block, in shared memory and without synchronizations with the
+    # host: the threads smooth the histogram (the mean of three values, in
+    # double precision, stored as float32) and one thread looks for the local
+    # maxima with the same search as scikit-image (plateaus are handled by the
+    # direction of the previous change).
+    code = r"""
+    #define BLOCK 256
+
+    __device__ __forceinline__ long long clamp_index(long long k, long long n)
+    {
+        return k < 0 ? 0 : (k >= n ? n - 1 : k);
+    }
+
+    extern "C" __global__ void threshold_minimum(
+            const float* counts, const long long n_bins,
+            const long long max_num_iter, long long* result)
+    {
+        extern __shared__ float smem[];
+        __shared__ long long s_found[4];  // count, first, second, counter
+        float* cur = smem;
+        float* next = smem + n_bins;
+        const int tid = threadIdx.x;
+
+        for (long long i = tid; i < n_bins; i += BLOCK) {
+            cur[i] = counts[i];
+        }
+        __syncthreads();
+
+        long long count = 0;
+        long long counter = -1;
+        for (long long it = 0; it < max_num_iter; ++it) {
+            // uniform_filter1d(cur, 3), mode 'reflect'
+            for (long long l = tid; l < n_bins; l += BLOCK) {
+                const double sum = static_cast<double>(cur[clamp_index(l - 1, n_bins)])
+                        + static_cast<double>(cur[l])
+                        + static_cast<double>(cur[clamp_index(l + 1, n_bins)]);
+                next[l] = static_cast<float>(sum / 3.0);
+            }
+            __syncthreads();
+            float* swap = cur;
+            cur = next;
+            next = swap;
+
+            if (tid == 0) {
+                long long found = 0;
+                long long first = -1;
+                long long second = -1;
+                int direction = 1;
+                for (long long i = 0; i < n_bins - 1; ++i) {
+                    if (direction > 0) {
+                        if (cur[i + 1] < cur[i]) {
+                            direction = -1;
+                            if (found == 0) {
+                                first = i;
+                            } else if (found == 1) {
+                                second = i;
+                            }
+                            ++found;
+                        }
+                    } else if (cur[i + 1] > cur[i]) {
+                        direction = 1;
+                    }
+                }
+                s_found[0] = found;
+                s_found[1] = first;
+                s_found[2] = second;
+            }
+            __syncthreads();
+            count = s_found[0];
+            counter = it;
+            if (count < 3) {
+                break;
+            }
+        }
+
+        if (tid == 0) {
+            result[0] = 0;
+            result[1] = 0;
+            if (count != 2) {
+                result[1] = 1;  // unable to find two maxima
+            } else if (counter == max_num_iter - 1) {
+                result[1] = 2;  // maximum number of iterations reached
+            } else {
+                // the lowest point (the first one) between the maxima
+                const long long first = s_found[1];
+                const long long second = s_found[2];
+                long long best = first;
+                for (long long i = first + 1; i <= second; ++i) {
+                    if (cur[i] < cur[best]) {
+                        best = i;
+                    }
+                }
+                result[0] = best;
+            }
+        }
+    }
+    """
+    return cp.RawKernel(code, "threshold_minimum", options=("--fmad=false",))
+
+
+def _threshold_minimum_gpu(counts, bin_centers, max_num_iter):
+    counts = cp.ascontiguousarray(counts, dtype=cp.float32)
+    n_bins = counts.size
+    result = cp.zeros(2, dtype=cp.int64)
+    _get_threshold_minimum_kernel()(
+        (1,),
+        (256,),
+        (counts, np.int64(n_bins), np.int64(max_num_iter), result),
+        shared_mem=2 * n_bins * 4,
+    )
+    index, status = (int(x) for x in cp.asnumpy(result))  # synchronize
+    if status == 1:
+        raise RuntimeError("Unable to find two maxima in histogram")
+    elif status == 2:
+        raise RuntimeError("Maximum iteration reached for histogramsmoothing")
+    return bin_centers[index]
+
+
 def threshold_minimum(image=None, nbins=256, max_num_iter=10000, *, hist=None):
     """Return threshold value based on minimum method.
 
@@ -1282,13 +1409,19 @@ def threshold_minimum(image=None, nbins=256, max_num_iter=10000, *, hist=None):
     """
 
     counts, bin_centers = _validate_image_histogram(image, hist, nbins)
-    counts = cp.asnumpy(counts).astype(np.float32, copy=False)
-    bin_centers = cp.asnumpy(bin_centers)
-    return cp.asarray(
-        _threshold_minimum_cpu(
-            nbins=nbins, max_num_iter=max_num_iter, hist=(counts, bin_centers)
+    if counts.size > _MINIMUM_MAX_BINS:
+        # too large for the shared memory of the kernel
+        return cp.asarray(
+            _threshold_minimum_cpu(
+                nbins=nbins,
+                max_num_iter=max_num_iter,
+                hist=(
+                    cp.asnumpy(counts).astype(np.float32, copy=False),
+                    cp.asnumpy(bin_centers),
+                ),
+            )
         )
-    )
+    return _threshold_minimum_gpu(counts, bin_centers, max_num_iter)
 
 
 def threshold_mean(image):
