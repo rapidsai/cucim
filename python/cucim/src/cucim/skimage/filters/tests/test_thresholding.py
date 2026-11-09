@@ -940,6 +940,71 @@ def test_multiotsu_matches_exhaustive_search(classes, nbins):
         assert_array_equal(result, expected)
 
 
+def _multiotsu_plain_dp(counts, classes):
+    """Thresholds from the dynamic programming that searches every pair of
+    thresholds in each stage (smallest end bin among equal maxima)."""
+    n = counts.size
+    c = counts.astype(np.float32).astype(np.float64)
+    P = np.concatenate(([0.0], np.cumsum(c)))
+    S = np.concatenate(([0.0], np.cumsum(c * np.arange(n))))
+
+    def term(u, v):
+        w = P[v] - P[u]
+        return np.where(w > 0, (S[v] - S[u]) ** 2 / np.where(w > 0, w, 1), 0)
+
+    G = term(np.arange(n), n)  # the last class starts at bin u
+    backs = []
+    for k in range(classes - 1, 1, -1):
+        remaining = classes - k
+        u_end = n - remaining
+        G_out = np.zeros(n + 1)
+        back = np.zeros(n + 1, dtype=int)
+        for u in range(k - 1, u_end):
+            v = np.arange(u + 1, u_end + 1)
+            value = term(u, v) + G[v]
+            i = int(np.argmax(value))
+            G_out[u], back[u] = value[i], v[i]
+        G = G_out
+        backs.append((k, back))
+    v = np.arange(1, n - (classes - 1) + 1)
+    chain = {1: {0: int(v[int(np.argmax(term(0, v) + G[v]))])}}
+    chain.update({k: b for k, b in backs})
+    u, thresholds = 0, []
+    for k in range(1, classes):
+        v = int(chain[k][u])
+        thresholds.append(v - 1)
+        u = v
+    return np.array(thresholds)
+
+
+@pytest.mark.parametrize("classes", [3, 4, 6])
+@pytest.mark.parametrize("kind", ["random", "ties", "sparse", "palindrome"])
+def test_multiotsu_divide_and_conquer_matches_plain_dp(classes, kind):
+    # Every stage is searched by divide and conquer, which relies on the best
+    # previous threshold not decreasing with the end bin. Check that the result
+    # is the one of the search over all pairs, also for exact ties.
+    rng = np.random.default_rng(classes)
+    nbins = 701  # not a power of two: several levels with unequal bounds
+    for _ in range(3):
+        if kind == "random":
+            counts = rng.integers(0, 1000, nbins)
+        elif kind == "ties":
+            counts = rng.integers(0, 3, nbins)
+        elif kind == "sparse":
+            counts = (rng.random(nbins) < 0.1) * rng.integers(1, 50, nbins)
+        else:
+            half = rng.integers(0, 100, nbins // 2)
+            counts = np.concatenate([half, [5], half[::-1]])
+        counts[0] += 1
+        counts[-1] += 1
+        expected = _multiotsu_plain_dp(counts, classes)
+        result = threshold_multiotsu(
+            classes=classes,
+            hist=(cp.asarray(counts), cp.arange(nbins)),
+        )
+        assert_array_equal(result, expected)
+
+
 def test_multiotsu_many_bins():
     # 16-bit image: 65536 bins; two classes give Otsu's threshold
     rng = np.random.default_rng(0)

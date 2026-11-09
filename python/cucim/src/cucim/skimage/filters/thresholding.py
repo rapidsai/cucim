@@ -2083,33 +2083,74 @@ def _get_multiotsu_kernels():
         }
     }
 
-    // G_next[v]: the best value of the classes k + 1, ..., M when class k + 1
-    // starts at bin v. One thread per start bin u of class k:
+    // One stage of the dynamic programming. G_next[v] is the best value of the
+    // classes k + 1, ..., M when the class k + 1 starts at bin v, and
     //   G_out[u] = max over v in (u, v_max] of H(u, v) + G_next[v]
-    // (the smallest v among equal maxima, so that the thresholds found
-    // are the lexicographically smallest ones).
+    // is the best value of the classes k, ..., M when the class k starts at bin
+    // u (the smallest v among equal maxima, so that the thresholds found are the
+    // lexicographically smallest ones). The best v of the class that starts at u
+    // is non-decreasing with u (the stage matrix is totally monotone, see the
+    // docstring of threshold_multiotsu), so the rows are solved by divide and
+    // conquer, level by level: at level d the rows i = (2 j + 1) * step - 1
+    // (i = u - u_begin, step = 2^(D - 1 - d)) are searched only between the best
+    // v of the rows i - step and i + step, which an earlier level solved. One
+    // block searches one row.
+    __device__ __forceinline__ void dc_row_bounds(
+            const int* back, const long long u_begin, const long long n_rows,
+            const long long step, const long long v_max, const long long j,
+            long long* u, long long* v_low, long long* v_high)
+    {
+        const long long i = (2 * j + 1) * step - 1;
+        *u = u_begin + i;
+        *v_low = (j > 0) ? static_cast<long long>(back[u_begin + i - step])
+                         : *u + 1;
+        *v_high = (i + step < n_rows)
+                ? static_cast<long long>(back[u_begin + i + step]) : v_max;
+        if (*v_low < *u + 1) {
+            *v_low = *u + 1;
+        }
+    }
+
     extern "C" __global__ void multiotsu_stage(
             const double* P, const double* S, const double* G_next,
             double* G_out, int* back,
-            const long long u_begin, const long long u_end,
-            const long long v_max)
+            const long long u_begin, const long long n_rows,
+            const long long step, const long long v_max)
     {
-        const long long u = u_begin + static_cast<long long>(blockIdx.x) * BLOCK
-                + threadIdx.x;
-        if (u >= u_end) {
-            return;
-        }
+        __shared__ double s_best[BLOCK];
+        __shared__ long long s_v[BLOCK];
+        long long u, v_low, v_high;
+        dc_row_bounds(back, u_begin, n_rows, step, v_max, blockIdx.x,
+                      &u, &v_low, &v_high);
+        const int tid = threadIdx.x;
         double best = -1.0;
-        long long best_v = u + 1;
-        for (long long v = u + 1; v <= v_max; ++v) {
+        long long best_v = v_low;
+        for (long long v = v_low + tid; v <= v_high; v += BLOCK) {
             const double value = class_term(P, S, u, v) + G_next[v];
             if (value > best) {
                 best = value;
                 best_v = v;
             }
         }
-        G_out[u] = best;
-        back[u] = static_cast<int>(best_v);
+        s_best[tid] = best;
+        s_v[tid] = best_v;
+        __syncthreads();
+        for (int offset = BLOCK / 2; offset > 0; offset >>= 1) {
+            if (tid < offset) {
+                const double other = s_best[tid + offset];
+                const long long other_v = s_v[tid + offset];
+                if (other > s_best[tid]
+                        || (other == s_best[tid] && other_v < s_v[tid])) {
+                    s_best[tid] = other;
+                    s_v[tid] = other_v;
+                }
+            }
+            __syncthreads();
+        }
+        if (tid == 0) {
+            G_out[u] = s_best[0];
+            back[u] = static_cast<int>(s_v[0]);
+        }
     }
 
     // The first class always starts at bin 0: one block reduces over its end v.
@@ -2179,7 +2220,10 @@ def _multiotsu_threshold_indices(counts, classes):
     best value of the last ``m`` classes that start at a given bin can be
     computed from the one for ``m - 1`` classes. The cost is ``O(classes *
     nbins**2)`` instead of the ``O(nbins**(classes - 1))`` of the exhaustive
-    search. All the arithmetic is in float64.
+    search. The best end bin of the class that starts at a given bin is
+    non-decreasing with that bin, so every stage is searched by divide and
+    conquer, level by level (``O(classes * nbins * log(nbins))`` evaluations).
+    All the arithmetic is in float64.
 
     The histogram must have at least ``classes`` bins. Returns the indices and
     a device array with the number of non-empty bins (if it is not larger than
@@ -2210,21 +2254,26 @@ def _multiotsu_threshold_indices(counts, classes):
         u_end = n_bins - remaining  # exclusive
         v_max = n_bins - remaining
         G_out = cp.empty(L1, dtype=cp.float64)
-        n_blocks = max(1, -(-(u_end - u_begin) // block))
-        stage(
-            (n_blocks,),
-            (block,),
-            (
-                P,
-                S,
-                G_next,
-                G_out,
-                back[k - 1],
-                np.int64(u_begin),
-                np.int64(u_end),
-                np.int64(v_max),
-            ),
-        )
+        n_rows = u_end - u_begin
+        n_levels = int(n_rows).bit_length()
+        for level in range(n_levels):
+            step = 1 << (n_levels - 1 - level)
+            n_level_rows = (n_rows // step + 1) // 2
+            stage(
+                (n_level_rows,),
+                (block,),
+                (
+                    P,
+                    S,
+                    G_next,
+                    G_out,
+                    back[k - 1],
+                    np.int64(u_begin),
+                    np.int64(n_rows),
+                    np.int64(step),
+                    np.int64(v_max),
+                ),
+            )
         G_next = G_out
     first(
         (1,),
@@ -2280,17 +2329,22 @@ def threshold_multiotsu(image=None, classes=3, nbins=256, *, hist=None):
     Notes
     -----
     This implementation finds the thresholds with an exact search by dynamic
-    programming on the GPU, whose complexity is :math:`O(C h^2)`, where
+    programming on the GPU, whose complexity is :math:`O(C h \log h)`, where
     :math:`h` is the number of histogram bins and :math:`C` is the number of
     classes desired (the exhaustive search of scikit-image is
-    :math:`O\left(\frac{Ch^{C-1}}{(C-1)!}\right)`). The criterion is the sum
+    :math:`O\left(\frac{Ch^{C-1}}{(C-1)!}\right)`, and the plain dynamic
+    programming is :math:`O(C h^2)`). The criterion is the sum
     over the classes of :math:`S^2/P`, the squared sum of the gray levels
     weighted by the histogram divided by the number of pixels of the class [1]_
     (the "modified between-class variance"). It is a sum of terms that each
     depend only on the two thresholds that bound a class, so the best
     thresholds for :math:`k` classes up to each bin follow from those for
     :math:`k - 1` classes by maximizing over the previous threshold, and the
-    thresholds are recovered by following back pointers [4]_. The search
+    thresholds are recovered by following back pointers [4]_. The best
+    previous threshold does not decrease with the end bin of the class (the
+    matrix of each stage is totally monotone [4]_), so each stage is
+    searched by divide and conquer instead of over all pairs of thresholds,
+    which gives the :math:`h \log h` factor. The search
     goes from the last class to the first, which gives the smallest
     thresholds in lexicographic order among thresholds with exactly the same
     value of the criterion, as in scikit-image. The arithmetic is in float64.
