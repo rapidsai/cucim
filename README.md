@@ -101,11 +101,12 @@ docker rm -v ${tmp_id}
 
 ## cuslide2 Plugin
 
-> **Deprecation Notice:** Starting with 26.04, the original `cuslide`
-> plugin will be deprecated in favor of `cuslide2` with removal of `cuslide` planned for 26.08. `cuslide2` uses
+> **Note:** `cuslide` is still the default plugin. `cuslide2` is opt-in (see below)
+> and is included in the pip wheels and in the conda packages (`libcucim`). It uses
 > [nvImageCodec](https://developer.nvidia.com/nvimagecodec) for GPU-accelerated
 > TIFF decoding and adds tile-level caching, async batch decoding, and broader
-> format support. Please plan to migrate existing workflows to `cuslide2`.
+> format support. The original `cuslide` plugin is planned to be deprecated in favor
+> of `cuslide2`, so please plan to migrate existing workflows to `cuslide2`.
 
 ### Enabling cuslide2
 

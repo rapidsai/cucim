@@ -59,13 +59,17 @@ build:
       cp -P -r install/include/* "$PREFIX/include/" || true
 
       # Build plugins
-      for plugin_name in cuslide cumed; do
+      for plugin_name in cuslide cuslide2 cumed; do
           echo "Building cucim.kit.${plugin_name} ..."
           ./run build_local ${plugin_name} "${CUCIM_BUILD_TYPE}" "${PREFIX}"
           mkdir -p "$PREFIX/bin" "$PREFIX/lib" "$PREFIX/include"
           cp -P -r cpp/plugins/cucim.kit.${plugin_name}/install/bin/* "$PREFIX/bin/" || true
           cp -P -r cpp/plugins/cucim.kit.${plugin_name}/install/lib/* "$PREFIX/lib/" || true
       done
+
+      # Static helper library of cuslide2 (nvImageCodec is loaded with dlopen at
+      # runtime): only needed to link the plugin.
+      rm -f "$PREFIX/lib/libnvimgcodec_dynlink.a"
     secrets:
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY
