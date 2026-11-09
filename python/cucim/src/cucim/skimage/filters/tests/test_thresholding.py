@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -873,3 +873,30 @@ def test_multiotsu_hist_parameter():
             thresh_img = threshold_multiotsu(img, classes)
             thresh_sk_hist = threshold_multiotsu(classes=classes, hist=sk_hist)
             assert cp.allclose(thresh_img, thresh_sk_hist)
+
+
+@pytest.mark.parametrize("dtype", [np.uint8, np.uint16])
+@pytest.mark.parametrize(
+    "name", ["otsu", "yen", "isodata", "triangle", "mean", "li"]
+)
+def test_global_thresholds_many_bins_match_cpu(name, dtype):
+    # 8-bit images have 256 bins, 16-bit images up to 65536. The kernels
+    # accumulate in float64, scikit-image in float32, so for many bins the
+    # thresholds can differ where the criterion is flat near its maximum (by a
+    # relative 1e-8 in the value of the criterion for the case below).
+    from skimage import filters as sk_filters
+
+    from cucim.skimage import filters as cu_filters
+
+    scale = np.iinfo(dtype).max
+    rng = np.random.default_rng(0)
+    image = np.clip(
+        data.camera().astype(np.float64) / 255 * scale
+        + rng.normal(0, 0.01 * scale, data.camera().shape),
+        0,
+        scale,
+    ).astype(dtype)
+    expected = getattr(sk_filters, f"threshold_{name}")(image)
+    result = getattr(cu_filters, f"threshold_{name}")(cp.asarray(image))
+    atol = 0 if dtype == np.uint8 else 1e-3 * scale
+    assert_allclose(result, expected, rtol=1e-6, atol=atol)

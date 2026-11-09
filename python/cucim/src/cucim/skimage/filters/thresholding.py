@@ -368,49 +368,93 @@ _DTYPE_TO_CTYPE = {
 }
 
 
+# Number of threads of the (single) block of the histogram threshold kernels:
+# a block can scan histograms of any number of bins, each thread handling a
+# chunk of consecutive bins (for 65,536 bins the kernels take 0.2 to 0.7 ms).
+_BLOCK_THREADS = 512
+
+
 @cache
 def _get_threshold_otsu_kernel(bin_centers_dtype):
     ctype = _DTYPE_TO_CTYPE[np.dtype(bin_centers_dtype).char]
     code = f"""
+#define BLOCK {_BLOCK_THREADS}
+
+// One block of BLOCK threads processes the bins. Thread t owns the contiguous
+// chunk of bins [t * chunk, (t + 1) * chunk): it sums its chunk, the chunk sums
+// are scanned in shared memory (so every thread knows the sums over the bins
+// before its chunk), and then every thread sequentially evaluates the criterion
+// for the bins of its chunk. The best candidate of each thread is reduced in
+// the order of the threads, which keeps the first maximum.
+
     extern "C" __global__ void threshold_otsu(
             const float* counts,
             const {ctype}* bin_centers,
             const long long n_bins,
             double* threshold)
     {{
-        if (blockIdx.x != 0 || threadIdx.x != 0) {{
-            return;
-        }}
+        __shared__ double s_count[BLOCK];
+        __shared__ double s_weighted[BLOCK];
+        __shared__ double s_best[BLOCK];
+        __shared__ long long s_idx[BLOCK];
+        __shared__ double s_total[2];
 
+        const int tid = threadIdx.x;
         if (n_bins <= 0) {{
-            threshold[0] = 0.0;
+            if (tid == 0) {{
+                threshold[0] = 0.0;
+            }}
             return;
         }}
 
-        double total_count = 0.0;
-        double total_weighted = 0.0;
-        for (long long i = 0; i < n_bins; ++i) {{
-            const double count = static_cast<double>(counts[i]);
-            const double center = static_cast<double>(bin_centers[i]);
-            total_count += count;
-            total_weighted += count * center;
-        }}
+        const long long chunk = (n_bins + BLOCK - 1) / BLOCK;
+        const long long begin = min(static_cast<long long>(tid) * chunk, n_bins);
+        const long long end = min(begin + chunk, n_bins);
 
+        double sum_count = 0.0;
+        double sum_weighted = 0.0;
+        for (long long i = begin; i < end; ++i) {{
+            const double count = static_cast<double>(counts[i]);
+            sum_count += count;
+            sum_weighted += count * static_cast<double>(bin_centers[i]);
+        }}
+        s_count[tid] = sum_count;
+        s_weighted[tid] = sum_weighted;
+        __syncthreads();
+
+        if (tid == 0) {{
+            double run_count = 0.0;
+            double run_weighted = 0.0;
+            for (int t = 0; t < BLOCK; ++t) {{
+                const double c = s_count[t];
+                const double w = s_weighted[t];
+                s_count[t] = run_count;
+                s_weighted[t] = run_weighted;
+                run_count += c;
+                run_weighted += w;
+            }}
+            s_total[0] = run_count;
+            s_total[1] = run_weighted;
+        }}
+        __syncthreads();
+
+        const double total_count = s_total[0];
+        const double total_weighted = s_total[1];
         if (n_bins == 1 || total_count <= 0.0) {{
-            threshold[0] = static_cast<double>(bin_centers[0]);
+            if (tid == 0) {{
+                threshold[0] = static_cast<double>(bin_centers[0]);
+            }}
             return;
         }}
 
-        double weight1 = 0.0;
-        double weighted1 = 0.0;
+        double weight1 = s_count[tid];
+        double weighted1 = s_weighted[tid];
         double best_variance = -1.0;
-        long long best_idx = 0;
-
-        for (long long i = 0; i < n_bins - 1; ++i) {{
+        long long best_idx = -1;
+        for (long long i = begin; i < end && i < n_bins - 1; ++i) {{
             const double count = static_cast<double>(counts[i]);
-            const double center = static_cast<double>(bin_centers[i]);
             weight1 += count;
-            weighted1 += count * center;
+            weighted1 += count * static_cast<double>(bin_centers[i]);
 
             const double weight2 = total_count - weight1;
             if (weight1 <= 0.0 || weight2 <= 0.0) {{
@@ -428,8 +472,21 @@ def _get_threshold_otsu_kernel(bin_centers_dtype):
                 best_idx = i;
             }}
         }}
+        s_best[tid] = best_variance;
+        s_idx[tid] = best_idx;
+        __syncthreads();
 
-        threshold[0] = static_cast<double>(bin_centers[best_idx]);
+        if (tid == 0) {{
+            double best = -1.0;
+            long long idx = 0;
+            for (int t = 0; t < BLOCK; ++t) {{
+                if (s_best[t] > best) {{
+                    best = s_best[t];
+                    idx = s_idx[t];
+                }}
+            }}
+            threshold[0] = static_cast<double>(bin_centers[idx]);
+        }}
     }}
     """
     return cp.RawKernel(code, "threshold_otsu")
@@ -444,7 +501,7 @@ def _threshold_otsu_gpu(counts, bin_centers):
     kernel = _get_threshold_otsu_kernel(bin_centers.dtype)
     kernel(
         (1,),
-        (1,),
+        (_BLOCK_THREADS,),
         (counts, bin_centers, np.int64(counts.size), threshold),
     )
     return threshold
@@ -454,7 +511,15 @@ def _threshold_otsu_gpu(counts, bin_centers):
 def _get_threshold_yen_kernel(bin_centers_dtype):
     ctype = _DTYPE_TO_CTYPE[np.dtype(bin_centers_dtype).char]
     code = f"""
-    #include <math_constants.h>
+
+#define BLOCK {_BLOCK_THREADS}
+
+// One block of BLOCK threads processes the bins. Thread t owns the contiguous
+// chunk of bins [t * chunk, (t + 1) * chunk): it sums its chunk, the chunk sums
+// are scanned in shared memory (so every thread knows the sums over the bins
+// before its chunk), and then every thread sequentially evaluates the criterion
+// for the bins of its chunk. The best candidate of each thread is reduced in
+// the order of the threads, which keeps the first maximum.
 
     extern "C" __global__ void threshold_yen(
             const float* counts,
@@ -462,33 +527,65 @@ def _get_threshold_yen_kernel(bin_centers_dtype):
             const long long n_bins,
             double* threshold)
     {{
-        if (blockIdx.x != 0 || threadIdx.x != 0) {{
-            return;
-        }}
+        __shared__ double s_count[BLOCK];
+        __shared__ double s_squared[BLOCK];
+        __shared__ double s_best[BLOCK];
+        __shared__ long long s_idx[BLOCK];
+        __shared__ double s_total[2];
 
+        const int tid = threadIdx.x;
         if (n_bins <= 0) {{
-            threshold[0] = 0.0;
+            if (tid == 0) {{
+                threshold[0] = 0.0;
+            }}
             return;
         }}
         if (n_bins == 1) {{
-            threshold[0] = static_cast<double>(bin_centers[0]);
+            if (tid == 0) {{
+                threshold[0] = static_cast<double>(bin_centers[0]);
+            }}
             return;
         }}
 
-        double total_count = 0.0;
-        double total_squared_count = 0.0;
-        for (long long i = 0; i < n_bins; ++i) {{
+        const long long chunk = (n_bins + BLOCK - 1) / BLOCK;
+        const long long begin = min(static_cast<long long>(tid) * chunk, n_bins);
+        const long long end = min(begin + chunk, n_bins);
+
+        double sum_count = 0.0;
+        double sum_squared = 0.0;
+        for (long long i = begin; i < end; ++i) {{
             const double count = static_cast<double>(counts[i]);
-            total_count += count;
-            total_squared_count += count * count;
+            sum_count += count;
+            sum_squared += count * count;
         }}
+        s_count[tid] = sum_count;
+        s_squared[tid] = sum_squared;
+        __syncthreads();
 
-        double cum_count = 0.0;
-        double cum_squared_count = 0.0;
-        double best_score = -CUDART_INF;
-        long long best_idx = 0;
+        if (tid == 0) {{
+            double run_count = 0.0;
+            double run_squared = 0.0;
+            for (int t = 0; t < BLOCK; ++t) {{
+                const double c = s_count[t];
+                const double q = s_squared[t];
+                s_count[t] = run_count;
+                s_squared[t] = run_squared;
+                run_count += c;
+                run_squared += q;
+            }}
+            s_total[0] = run_count;
+            s_total[1] = run_squared;
+        }}
+        __syncthreads();
 
-        for (long long i = 0; i < n_bins - 1; ++i) {{
+        const double total_count = s_total[0];
+        const double total_squared_count = s_total[1];
+
+        double cum_count = s_count[tid];
+        double cum_squared_count = s_squared[tid];
+        double best_score = -1.0;
+        long long best_idx = -1;
+        for (long long i = begin; i < end && i < n_bins - 1; ++i) {{
             const double count = static_cast<double>(counts[i]);
             cum_count += count;
             cum_squared_count += count * count;
@@ -503,11 +600,12 @@ def _get_threshold_yen_kernel(bin_centers_dtype):
             }}
 
             // Equivalent to scikit-image's Yen criterion, with histogram
-            // normalization factors cancelled out:
-            // log((P1_sq * P2_sq)^-1 * (P1 * (1 - P1))^2).
-            const double score =
-                    2.0 * log(cum_count * suffix_count) -
-                    log(cum_squared_count * suffix_squared_count);
+            // normalization factors cancelled out and without the logarithm
+            // (which does not change the position of the maximum):
+            // (P1 * (1 - P1))^2 / (P1_sq * P2_sq).
+            const double product = cum_count * suffix_count;
+            const double score = product * product /
+                    (cum_squared_count * suffix_squared_count);
 
             // Match np.argmax tie-breaking by keeping the first maximum.
             if (score > best_score) {{
@@ -515,8 +613,21 @@ def _get_threshold_yen_kernel(bin_centers_dtype):
                 best_idx = i;
             }}
         }}
+        s_best[tid] = best_score;
+        s_idx[tid] = best_idx;
+        __syncthreads();
 
-        threshold[0] = static_cast<double>(bin_centers[best_idx]);
+        if (tid == 0) {{
+            double best = -1.0;
+            long long idx = 0;
+            for (int t = 0; t < BLOCK; ++t) {{
+                if (s_best[t] > best) {{
+                    best = s_best[t];
+                    idx = s_idx[t];
+                }}
+            }}
+            threshold[0] = static_cast<double>(bin_centers[idx]);
+        }}
     }}
     """
     return cp.RawKernel(code, "threshold_yen")
@@ -531,7 +642,7 @@ def _threshold_yen_gpu(counts, bin_centers):
     kernel = _get_threshold_yen_kernel(bin_centers.dtype)
     kernel(
         (1,),
-        (1,),
+        (_BLOCK_THREADS,),
         (counts, bin_centers, np.int64(counts.size), threshold),
     )
     return threshold
@@ -541,41 +652,81 @@ def _threshold_yen_gpu(counts, bin_centers):
 def _get_threshold_isodata_kernel(bin_centers_dtype):
     ctype = _DTYPE_TO_CTYPE[np.dtype(bin_centers_dtype).char]
     code = f"""
+#define BLOCK {_BLOCK_THREADS}
+
+// One block of BLOCK threads processes the bins. Thread t owns the contiguous
+// chunk of bins [t * chunk, (t + 1) * chunk): it sums its chunk, the chunk sums
+// are scanned in shared memory (so every thread knows the sums over the bins
+// before its chunk), and then every thread sequentially evaluates the criterion
+// for the bins of its chunk. The best candidate of each thread is reduced in
+// the order of the threads, which keeps the first maximum.
+
     extern "C" __global__ void threshold_isodata(
             const float* counts,
             const {ctype}* bin_centers,
             const long long n_bins,
             double* threshold)
     {{
-        if (blockIdx.x != 0 || threadIdx.x != 0) {{
-            return;
-        }}
+        __shared__ double s_count[BLOCK];
+        __shared__ double s_weighted[BLOCK];
+        __shared__ long long s_idx[BLOCK];
+        __shared__ double s_total[2];
 
+        const int tid = threadIdx.x;
         if (n_bins <= 0) {{
-            threshold[0] = 0.0;
+            if (tid == 0) {{
+                threshold[0] = 0.0;
+            }}
             return;
         }}
         if (n_bins == 1) {{
-            threshold[0] = static_cast<double>(bin_centers[0]);
+            if (tid == 0) {{
+                threshold[0] = static_cast<double>(bin_centers[0]);
+            }}
             return;
         }}
 
-        double total_count = 0.0;
-        double total_weighted = 0.0;
-        for (long long i = 0; i < n_bins; ++i) {{
-            const double count = static_cast<double>(counts[i]);
-            const double center = static_cast<double>(bin_centers[i]);
-            total_count += count;
-            total_weighted += count * center;
-        }}
+        const long long chunk = (n_bins + BLOCK - 1) / BLOCK;
+        const long long begin = min(static_cast<long long>(tid) * chunk, n_bins);
+        const long long end = min(begin + chunk, n_bins);
 
+        double sum_count = 0.0;
+        double sum_weighted = 0.0;
+        for (long long i = begin; i < end; ++i) {{
+            const double count = static_cast<double>(counts[i]);
+            sum_count += count;
+            sum_weighted += count * static_cast<double>(bin_centers[i]);
+        }}
+        s_count[tid] = sum_count;
+        s_weighted[tid] = sum_weighted;
+        __syncthreads();
+
+        if (tid == 0) {{
+            double run_count = 0.0;
+            double run_weighted = 0.0;
+            for (int t = 0; t < BLOCK; ++t) {{
+                const double c = s_count[t];
+                const double w = s_weighted[t];
+                s_count[t] = run_count;
+                s_weighted[t] = run_weighted;
+                run_count += c;
+                run_weighted += w;
+            }}
+            s_total[0] = run_count;
+            s_total[1] = run_weighted;
+        }}
+        __syncthreads();
+
+        const double total_count = s_total[0];
+        const double total_weighted = s_total[1];
         const double bin_width =
                 static_cast<double>(bin_centers[1]) -
                 static_cast<double>(bin_centers[0]);
-        double lower_count = 0.0;
-        double lower_weighted = 0.0;
 
-        for (long long i = 0; i < n_bins - 1; ++i) {{
+        double lower_count = s_count[tid];
+        double lower_weighted = s_weighted[tid];
+        long long found = n_bins;  // no valid bin in this chunk
+        for (long long i = begin; i < end && i < n_bins - 1; ++i) {{
             const double count = static_cast<double>(counts[i]);
             const double center = static_cast<double>(bin_centers[i]);
             lower_count += count;
@@ -592,15 +743,24 @@ def _get_threshold_isodata_kernel(bin_centers_dtype):
             const double all_mean = (lower + higher) / 2.0;
             const double distance = all_mean - center;
             if (distance >= 0.0 && distance < bin_width) {{
-                threshold[0] = center;
-                return;
+                found = i;
+                break;
             }}
         }}
+        s_idx[tid] = found;
+        __syncthreads();
 
-        // Matches the practical behavior for valid histograms used by
-        // threshold_isodata; this should only be reached for degenerate custom
-        // histograms that contain no valid fixed point.
-        threshold[0] = static_cast<double>(bin_centers[0]);
+        if (tid == 0) {{
+            // the lowest bin that satisfies the equality
+            long long idx = 0;  // degenerate histograms: the first bin
+            for (int t = 0; t < BLOCK; ++t) {{
+                if (s_idx[t] < n_bins) {{
+                    idx = s_idx[t];
+                    break;
+                }}
+            }}
+            threshold[0] = static_cast<double>(bin_centers[idx]);
+        }}
     }}
     """
     return cp.RawKernel(code, "threshold_isodata")
@@ -615,7 +775,7 @@ def _threshold_isodata_gpu(counts, bin_centers):
     kernel = _get_threshold_isodata_kernel(bin_centers.dtype)
     kernel(
         (1,),
-        (1,),
+        (_BLOCK_THREADS,),
         (counts, bin_centers, np.int64(counts.size), threshold),
     )
     return threshold
@@ -1141,69 +1301,130 @@ def threshold_mean(image):
 def _get_threshold_triangle_kernel(bin_centers_dtype):
     ctype = _DTYPE_TO_CTYPE[np.dtype(bin_centers_dtype).char]
     code = f"""
+#define BLOCK {_BLOCK_THREADS}
+
+// One block of BLOCK threads processes the bins. Thread t owns the contiguous
+// chunk of bins [t * chunk, (t + 1) * chunk): it sums its chunk, the chunk sums
+// are scanned in shared memory (so every thread knows the sums over the bins
+// before its chunk), and then every thread sequentially evaluates the criterion
+// for the bins of its chunk. The best candidate of each thread is reduced in
+// the order of the threads, which keeps the first maximum.
+
     extern "C" __global__ void threshold_triangle(
             const float* hist,
             const {ctype}* bin_centers,
             const long long n_bins,
             double* threshold)
     {{
-        if (blockIdx.x != 0 || threadIdx.x != 0) {{
-            return;
-        }}
+        __shared__ double s_value[BLOCK];
+        __shared__ long long s_arg[BLOCK];
+        __shared__ long long s_low[BLOCK];
+        __shared__ long long s_high[BLOCK];
+        __shared__ double s_peak_height;
+        __shared__ long long s_arg_low_level;
+        __shared__ long long s_width;
+        __shared__ int s_flip;
+        __shared__ int s_done;
 
+        const int tid = threadIdx.x;
         if (n_bins <= 0) {{
-            threshold[0] = 0.0;
+            if (tid == 0) {{
+                threshold[0] = 0.0;
+            }}
             return;
         }}
 
-        long long arg_peak_height = 0;
-        double peak_height = static_cast<double>(hist[0]);
-        long long arg_low_level = -1;
-        long long arg_high_level = -1;
-
-        for (long long i = 0; i < n_bins; ++i) {{
+        // Pass 1: the peak (first maximum) and the first and last non-empty bin.
+        const long long chunk = (n_bins + BLOCK - 1) / BLOCK;
+        const long long begin = min(static_cast<long long>(tid) * chunk, n_bins);
+        const long long end = min(begin + chunk, n_bins);
+        double peak = -1.0e300;
+        long long arg_peak = -1;
+        long long low = -1;
+        long long high = -1;
+        for (long long i = begin; i < end; ++i) {{
             const double value = static_cast<double>(hist[i]);
-            if (value > peak_height) {{
-                peak_height = value;
-                arg_peak_height = i;
+            if (value > peak) {{
+                peak = value;
+                arg_peak = i;
             }}
             if (value != 0.0) {{
-                if (arg_low_level < 0) {{
-                    arg_low_level = i;
+                if (low < 0) {{
+                    low = i;
                 }}
-                arg_high_level = i;
+                high = i;
             }}
         }}
+        s_value[tid] = peak;
+        s_arg[tid] = arg_peak;
+        s_low[tid] = low;
+        s_high[tid] = high;
+        __syncthreads();
 
-        if (arg_low_level < 0) {{
-            threshold[0] = static_cast<double>(bin_centers[0]);
+        if (tid == 0) {{
+            double peak_height = s_value[0];
+            long long arg_peak_height = s_arg[0];
+            long long arg_low_level = -1;
+            long long arg_high_level = -1;
+            for (int t = 0; t < BLOCK; ++t) {{
+                if (s_value[t] > peak_height) {{
+                    peak_height = s_value[t];
+                    arg_peak_height = s_arg[t];
+                }}
+                if (s_low[t] >= 0) {{
+                    if (arg_low_level < 0) {{
+                        arg_low_level = s_low[t];
+                    }}
+                    arg_high_level = s_high[t];
+                }}
+            }}
+            s_done = 1;
+            s_width = 0;
+            s_flip = 0;
+            s_peak_height = peak_height;
+            if (arg_low_level < 0) {{
+                threshold[0] = static_cast<double>(bin_centers[0]);
+            }} else if (arg_low_level == arg_high_level) {{
+                threshold[0] = static_cast<double>(bin_centers[arg_low_level]);
+            }} else {{
+                const bool flip = (
+                        arg_peak_height - arg_low_level <
+                        arg_high_level - arg_peak_height);
+                if (flip) {{
+                    arg_low_level = n_bins - arg_high_level - 1;
+                    arg_peak_height = n_bins - arg_peak_height - 1;
+                }}
+                const long long width = arg_peak_height - arg_low_level;
+                if (width <= 0) {{
+                    const long long arg_level = flip
+                            ? n_bins - arg_low_level - 1
+                            : arg_low_level;
+                    threshold[0] = static_cast<double>(bin_centers[arg_level]);
+                }} else {{
+                    s_done = 0;
+                    s_flip = flip ? 1 : 0;
+                    s_width = width;
+                    s_arg_low_level = arg_low_level;
+                }}
+            }}
+        }}
+        __syncthreads();
+        if (s_done) {{
             return;
         }}
-        if (arg_low_level == arg_high_level) {{
-            threshold[0] = static_cast<double>(bin_centers[arg_low_level]);
-            return;
-        }}
 
-        const bool flip = (
-                arg_peak_height - arg_low_level <
-                arg_high_level - arg_peak_height);
-        if (flip) {{
-            arg_low_level = n_bins - arg_high_level - 1;
-            arg_peak_height = n_bins - arg_peak_height - 1;
-        }}
-
-        const long long width = arg_peak_height - arg_low_level;
-        if (width <= 0) {{
-            const long long arg_level = flip
-                    ? n_bins - arg_low_level - 1
-                    : arg_low_level;
-            threshold[0] = static_cast<double>(bin_centers[arg_level]);
-            return;
-        }}
-
+        // Pass 2: the distance to the line from the peak to the end of the
+        // tail, over the width of the tail.
+        const double peak_height = s_peak_height;
+        const long long width = s_width;
+        const long long arg_low_level = s_arg_low_level;
+        const bool flip = s_flip != 0;
+        const long long chunk2 = (width + BLOCK - 1) / BLOCK;
+        const long long begin2 = min(static_cast<long long>(tid) * chunk2, width);
+        const long long end2 = min(begin2 + chunk2, width);
         double best_score = -1.0e300;
-        long long arg_level = arg_low_level;
-        for (long long x = 0; x < width; ++x) {{
+        long long best_x = -1;
+        for (long long x = begin2; x < end2; ++x) {{
             const long long hist_idx = flip
                     ? n_bins - (x + arg_low_level) - 1
                     : x + arg_low_level;
@@ -1214,14 +1435,27 @@ def _get_threshold_triangle_kernel(bin_centers_dtype):
                     static_cast<double>(width) * y;
             if (score > best_score) {{
                 best_score = score;
-                arg_level = x + arg_low_level;
+                best_x = x;
             }}
         }}
+        s_value[tid] = best_score;
+        s_arg[tid] = best_x;
+        __syncthreads();
 
-        if (flip) {{
-            arg_level = n_bins - arg_level - 1;
+        if (tid == 0) {{
+            double best = -1.0e300;
+            long long arg_level = arg_low_level;
+            for (int t = 0; t < BLOCK; ++t) {{
+                if (s_value[t] > best) {{
+                    best = s_value[t];
+                    arg_level = s_arg[t] + arg_low_level;
+                }}
+            }}
+            if (flip) {{
+                arg_level = n_bins - arg_level - 1;
+            }}
+            threshold[0] = static_cast<double>(bin_centers[arg_level]);
         }}
-        threshold[0] = static_cast<double>(bin_centers[arg_level]);
     }}
     """
     return cp.RawKernel(code, "threshold_triangle")
@@ -1236,7 +1470,7 @@ def _threshold_triangle_gpu(hist, bin_centers):
     kernel = _get_threshold_triangle_kernel(bin_centers.dtype)
     kernel(
         (1,),
-        (1,),
+        (_BLOCK_THREADS,),
         (hist, bin_centers, np.int64(hist.size), threshold),
     )
     return threshold
