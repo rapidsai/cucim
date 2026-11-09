@@ -1057,6 +1057,65 @@ def _cross_entropy(image, threshold, bins=_DEFAULT_ENTROPY_BINS):
     return nu
 
 
+def _threshold_li_integer(image, tolerance, iter_callback):
+    """Li's iterative method for an image of integers, from its histogram.
+
+    The same iteration as in `threshold_li`, with the histogram of the image
+    (one pass, then one small transfer to the host) instead of passes over the
+    image to remove nan and non-finite values (there are none in integer
+    images), to look for a constant image, to subtract the minimum and to
+    compute the mean.
+    """
+    hist, bin_centers = histogram(image.reshape(-1), source_range="image")
+    if hist.size == 1:
+        # constant image: return that value
+        return image.ravel()[0]
+
+    counts = cp.asnumpy(hist)  # synchronize
+    centers = cp.asnumpy(bin_centers).astype(np.int64)
+    image_min = bin_centers[0].astype(image.dtype)
+    centers = centers - centers[0]  # the image minus its minimum
+    weights = counts.astype(np.float32)  # as in the iteration of threshold_li
+
+    tolerance = tolerance or 0.5
+    # initial estimate: the mean of the image (minus its minimum)
+    t_next = float((centers * counts).sum()) / int(counts.sum())
+    t_curr = -2 * tolerance
+    if iter_callback is not None:
+        iter_callback(t_next + image_min)
+
+    eps = 100 * np.finfo(float).eps
+    while abs(t_next - t_curr) > tolerance:
+        t_curr = t_next
+        foreground = centers > t_curr
+        background = ~foreground
+        with np.errstate(invalid="ignore", divide="ignore"):
+            mean_fore = float(
+                np.multiply(
+                    centers[foreground], weights[foreground], dtype=np.float64
+                ).sum()
+                / weights[foreground].sum(dtype=np.float64)
+            )
+            mean_back = float(
+                np.multiply(
+                    centers[background], weights[background], dtype=np.float64
+                ).sum()
+                / weights[background].sum(dtype=np.float64)
+            )
+
+        if mean_back == 0:
+            break
+
+        t_next = (mean_back - mean_fore) / (
+            math.log(mean_back + eps) - math.log(mean_fore + eps)
+        )
+
+        if iter_callback is not None:
+            iter_callback(t_next + image_min)
+
+    return t_next + image_min
+
+
 def threshold_li(
     image, *, tolerance=None, initial_guess=None, iter_callback=None
 ):
@@ -1114,6 +1173,10 @@ def threshold_li(
     >>> thresh = threshold_li(image)
     >>> binary = image > thresh
     """  # noqa
+    if image.dtype.kind in "iu" and initial_guess is None and image.size > 0:
+        # integer images: everything is computed from the histogram
+        return _threshold_li_integer(image, tolerance, iter_callback)
+
     # Remove nan:
     image = image[~cp.isnan(image)]
     if image.size == 0:

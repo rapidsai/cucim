@@ -1015,3 +1015,51 @@ def test_threshold_minimum_matches_skimage_on_synthetic_histograms(nbins):
                 hist=(cp.asarray(counts), cp.asarray(centers))
             )
             assert float(result) == float(expected)
+
+
+@pytest.mark.parametrize("dtype", [np.uint8, np.uint16, np.int16, np.int8])
+@pytest.mark.parametrize("kind", ["camera", "bimodal", "uniform"])
+def test_threshold_li_integer_images(dtype, kind):
+    from skimage.filters import threshold_li as sk_threshold_li
+
+    rng = np.random.default_rng(0)
+    shape = data.camera().shape
+    if kind == "camera":
+        values = data.camera().astype(np.float64)
+    elif kind == "bimodal":
+        values = np.where(
+            rng.random(shape) < 0.4,
+            rng.normal(60, 10, shape),
+            rng.normal(180, 15, shape),
+        )
+    else:
+        values = rng.integers(0, 256, shape).astype(np.float64)
+    info = np.iinfo(dtype)
+    if np.dtype(dtype).itemsize == 2:
+        values = values * 100
+    if info.min < 0:  # center the values around zero
+        values = values - (values.max() + values.min()) / 2
+    image = np.clip(values, info.min, info.max).astype(dtype)
+    assert image.min() < image.max()
+
+    calls = []
+    result = threshold_li(cp.asarray(image), iter_callback=calls.append)
+    # scikit-image subtracts the minimum in the image dtype, which overflows
+    # for signed types when the range is larger than the maximum of the type
+    # (it returns nan or a wrong value): use a float copy there (with the
+    # tolerance of the integer algorithm)
+    if (
+        np.dtype(dtype).kind == "i"
+        and int(image.max()) - int(image.min()) > info.max
+    ):
+        expected = sk_threshold_li(image.astype(np.float64), tolerance=0.5)
+    else:
+        expected = sk_threshold_li(image)
+    assert_allclose(result, expected, rtol=1e-9)
+    assert len(calls) >= 2
+    assert_allclose(calls[-1], result)
+
+
+def test_threshold_li_integer_constant_image():
+    image = cp.full((10, 12), 5, dtype=cp.uint8)
+    assert threshold_li(image) == 5
