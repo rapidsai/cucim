@@ -350,6 +350,22 @@ def _validate_image_histogram(image, hist, nbins=None, normalize=False):
     return counts.astype(cp.float32, copy=False), bin_centers
 
 
+def _first_pixel_if_constant(image, counts):
+    """Return the first pixel if the histogram shows a constant image.
+
+    This avoids a pass over the image to compare it with its first pixel. The
+    range of the histogram is the one of the image, so the first and the last
+    bin are not empty unless the image has a single value: for an integer image
+    the histogram then has a single bin, and for a floating point image a
+    single non-empty bin.
+    """
+    if counts.size == 1 or (
+        image.dtype.kind == "f" and int(cp.count_nonzero(counts)) == 1
+    ):
+        return image.ravel()[0]
+    return None
+
+
 _DTYPE_TO_CTYPE = {
     "?": "bool",
     "b": "signed char",
@@ -831,14 +847,21 @@ def threshold_otsu(image=None, nbins=256, *, hist=None):
             f"that of an RGB image."
         )
 
-    # Check if the image has more than one intensity value; if not, return that
-    # value
-    if image is not None:
+    if image is not None and hist is not None:
+        # (the histogram is not the one of the image)
         first_pixel = image.ravel()[0]
         if cp.all(image == first_pixel):  # device synchronization!
             return first_pixel
 
     counts, bin_centers = _validate_image_histogram(image, hist, nbins)
+
+    # Check if the image has more than one intensity value; if not, return that
+    # value
+    if image is not None and hist is None:
+        first_pixel = _first_pixel_if_constant(image, counts)
+        if first_pixel is not None:
+            return first_pixel
+
     return _threshold_otsu_gpu(counts, bin_centers)
 
 
@@ -1516,13 +1539,11 @@ def threshold_triangle(image, nbins=256):
     # nbins is ignored for integer arrays
     # so, we recalculate the effective nbins.
     hist, bin_centers = histogram(image.ravel(), nbins, source_range="image")
-    if hist.size == 1:
-        # integer-valued image with constant intensity will have just 1 bin
-        return image.ravel()[0]
-    if image.dtype.kind == "f":
-        first_pixel = image.ravel()[0]
-        if cp.all(image == first_pixel):  # device synchronization!
-            return first_pixel
+    # constant intensity: a single bin (integer-valued image) or a single
+    # non-empty bin (floating point image)
+    first_pixel = _first_pixel_if_constant(image, hist)
+    if first_pixel is not None:
+        return first_pixel
 
     return _threshold_triangle_gpu(hist, bin_centers)
 

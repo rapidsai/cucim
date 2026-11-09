@@ -954,3 +954,18 @@ def test_multiotsu_many_bins():
     assert thresholds.shape == (2,)
     assert thresholds[0] < thresholds[1]
     assert thresholds.dtype == image.dtype or thresholds.dtype.kind in "iuf"
+
+
+@pytest.mark.parametrize("dtype", [np.uint8, np.uint16, np.float32, np.float64])
+@pytest.mark.parametrize("name", ["otsu", "triangle"])
+def test_constant_image_returns_the_pixel_value(name, dtype):
+    from cucim.skimage import filters
+
+    image = cp.full((20, 30), 7, dtype=dtype)
+    result = getattr(filters, f"threshold_{name}")(image)
+    assert result == 7
+    assert result.dtype == dtype
+
+    # almost constant: one pixel is different
+    image[3, 4] = 9
+    assert 7 <= getattr(filters, f"threshold_{name}")(image) <= 9
