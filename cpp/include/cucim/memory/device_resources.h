@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,47 +10,34 @@
 #include "cucim/io/device.h"
 
 #include <cuda/memory_resource>
-#include <cuda/stream_ref>
+#include <cuda/stream>
 
 #include <cstddef>
+#include <memory>
 
 /**
  * Device memory allocation through a caller-supplied CCCL memory resource.
- *
- * Note on packaging: this header exposes `cuda::mr` types, so anything
- * including it needs CCCL headers on its include path. The build links CCCL
- * through `$<BUILD_INTERFACE:deps::cccl>`; exporting it for installed consumers
- * (either by installing the headers or by depending on `cuda-cccl`) is still
- * outstanding.
  */
 namespace cucim::memory
 {
 
-/**
- * @brief The set of CCCL properties cuCIM requires of a device memory resource.
- *
- * Device-accessible only. cuCIM hands the resulting pointers to CUDA kernels,
- * nvImageCodec and `__cuda_array_interface__` consumers, none of which can use
- * host-only memory.
- */
-using device_accessible = ::cuda::mr::device_accessible;
+using ::cuda::mr::device_accessible;
 
 /**
  * @brief Alignment cuCIM requests for device allocations.
  *
- * `cudaMalloc` already guarantees at least this much, so the default resource
- * ignores the value; it is stated explicitly because a pool resource supplied
- * by the caller will honour it, and image rows are addressed on 256-byte
- * boundaries downstream.
+ * Image rows are addressed on 256-byte boundaries downstream.
  */
 inline constexpr std::size_t kDefaultAlignment = 256;
+
+/// Default stream, spelled out rather than left as a value-initialized handle.
+inline constexpr cudaStream_t kDefaultStream = cudaStream_t{ cudaStreamDefault };
 
 /**
  * @brief Stream-ordered, device-accessible resource reference.
  *
  * This is the type that should appear in cuCIM APIs that allocate device
- * memory. It binds to resources from either CCCL or RMM, so callers already
- * holding an `rmm::device_async_resource_ref` can pass it straight through.
+ * memory. It binds to resources from either CCCL or RMM.
  */
 using device_resource_ref = ::cuda::mr::resource_ref<device_accessible>;
 
@@ -65,20 +52,50 @@ using device_resource_ref = ::cuda::mr::resource_ref<device_accessible>;
 using any_device_resource = ::cuda::mr::any_resource<device_accessible>;
 
 /**
+ * @brief The current device's default CCCL memory pool.
+ *
+ * Stream-ordered, so an allocation does not synchronize the whole device the
+ * way `cudaMalloc` does. This is cuCIM's default.
+ *
+ * Stateless: the pool is owned by CCCL and shared process-wide, so every
+ * instance refers to the same pool and copies are interchangeable. The pool is
+ * resolved on first use rather than at construction, which keeps a
+ * default-constructed DeviceResources usable on a host with no device as long
+ * as nothing allocates through it.
+ */
+class EXPORT_VISIBLE DeviceMemoryPoolResource
+{
+public:
+    void* allocate_sync(std::size_t bytes, std::size_t alignment);
+    void deallocate_sync(void* ptr, std::size_t bytes, std::size_t alignment);
+
+    void* allocate(::cuda::stream_ref stream, std::size_t bytes, std::size_t alignment);
+    void deallocate(::cuda::stream_ref stream, void* ptr, std::size_t bytes, std::size_t alignment);
+
+    bool operator==(const DeviceMemoryPoolResource&) const noexcept
+    {
+        return true;
+    }
+    bool operator!=(const DeviceMemoryPoolResource&) const noexcept
+    {
+        return false;
+    }
+
+    friend void get_property(const DeviceMemoryPoolResource&, device_accessible) noexcept
+    {
+    }
+};
+
+/**
  * @brief A resource that allocates with `cudaMalloc` and frees with `cudaFree`.
  *
- * This is what cuCIM did before memory resources existed, expressed as a
- * resource so that the default path stays byte-for-byte what it was and only
- * callers who supply their own resource see different behaviour.
+ * What cuCIM did before memory resources existed, kept as an explicit opt-in
+ * for callers that need allocation to be device-synchronizing. Stateless, so
+ * it compares equal to every other instance.
  *
- * Stateless, so it can be stored by value and compares equal to every other
- * instance. Being stateless is also why it needs no global: there is nothing
- * to share.
- *
- * The stream-ordered overloads ignore the stream, since `cudaMalloc` and
- * `cudaFree` synchronize the whole device rather than a single stream. That
- * makes them correct but not stream-ordered, which is the reason a caller
- * wanting real asynchrony should pass a pool resource instead.
+ * The stream-ordered overloads ignore the stream: `cudaMalloc` and `cudaFree`
+ * synchronize the whole device, which makes them trivially ordered against any
+ * stream but not stream-ordered.
  */
 class EXPORT_VISIBLE CudaMemoryResource
 {
@@ -106,61 +123,71 @@ public:
 /**
  * @brief Where device memory comes from, and the stream that orders it.
  *
- * Deliberately not a singleton and never consulted from global scope. RAPIDS
- * guidance is to avoid a process-wide "current" resource, because it makes the
- * owner of a buffer impossible to determine locally and is being removed from
- * RMM; instead an instance of this is passed to whatever needs to allocate, and
- * carried by objects that own device memory so they can free it through the
- * same resource later.
+ * Deliberately not a singleton and never consulted from global scope: an
+ * instance is passed to whatever needs to allocate, and carried by objects
+ * that own device memory so they can free it through the same resource later.
  *
- * The resource is held by value in an owning `any_device_resource` rather than
- * as a bare `device_resource_ref`. A reference would be the cheaper choice but
- * would let a handle outlive what it points at, which is easy to do here since
- * handles get copied into images that may outlive the call that created them.
+ * Copying a handle does **not** copy the resource. An owning handle keeps its
+ * resource in a shared owner, so every copy allocates from and frees through
+ * the one resource instance; a stateful allocator is therefore never
+ * duplicated behind the caller's back. A handle built from a
+ * `device_resource_ref` borrows instead, and the caller is responsible for
+ * keeping that resource alive for as long as any copy of the handle, or any
+ * buffer obtained through it, is still in use.
  *
- * Because it owns, constructing a handle *copies* the resource, and so does
- * copying a handle. For the usual case that is what you want: callers wrap a
- * reference to their allocator, such as an `rmm::device_async_resource_ref`,
- * and copying a reference still points at the one underlying pool. Wrapping a
- * stateful allocator *by value* instead would duplicate it, and the copy the
- * handle owns is then the one that serves every request.
- *
- * Default construction yields the pre-existing behaviour: `cudaMalloc` and
- * `cudaFree` on the default stream.
+ * The stream is per-handle rather than shared, so copies can be moved between
+ * streams independently. The handle's stream is what orders deallocation; the
+ * stream-taking methods below rebind it so that a free is always ordered after
+ * the last operation the handle was used for.
  */
 class EXPORT_VISIBLE DeviceResources
 {
 public:
-    /// Raw `cudaMalloc`/`cudaFree` on the default stream.
+    /// The current device's default memory pool, on the default stream.
     DeviceResources();
 
-    /// Allocate from *resource*, ordering allocations on *stream*.
+    /// Own *resource*, sharing it with every copy of this handle.
     explicit DeviceResources(any_device_resource resource,
-                             ::cuda::stream_ref stream = ::cuda::stream_ref{ cudaStream_t{} });
+                             ::cuda::stream_ref stream = ::cuda::stream_ref{ kDefaultStream });
+
+    /// Borrow *resource*; the caller keeps it alive. See the class note.
+    explicit DeviceResources(device_resource_ref resource,
+                             ::cuda::stream_ref stream = ::cuda::stream_ref{ kDefaultStream });
 
     /**
-     * @brief Allocate *bytes* of device memory.
+     * @brief Allocate *bytes* of device memory on this handle's stream.
      *
-     * @return pointer to device memory, or nullptr when *bytes* is 0.
      * @throws std::bad_alloc if the resource cannot satisfy the request.
      */
-    void* allocate(std::size_t bytes);
+    void* allocate(std::size_t bytes, std::size_t alignment = kDefaultAlignment);
+
+    /**
+     * @brief Allocate *bytes* of device memory ordered on *stream*.
+     *
+     * Rebinds this handle to *stream*, so a later deallocate() through the
+     * same handle is ordered after this allocation.
+     */
+    void* allocate(::cuda::stream_ref stream, std::size_t bytes, std::size_t alignment = kDefaultAlignment);
 
     /**
      * @brief Return memory obtained from allocate().
      *
-     * *bytes* must be the size originally requested; pool resources need it to
-     * return the block to the right free list, unlike `cudaFree`.
+     * *bytes* and *alignment* must match the original request; pool resources
+     * need them to return the block to the right free list.
      */
-    void deallocate(void* ptr, std::size_t bytes) noexcept;
+    void deallocate(void* ptr, std::size_t bytes, std::size_t alignment = kDefaultAlignment) noexcept;
 
-    /**
-     * @brief Borrowed reference, for handing to APIs that take a resource.
-     *
-     * Non-const because a `resource_ref` allocates through the resource it
-     * refers to, so CCCL will only build one from a non-const resource.
-     */
-    device_resource_ref resource() noexcept;
+    /// deallocate() ordered on *stream*, which this handle then adopts.
+    void deallocate(::cuda::stream_ref stream,
+                    void* ptr,
+                    std::size_t bytes,
+                    std::size_t alignment = kDefaultAlignment) noexcept;
+
+    /// Borrowed reference, for handing to APIs that take a resource.
+    device_resource_ref resource() const noexcept
+    {
+        return resource_;
+    }
 
     ::cuda::stream_ref stream() const noexcept
     {
@@ -168,7 +195,9 @@ public:
     }
 
 private:
-    any_device_resource resource_;
+    /// Null when borrowing; otherwise the resource `resource_` refers to.
+    std::shared_ptr<any_device_resource> owned_;
+    device_resource_ref resource_;
     ::cuda::stream_ref stream_;
 };
 
@@ -179,6 +208,10 @@ private:
  * memory written to *target* comes from *resources*. The caller therefore has
  * to free it through the same resource, so it must keep *resources* alive at
  * least as long as the buffer.
+ *
+ * The transfer is issued on `resources.stream()` and synchronized before
+ * returning, so the call is complete when it returns even if the resource
+ * allocates asynchronously.
  *
  * Declared here rather than beside the original in memory_manager.h because
  * that header is included throughout the plugins, which would then all need

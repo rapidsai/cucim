@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -10,6 +10,16 @@
 include(CMakeFindDependencyMacro)
 #find_dependency(Boost x.x.x REQUIRED)
 find_dependency(CUDAToolkit)
+
+# <cucim/memory/device_resources.h> is a public header and exposes cuda::mr
+# types, so consumers need CCCL's headers.
+#
+# libcudacxx is the only component cuCIM uses. Asking for it alone does not
+# make CCCL's other components optional - libcudacxx's own config file refers
+# to Thrust::Thrust and CUB::CUB, and they ship together in any case - but it
+# does skip configuring a default CCCL::Thrust target, which cuCIM has no use
+# for.
+find_dependency(CCCL COMPONENTS libcudacxx)
 
 if(NOT TARGET cucim::cucim)
     include(${CMAKE_CURRENT_LIST_DIR}/cucim-targets.cmake)

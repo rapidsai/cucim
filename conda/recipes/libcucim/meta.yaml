@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 {% set version = environ['RAPIDS_PACKAGE_VERSION'].lstrip('v') %}
@@ -56,6 +56,7 @@ requirements:
     - yasm # [x86_64]
   host:
     - cuda-version ={{ cuda_version }}
+    - cuda-cccl
     - cuda-cudart-dev
     - libcufile-dev
     - libnvjpeg-dev
@@ -68,6 +69,9 @@ requirements:
     {% else %}
     - {{ pin_compatible('cuda-version', max_pin='x', min_pin='x') }}
     {% endif %}
+    # The installed cucim/memory/device_resources.h includes <cuda/memory_resource>,
+    # so anything compiling against libcucim needs CCCL's headers present.
+    - cuda-cccl
     - libcufile
     - libnvjpeg
     - libnvimgcodec {{ nvimgcodec_version }}   # nvImageCodec metapackage (includes libnvimgcodec0 + run_exports)

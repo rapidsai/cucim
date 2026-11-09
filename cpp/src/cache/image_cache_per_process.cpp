@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,9 @@
 #include "cucim/util/cuda.h"
 
 #include <fmt/format.h>
+
+#include <exception>
+#include <utility>
 
 namespace std
 {
@@ -77,9 +80,12 @@ PerProcessImageCacheValue::~PerProcessImageCacheValue()
     }
 };
 
-PerProcessImageCache::PerProcessImageCache(const ImageCacheConfig& config, const cucim::io::DeviceType device_type)
+PerProcessImageCache::PerProcessImageCache(const ImageCacheConfig& config,
+                                           const cucim::io::DeviceType device_type,
+                                           cucim::memory::DeviceResources device_resources)
     : ImageCache(config, CacheType::kPerProcess, device_type),
       mutex_array_(config.mutex_pool_capacity),
+      device_resources_(std::move(device_resources)),
       capacity_nbytes_(kOneMiB * config.memory_capacity),
       capacity_(config.capacity),
       list_capacity_(config.capacity + config.list_padding),
@@ -106,15 +112,10 @@ std::shared_ptr<ImageCacheValue> PerProcessImageCache::create_value(void* data,
                                                                     uint64_t size,
                                                                     const cucim::io::DeviceType device_type)
 {
-    // The value keeps the resource so it can free through it later, which is
-    // the only way the pairing stays correct if set_device_resources() swaps
-    // the resource while this entry is still cached.
+    // The value carries the resource so it can free through it later, even if
+    // the cache itself is gone by then. The cache's resource cannot change, so
+    // this is necessarily the one that allocated *data*.
     return std::make_shared<PerProcessImageCacheValue>(data, size, nullptr, device_type, device_resources_);
-}
-
-void PerProcessImageCache::set_device_resources(cucim::memory::DeviceResources device_resources)
-{
-    device_resources_ = std::move(device_resources);
 }
 
 void* PerProcessImageCache::allocate(std::size_t n)
@@ -127,11 +128,15 @@ void* PerProcessImageCache::allocate(std::size_t n)
         // The resource throws on failure, whereas this returns nullptr to
         // signal "no room in the cache" to callers that then decode without
         // caching. Keep that contract rather than propagating.
+        //
+        // Not just std::bad_alloc: a CCCL pool reports failure as
+        // cuda::cuda_error, which derives from std::runtime_error, and a
+        // caller-supplied resource may use something else again.
         try
         {
             return device_resources_.allocate(n);
         }
-        catch (const std::bad_alloc&)
+        catch (const std::exception&)
         {
             return nullptr;
         }
