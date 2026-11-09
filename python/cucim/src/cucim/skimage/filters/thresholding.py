@@ -6,7 +6,6 @@
 # SPDX-License-Identifier: Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause
 
 import inspect
-import itertools
 import math
 from collections import OrderedDict
 from collections.abc import Iterable
@@ -24,11 +23,9 @@ import cucim.skimage._vendored.ndimage as ndi
 from .._shared.filters import gaussian
 from .._shared.utils import _supported_float_type, warn
 from .._shared.version_requirements import require
-from .._vendored import pad
 from ..exposure import histogram
-from ..transform import integral_image
 from ..util import dtype_limits
-from ._sparse import _correlate_sparse, _validate_window_size
+from ._sparse import _validate_window_size
 
 __all__ = [
     "try_all_threshold",
@@ -1747,8 +1744,9 @@ def threshold_triangle(image, nbins=256):
 def _mean_std(image, w):
     """Return local mean and standard deviation of each pixel using a
     neighborhood defined by a rectangular window size ``w``.
-    The algorithm uses integral images to speedup computation. This is
-    used by :func:`threshold_niblack` and :func:`threshold_sauvola`.
+    The mean and the mean of the squares are computed with box filters in
+    float64. This is used by :func:`threshold_niblack` and
+    :func:`threshold_sauvola`.
 
     Parameters
     ----------
@@ -1779,39 +1777,46 @@ def _mean_std(image, w):
     _validate_window_size(w)
 
     float_dtype = _supported_float_type(image.dtype)
-    pad_width = tuple((k // 2 + 1, k // 2) for k in w)
-    padded = pad(
-        image.astype(float_dtype, copy=False), pad_width, mode="reflect"
-    )
+    # Box sums of the image and of its square in float64, divided by the number
+    # of elements of the window once at the end. The sums of integer-valued
+    # images are exact, and the variance (a difference of two nearly equal
+    # values) is computed in float64 before it is cast. The mode "mirror" is the
+    # "reflect" mode of numpy.pad (the edge value is not repeated).
+    values = image.astype(cp.float64)
+    sums = _box_sum(values, w)
+    values *= values
+    sums_sq = _box_sum(values, w)
+    del values
+    mean = cp.empty(sums.shape, dtype=float_dtype)
+    std = cp.empty(sums.shape, dtype=float_dtype)
+    # Note: g2 is not guaranteed to be greater than m*m when floating point
+    # error is considered, so the variance is clipped at 0
+    _mean_std_kernel(sums, sums_sq, float(math.prod(w)), mean, std)
+    return mean, std
 
-    # Note: keep float64 integral images for accuracy. Outputs of
-    # _correlate_sparse can later be safely cast to float_dtype
-    integral = integral_image(padded, dtype=np.float64)
-    padded *= padded
-    integral_sq = integral_image(padded, dtype=np.float64)
 
-    # Create lists of non-zero kernel indices and values
-    kernel_indices = list(itertools.product(*tuple([(0, _w) for _w in w])))
-    kernel_values = [
-        (-1) ** (image.ndim % 2 != np.sum(indices) % 2)
-        for indices in kernel_indices
-    ]
+def _box_sum(values, w):
+    """Sums over the windows of sizes ``w`` (separable, mode "mirror")."""
+    for axis, size in enumerate(w):
+        if size > 1:
+            values = ndi.correlate1d(
+                values, cp.ones(size), axis=axis, mode="mirror"
+            )
+    return values
 
-    total_window_size = math.prod(w)
-    kernel_shape = tuple(_w + 1 for _w in w)
-    m = _correlate_sparse(integral, kernel_shape, kernel_indices, kernel_values)
-    m = m.astype(float_dtype, copy=False)
-    m /= total_window_size
-    g2 = _correlate_sparse(
-        integral_sq, kernel_shape, kernel_indices, kernel_values
-    )
-    g2 = g2.astype(float_dtype, copy=False)
-    g2 /= total_window_size
-    # Note: we use np.clip because g2 is not guaranteed to be greater than
-    # m*m when floating point error is considered
-    s = cp.clip(g2 - m * m, 0, None)
-    cp.sqrt(s, out=s)
-    return m, s
+
+_mean_std_kernel = cp.ElementwiseKernel(
+    "float64 sum, float64 sum_sq, float64 window_size",
+    "F mean, F std",
+    """
+    const double m = sum / window_size;
+    const double g2 = sum_sq / window_size;
+    mean = static_cast<F>(m);
+    const double variance = g2 - m * m;
+    std = static_cast<F>(variance > 0.0 ? sqrt(variance) : 0.0);
+    """,
+    "cucim_mean_std",
+)
 
 
 def threshold_niblack(image, window_size=15, k=0.2):

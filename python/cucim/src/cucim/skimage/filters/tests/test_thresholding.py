@@ -1063,3 +1063,28 @@ def test_threshold_li_integer_images(dtype, kind):
 def test_threshold_li_integer_constant_image():
     image = cp.full((10, 12), 5, dtype=cp.uint8)
     assert threshold_li(image) == 5
+
+
+@pytest.mark.parametrize("window_size", [3, 15, (5, 11)])
+def test_niblack_sauvola_local_statistics(window_size):
+    # The local mean and standard deviation are computed in float64 before they
+    # are cast: scikit-image casts the mean to float32 first, which loses the
+    # standard deviation of images with a large offset. Reference: box filters
+    # of the image shifted by the offset, in float64 on the host.
+    import scipy.ndimage as scipy_ndi
+
+    from cucim.skimage.filters.thresholding import _mean_std
+
+    image = (data.camera().astype(np.float32) / 255 + 1000).astype(np.float32)
+    shifted = image.astype(np.float64) - 1000.0
+    mean0 = scipy_ndi.uniform_filter(shifted, window_size, mode="mirror")
+    mean_sq0 = scipy_ndi.uniform_filter(
+        shifted * shifted, window_size, mode="mirror"
+    )
+    expected_std = np.sqrt(np.maximum(mean_sq0 - mean0 * mean0, 0))
+
+    m, s = _mean_std(cp.asarray(image), window_size)
+    assert m.dtype == s.dtype == np.float32
+    assert_allclose(m, mean0 + 1000.0, rtol=1e-6)
+    # (the variance is a difference of values of about 1e6, in float64)
+    assert_allclose(s, expected_std, rtol=1e-4, atol=1e-4 * expected_std.max())
