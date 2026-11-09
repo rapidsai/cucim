@@ -973,7 +973,11 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         }
 
         throw std::runtime_error(fmt::format(
-            "Failed to decode IFD[{}] with nvImageCodec. ROI: ({},{}) {}x{}",
+            "Failed to decode IFD[{}] with nvImageCodec. ROI: ({},{}) {}x{}. "
+            "If the image is JPEG 2000 compressed (Aperio 33003/33005 or TIFF compression 34712), "
+            "or nvImageCodec printed 'Failed to load nvtiff library!' or 'Failed to load nvjpeg2k "
+            "library!', the nvTIFF and nvJPEG2000 libraries are missing (pip: install "
+            "nvidia-nvimgcodec-cu12/-cu13 with the extras nvjpeg2k and nvtiff; conda: libnvimgcodec).",
             ifd_index_, sx, sy, w, h));
     }
 #else
