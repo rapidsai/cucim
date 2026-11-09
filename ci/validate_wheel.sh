@@ -13,6 +13,17 @@ pydistcheck \
     --inspect \
     "$(echo "${wheel_dir_relative_path}"/*.whl)"
 
+rapids-logger "check that the wheel contains a single copy of libcucim"
+
+# 'auditwheel repair' vendors an extra, renamed copy of libcucim (in the
+# '*.libs' directory) when the plugins do not find 'libcucim.so.*' next to
+# them. The Python extension and the plugins would then use different copies,
+# each with its own cache and statistics.
+if unzip -Z1 "$(echo "${wheel_dir_relative_path}"/*.whl)" | grep -E '\.libs/libcucim-'; then
+    echo "ERROR: the wheel vendors a second copy of libcucim (listed above)" >&2
+    exit 1
+fi
+
 rapids-logger "validate packages with 'twine'"
 
 # shellcheck disable=SC2116

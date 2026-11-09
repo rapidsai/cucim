@@ -144,6 +144,12 @@ set_target_properties(${CUCIM_PLUGIN_NAME}
         VERSION ${PROJECT_VERSION}
 )
 target_compile_features(${CUCIM_PLUGIN_NAME} PRIVATE cxx_std_17)
+# Give the plugin the install RPATH ($ORIGIN) in the build tree too. The Python
+# wheel is assembled from the build tree (see `build_local` in `run`), and with
+# the absolute build RPATH, auditwheel resolves libcucim.so.* to the build
+# directory and vendors a second, renamed copy of libcucim next to the plugins.
+# With $ORIGIN it finds the libcucim.so.* that is already in the wheel.
+set_target_properties(${CUCIM_PLUGIN_NAME} PROPERTIES BUILD_WITH_INSTALL_RPATH ON)
 # Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
 target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 
