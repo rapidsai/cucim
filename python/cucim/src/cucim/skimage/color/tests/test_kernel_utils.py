@@ -231,3 +231,61 @@ def test_integer_and_float16_input_is_converted_in_the_kernel(
     result = func(img)
     assert result.dtype == expected.dtype
     cp.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "illuminant, observer", [("D65", "2"), ("D50", "10"), ("A", "R")]
+)
+@pytest.mark.parametrize("dtype", [cp.uint8, cp.float32, cp.float64])
+def test_fused_rgb2lab_matches_the_two_step_conversion(
+    illuminant, observer, dtype
+):
+    img = _rgb_image(dtype)
+    expected = color.xyz2lab(color.rgb2xyz(img), illuminant, observer)
+    result = color.rgb2lab(img, illuminant, observer)
+    assert result.dtype == expected.dtype
+    cp.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize("illuminant, observer", [("D65", "2"), ("D50", "10")])
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+def test_fused_lab2rgb_matches_the_two_step_conversion(
+    illuminant, observer, dtype
+):
+    rng = np.random.default_rng(10)
+    lab = cp.asarray(
+        np.stack(
+            [
+                rng.random((40, 50)) * 100,
+                rng.normal(size=(40, 50)) * 40,
+                rng.normal(size=(40, 50)) * 40,
+            ],
+            axis=-1,
+        ).astype(dtype)
+    )
+    with pytest.warns(UserWarning, match="negative Z values"):
+        xyz = color.lab2xyz(lab, illuminant, observer)
+    expected = color.xyz2rgb(xyz)
+    with pytest.warns(UserWarning, match="negative Z values"):
+        result = color.lab2rgb(lab, illuminant, observer)
+    cp.testing.assert_array_equal(result, expected)
+
+
+def test_lab_to_xyz_warning_counts_the_invalid_pixels():
+    # Z < 0 for L = 10, b = 100: 7 + 3 * 5 = 22 pixels; the others are valid
+    lab = cp.zeros((4, 8, 3), dtype=cp.float32)
+    lab[..., 0] = 50
+    invalid = cp.zeros((4, 8), dtype=bool)
+    invalid[0, :7] = True
+    invalid[2, :5] = True
+    invalid[3, 3:8] = True
+    invalid[1, 1] = True
+    lab[invalid, 0] = 10
+    lab[invalid, 2] = 100
+    n = int(invalid.sum())
+    with pytest.warns(UserWarning, match=f"{n} negative Z values") as rec:
+        xyz = color.lab2xyz(lab)
+    assert len(rec) == 1
+    assert xyz.shape == lab.shape
+    with pytest.warns(UserWarning, match=f"{n} negative Z values"):
+        color.lab2rgb(lab)

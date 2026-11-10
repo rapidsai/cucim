@@ -858,16 +858,18 @@ hpx_from_rgb = linalg.inv(rgb_from_hpx)
 
 
 @cp.memoize(for_each_device=True)
-def _get_convert_kernel(matrix_tuple, pre, post, name):
+def _get_convert_kernel(matrix_tuple, pre, post, name, with_counter=False):
     return elementwise_kernel(
         'raw I x, X scale',
-        'raw X y',
+        'raw X y' + (', raw int32 counter' if with_counter else ''),
         _get_core_colorconv_operation(matrix_tuple, pre, post),
         name='cucim_skimage_color_' + name,
         preamble=_LOAD_PREAMBLE)
 
 
-def _convert(matrix, arr, pre='', post='', name='_convert'):
+def _convert(
+    matrix, arr, pre='', post='', name='_convert', count_invalid=False
+):
     """Do the color space conversion.
 
     Parameters
@@ -881,13 +883,24 @@ def _convert(matrix, arr, pre='', post='', name='_convert'):
     -------
     out : (..., C=3) ndarray
         The converted array. Same dimensions as input.
+    n_invalid : int
+        Only if `count_invalid` is set (the ``pre`` or ``post`` code then
+        increments ``counter[0]`` for each invalid pixel, with
+        ``_COUNT_INVALID``): the number of invalid pixels. Reading it
+        synchronizes with the device.
     """
     arr, float_dtype, scale = _prepare_colorarray_scaled(arr)
     name = name + f'_{float_dtype.char}'
-    kern = _get_convert_kernel(tuple(matrix.ravel()), pre, post, name)
+    kern = _get_convert_kernel(
+        tuple(matrix.ravel()), pre, post, name, with_counter=count_invalid
+    )
     out = cp.empty(arr.shape, dtype=float_dtype)
-    kern(arr, scale, out, size=arr.size // 3)
-    return out
+    if not count_invalid:
+        kern(arr, scale, out, size=arr.size // 3)
+        return out
+    counter = cp.zeros(1, dtype=np.int32)
+    kern(arr, scale, out, counter, size=arr.size // 3)
+    return out, int(counter[0])  # synchronize!
 
 
 def _get_core_colorconv_operation(m, pre="", post=""):
@@ -913,6 +926,103 @@ def _get_core_colorconv_operation(m, pre="", post=""):
         y[3*i + 1] = w[1];
         y[3*i + 2] = w[2];
     """  # noqa
+
+
+# Pre- and post-processing code of the conversions through the convert kernel
+# (``v`` is the input pixel, ``w`` the output pixel, both of type X).
+
+# scaling applied to the sRGB input before the 3x3 matrix multiplication
+_RGB2XYZ_PRE = """
+    for (int c=0; c < 3; c++) {
+        if (v[c] > 0.04045) {
+            v[c] = pow((v[c] + (X)0.055) / (X)1.055, (X)2.4);
+        } else {
+            v[c] /= 12.92;
+        }
+    }
+"""
+
+# scaling applied to the result of the 3x3 matrix multiplication to give sRGB
+_XYZ2RGB_POST = """
+    for (int c=0; c < 3; c++) {
+        if (w[c] > 0.0031308) {
+            w[c] = 1.055 * pow(w[c], (X)(1 / 2.4)) - 0.055;
+        } else {
+            w[c] *= 12.92;
+        }
+        w[c] = min(max(w[c], (X)0.0), (X)1.0);
+    }
+"""
+
+# Add the number of threads in the warp that have an invalid pixel with one
+# atomic operation (instead of one per pixel). ``invalid`` is a bool.
+_COUNT_INVALID = """
+    {
+        unsigned int active = __activemask();
+        unsigned int bad = __ballot_sync(active, invalid);
+        if (bad != 0 && (threadIdx.x & 31) == (__ffs(active) - 1)) {
+            atomicAdd(&counter[0], (int)__popc(bad));
+        }
+    }
+"""
+
+
+def _xyz2lab_post(xyz_ref_white):
+    """Code that converts the pixel ``w`` from XYZ to CIE-LAB in place."""
+    return f"""
+        // scale by CIE XYZ tristimulus values of the reference white point
+        X t[3];
+        t[0] = w[0] / {xyz_ref_white[0]};
+        t[1] = w[1] / {xyz_ref_white[1]};
+        t[2] = w[2] / {xyz_ref_white[2]};
+        // Nonlinear distortion and linear transformation
+        for (int ch=0; ch < 3; ch++)
+        {{
+            if (t[ch] > 0.008856)
+            {{
+                t[ch] = cbrt(t[ch]);
+            }} else {{
+                t[ch] = 7.787 * t[ch] + 16.0 / 116.0;
+            }}
+        }}
+        // Vector scaling
+        w[0] = (116. * t[1]) - 16.0;
+        w[1] = 500.0 * (t[0] - t[1]);
+        w[2] = 200.0 * (t[1] - t[2]);
+    """
+
+
+def _lab2xyz_pre(xyz_ref_white):
+    """Code that converts the pixel ``v`` from CIE-LAB to XYZ in place.
+
+    Negative Z values are clipped to zero and counted (``counter``).
+    """
+    return f"""
+        X lab_l = v[0];
+        X lab_a = v[1];
+        X lab_b = v[2];
+        v[1] = (lab_l + 16.) / 116.;
+        v[0] = (lab_a / 500.0) + v[1];
+        v[2] = v[1] - (lab_b / 200.0);
+        bool invalid = v[2] < 0.0;
+        if (invalid)
+        {{
+            v[2] = 0.0;
+        }}
+        {_COUNT_INVALID}
+        for (int ch=0; ch < 3; ch++)
+        {{
+            if (v[ch] > 0.2068966)
+            {{
+                v[ch] *= v[ch] * v[ch];
+            }} else {{
+                v[ch] = (v[ch] - 16.0 / 116.0) / 7.787;
+            }}
+        }}
+        v[0] *= {xyz_ref_white[0]};
+        v[1] *= {xyz_ref_white[1]};
+        v[2] *= {xyz_ref_white[2]};
+    """
 
 
 @channel_as_last_axis()
@@ -960,19 +1070,7 @@ def xyz2rgb(xyz, *, channel_axis=-1):
     arr = _prepare_colorarray(xyz, force_c_contiguous=True,
                               channel_axis=channel_axis)
 
-    # scaling applied after the 3x3 conversion matrix multiplication
-    # (c indexes over color channels here)
-    _post_colorconv = """
-        for (int c=0; c < 3; c++) {
-            if (w[c] > 0.0031308) {
-                w[c] = 1.055 * pow(w[c], (X)(1 / 2.4)) - 0.055;
-            } else {
-                w[c] *= 12.92;
-            }
-            w[c] = min(max(w[c], (X)0.0), (X)1.0);
-        }
-    """
-    return _convert(rgb_from_xyz, arr, post=_post_colorconv, name='xyz2rgb')
+    return _convert(rgb_from_xyz, arr, post=_XYZ2RGB_POST, name='xyz2rgb')
 
 
 @channel_as_last_axis()
@@ -1016,18 +1114,7 @@ def rgb2xyz(rgb, *, channel_axis=-1):
     """
     # Follow the algorithm from http://www.easyrgb.com/index.php
     # except we don't multiply/divide by 100 in the conversion
-    # scaling applied to the input before 3x3 conversion matrix multiplication
-    # (c indexes over color channels here)
-    _pre_colorconv = """
-        for (int c=0; c < 3; c++) {
-            if (v[c] > 0.04045) {
-                v[c] = pow((v[c] + (X)0.055) / (X)1.055, (X)2.4);
-            } else {
-                v[c] /= 12.92;
-            }
-        }
-    """
-    return _convert(xyz_from_rgb, rgb, pre=_pre_colorconv, name='rgb2xyz')
+    return _convert(xyz_from_rgb, rgb, pre=_RGB2XYZ_PRE, name='rgb2xyz')
 
 
 @channel_as_last_axis()
@@ -1356,41 +1443,17 @@ def xyz2lab(xyz, illuminant="D65", observer="2", *, channel_axis=-1):
 
 @cp.memoize(for_each_device=True)
 def _get_lab_to_xyz_kernel(xyz_ref_white, name='lab2xyz'):
-    _lab_to_xyz = f"""
-
-        xyz[3*i + 1] = (lab[3*i] + 16.) / 116.;
-        xyz[3*i] = (lab[3*i + 1] / 500.0) + xyz[3*i + 1];
-        xyz[3*i + 2] = xyz[3*i + 1] - (lab[3*i + 2] /200.0);
-        if (xyz[3*i + 2] < 0.0)
-        {{
-            xyz[3*i + 2] = 0.0;
-            warn[i] = 1;
-        }}
-
-        for (int ch=0; ch < 3; ch++)
-        {{
-            if (xyz[3*i + ch] > 0.2068966)
-            {{
-                xyz[3*i + ch] *= xyz[3*i + ch] * xyz[3*i + ch];
-            }} else {{
-                xyz[3*i + ch] = (xyz[3*i + ch] - 16.0 / 116.0) / 7.787;
-            }}
-        }}
-
-        xyz[3*i] *= {xyz_ref_white[0]};
-        xyz[3*i + 1] *= {xyz_ref_white[1]};
-        xyz[3*i + 2] *= {xyz_ref_white[2]};
-
-        // xyz[3*i] = min(max(xyz[3*i], 0.0), 1.0);
-        // xyz[3*i + 1] = min(max(xyz[3*i + 1], 0.0), 1.0);
-        // xyz[3*i + 2] = min(max(xyz[3*i + 2], 0.0), 1.0);
+    code = f"""
+        X v[3] = {{lab[3*i], lab[3*i + 1], lab[3*i + 2]}};
+        {_lab2xyz_pre(xyz_ref_white)}
+        xyz[3*i] = v[0];
+        xyz[3*i + 1] = v[1];
+        xyz[3*i + 2] = v[2];
     """
-
-    # array will be modified in-place
     return elementwise_kernel(
-        '',
-        'raw X lab, raw X xyz, raw int32 warn',
-        _lab_to_xyz,
+        'raw X lab',
+        'raw X xyz, raw int32 counter',
+        code,
         name='cucim_skimage_color_' + name)
 
 
@@ -1479,12 +1542,9 @@ def _lab2xyz(lab, illuminant, observer, channel_axis):
     name = f'lab2xyz_{lab.dtype.char}'
     kern = _get_lab_to_xyz_kernel(xyz_ref_white, name=name)
     xyz = cp.empty_like(lab)
-
-    # TODO: better to use array for warn or a single element with atomic
-    #       operations?
-    warnings = cp.zeros(lab.shape[:-1], dtype=np.int32)
-    kern(lab, xyz, warnings, size=lab.size // 3)
-    n_invalid = int(cp.count_nonzero(warnings))  # synchronize!
+    counter = cp.zeros(1, dtype=np.int32)
+    kern(lab, xyz, counter, size=lab.size // 3)
+    n_invalid = int(counter[0])  # synchronize!
     return xyz, n_invalid
 
 
@@ -1531,7 +1591,16 @@ def rgb2lab(rgb, illuminant="D65", observer="2", *, channel_axis=-1):
     ----------
     .. [1] https://en.wikipedia.org/wiki/Standard_illuminant
     """
-    return xyz2lab(rgb2xyz(rgb), illuminant, observer)
+    xyz_ref_white = xyz_tristimulus_values(
+        illuminant=illuminant, observer=observer
+    )
+    return _convert(
+        xyz_from_rgb,
+        rgb,
+        pre=_RGB2XYZ_PRE,
+        post=_xyz2lab_post(xyz_ref_white),
+        name='rgb2lab',
+    )
 
 
 @channel_as_last_axis()
@@ -1580,14 +1649,24 @@ def lab2rgb(lab, illuminant="D65", observer="2", *, channel_axis=-1):
     .. [1] https://en.wikipedia.org/wiki/Standard_illuminant
     .. [2] https://en.wikipedia.org/wiki/CIELAB_color_space
     """
-    xyz, n_invalid = _lab2xyz(lab, illuminant, observer, channel_axis)
+    xyz_ref_white = xyz_tristimulus_values(
+        illuminant=illuminant, observer=observer
+    )
+    rgb, n_invalid = _convert(
+        rgb_from_xyz,
+        lab,
+        pre=_lab2xyz_pre(xyz_ref_white),
+        post=_XYZ2RGB_POST,
+        name='lab2rgb',
+        count_invalid=True,
+    )
     if n_invalid != 0:
         warn(
             "Conversion from CIE-LAB, via XYZ to sRGB color space resulted in "
             f"{n_invalid} negative Z values that have been clipped to zero",
             stacklevel=3,
         )
-    return xyz2rgb(xyz, channel_axis=channel_axis)
+    return rgb
 
 
 @cp.memoize(for_each_device=True)
