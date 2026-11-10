@@ -5,7 +5,7 @@ import cupy as cp
 import numpy as np
 import pytest
 
-from cucim.skimage import color
+from cucim.skimage import color, img_as_float64
 from cucim.skimage.color._kernel_utils import (
     elementwise_kernel,
     typed_float_literals,
@@ -289,3 +289,19 @@ def test_lab_to_xyz_warning_counts_the_invalid_pixels():
     assert xyz.shape == lab.shape
     with pytest.warns(UserWarning, match=f"{n} negative Z values"):
         color.lab2rgb(lab)
+
+
+@pytest.mark.parametrize("dtype", [cp.uint8, cp.float32, cp.float64])
+def test_separate_stains_is_not_negative_and_matches_reference(dtype):
+    # the clipping of negative stain values is done in the kernel
+    img = _rgb_image(dtype)
+    stains = color.separate_stains(img, color.hed_from_rgb)
+    assert float(stains.min()) >= 0
+    rgb = img_as_float64(img)
+    rgb = cp.maximum(rgb, 1e-6)
+    log_adjust = np.log(1e-6)
+    expected = cp.maximum(
+        (cp.log(rgb) / log_adjust) @ cp.asarray(color.hed_from_rgb), 0
+    )
+    tol = 1e-5 if dtype == cp.float32 or dtype == cp.uint8 else 1e-12
+    cp.testing.assert_allclose(stains, expected, rtol=0, atol=tol)

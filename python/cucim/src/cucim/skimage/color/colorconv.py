@@ -2033,9 +2033,15 @@ def _separate_stains_kernel(m):
     {{
         tmp[ch] = log(max(mul_rn((X)(rgb[3*i + ch]), scale), 1e-6)) * {log_adjust};
     }}
-    stains[3*i] = tmp[0] * {m[0]} + tmp[1] * {m[3]} + tmp[2] * {m[6]};
-    stains[3*i + 1] = tmp[0] * {m[1]} + tmp[1] * {m[4]} + tmp[2] * {m[7]};
-    stains[3*i + 2] = tmp[0] * {m[2]} + tmp[1] * {m[5]} + tmp[2] * {m[8]};
+    X out[3];
+    out[0] = tmp[0] * {m[0]} + tmp[1] * {m[3]} + tmp[2] * {m[6]};
+    out[1] = tmp[0] * {m[1]} + tmp[1] * {m[4]} + tmp[2] * {m[7]};
+    out[2] = tmp[0] * {m[2]} + tmp[1] * {m[5]} + tmp[2] * {m[8]};
+    // negative values are set to zero (a NaN is kept, as by maximum)
+    for (int ch=0; ch<3; ch++)
+    {{
+        stains[3*i + ch] = (out[ch] < 0) ? (X)0 : out[ch];
+    }}
     """  # noqa
     return elementwise_kernel(
         'raw I rgb, X scale',
@@ -2124,7 +2130,6 @@ def separate_stains(rgb, conv_matrix, *, channel_axis=-1):
     kern = _separate_stains_kernel(conv_matrix)
     stains = cp.empty(rgb.shape, dtype=float_dtype)
     kern(rgb, scale, stains, size=rgb.size // 3)
-    cp.maximum(stains, 0, out=stains)
     return stains
 
 
