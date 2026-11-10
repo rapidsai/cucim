@@ -114,6 +114,77 @@ def _get_img_sums_code(
     return source_pre, source_start, source_operation, source_flush, reduce
 
 
+def _get_centered_sums_code(num_channels=1):
+    """Code of the second pass of the standard deviation.
+
+    Accumulates, per run of a label, the sum of the deviations from the mean
+    of the region and the sum of their squares (in double precision).
+
+    Output variables written to:
+
+        - dsums : shape (max_label, num_channels)
+        - dsqs : shape (max_label, num_channels)
+    """
+    source_pre = """
+    double dv;"""
+    source_start = ""
+    source_operation = ""
+    source_flush = ""
+    reduce = []
+    image_value = _image_value(num_channels)
+    nc = f"{num_channels}*" if num_channels > 1 else ""
+    for c in range(num_channels):
+        reduce.append((f"d_sum{c}", "sum"))
+        reduce.append((f"d_sq{c}", "sum"))
+        source_pre += f"""
+    double m{c}, d_sum{c}, d_sq{c};"""
+        # the first run of a warp can be background (lab == 0)
+        source_start += f"""
+          m{c} = lab != 0 ? means[{nc}(lab - 1) + {c}] : 0.0;
+          d_sum{c} = 0;
+          d_sq{c} = 0;"""
+        source_operation += f"""
+          dv = static_cast<double>({image_value(c)}) - m{c};
+          d_sum{c} += dv;
+          d_sq{c} += dv * dv;"""
+        source_flush += f"""
+          atomicAdd(&dsums[{nc}(lab - 1) + {c}], d_sum{c});
+          atomicAdd(&dsqs[{nc}(lab - 1) + {c}], d_sq{c});"""
+    return source_pre, source_start, source_operation, source_flush, reduce
+
+
+@cp.memoize(for_each_device=True)
+def get_intensity_centered_kernel(
+    image_dtype, num_channels=1, pixels_per_thread=8
+):
+    """Second pass of the standard deviation: sums about the region means.
+
+    The kernel has the inputs ``labels``, ``labels_size``, ``img`` and
+    ``means`` (float64, shape (max_label, num_channels)) and the outputs
+    ``dsums`` and ``dsqs`` (float64, the same shape, initialized to zero).
+    """
+    pre, start, op, flush, reduce = _get_centered_sums_code(num_channels)
+    if num_channels == 1:
+        pre += f"""
+      cucim_sequential_reader<Y> img_reader(
+          &img[start_index], {pixels_per_thread}, full_thread);"""
+        op = (
+            """
+          Y img_value = img_reader.get(ii - start_index);"""
+            + op
+        )
+    source = _get_label_run_loop(
+        pixels_per_thread, pre, start, op, flush, warp_reduce=reduce
+    )
+    return cp.ElementwiseKernel(
+        "raw X labels, raw uint64 labels_size, raw Y img, raw float64 means",
+        "raw float64 dsums, raw float64 dsqs",
+        source,
+        preamble=_warp_includes,
+        name=f"cucim_intensity_centered_sums_batch{pixels_per_thread}",
+    )
+
+
 def _get_intensity_min_max_code(
     c_min_max_type,
     initial_min_val,
@@ -389,6 +460,10 @@ def _regionprops_intensity(
     # the outputs are passed in the order of the kernel's parameters
     compute_sums = compute_mean or compute_std
     compute_num_pixels = False
+    # The standard deviation of 8 and 16-bit integer images is computed
+    # exactly from the sums of the values and of their squares. For other
+    # images it takes a second pass over the image (see below).
+    exact_std = compute_std and _has_exact_sums(image_dtype)
     outputs = []
     if compute_sums:
         if "num_pixels" in props_dict:
@@ -401,7 +476,7 @@ def _regionprops_intensity(
             outputs.append(counts)
         sums = cp.zeros(out_shape, dtype=sum_dtype)
         outputs.append(sums)
-        if compute_std:
+        if exact_std:
             sumsqs = cp.zeros(out_shape, dtype=sum_dtype)
             outputs.append(sumsqs)
     if compute_min or compute_max:
@@ -414,15 +489,13 @@ def _regionprops_intensity(
             maximums = cp.full(out_shape, range_min, dtype=min_max_dtype)
             outputs.append(maximums)
 
-    # TODO(grelee): May want to provide an approach with better numerical
-    # stability (i.e.like the two-pass algorithm or Welford's online algorithm)
     kernel = get_intensity_measure_kernel(
         int32_count=int32_count,
         image_dtype=image_dtype,
         num_channels=num_channels,
         compute_num_pixels=compute_num_pixels,
         compute_sum=compute_sums,
-        compute_sum_sq=compute_std,
+        compute_sum_sq=exact_std,
         compute_min=compute_min,
         compute_max=compute_max,
         pixels_per_thread=pixels_per_thread,
@@ -444,18 +517,45 @@ def _regionprops_intensity(
 
     if compute_std:
         if cp.dtype(std_dtype).kind != "f":
-            raise ValueError("mean_dtype must be a floating point type")
+            raise ValueError("std_dtype must be a floating point type")
 
-        # compute means and standard deviations from the counts, sums and
-        # squared sums (use float64 here since the numerical stability of this
-        # approach is poor)
-        means = cp.zeros(out_shape, dtype=cp.float64)
-        stds = cp.zeros(out_shape, dtype=cp.float64)
-        kernel2 = get_mean_var_kernel(stds.dtype, sample_std=sample_std)
-        if num_channels > 1:
-            kernel2(counts[..., cp.newaxis], sums, sumsqs, means, stds)
+        counts_b = counts[..., cp.newaxis] if num_channels > 1 else counts
+        means = cp.empty(out_shape, dtype=cp.float64)
+        stds = cp.empty(out_shape, dtype=cp.float64)
+        if exact_std:
+            # the sums are exact, so are the squared deviations
+            get_exact_mean_std_kernel(sample_std)(
+                counts_b,
+                sums.view(cp.int64),
+                sumsqs.view(cp.uint64),
+                means,
+                stds,
+            )
         else:
-            kernel2(counts, sums, sumsqs, means, stds)
+            # The sum of squares minus the squared mean loses all accuracy
+            # when the mean is large compared to the standard deviation
+            # (relative error about eps * (mean / std)**2). Instead, sum the
+            # deviations from the means of the first pass in a second pass.
+            first_means = sums / counts_b
+            dsums = cp.zeros(out_shape, dtype=cp.float64)
+            dsqs = cp.zeros(out_shape, dtype=cp.float64)
+            centered_kernel = get_intensity_centered_kernel(
+                image_dtype=image_dtype,
+                num_channels=num_channels,
+                pixels_per_thread=pixels_per_thread,
+            )
+            centered_kernel(
+                label_image,
+                label_image.size,
+                intensity_image,
+                first_means,
+                dsums,
+                dsqs,
+                size=math.ceil(label_image.size / pixels_per_thread),
+            )
+            get_mean_std_kernel(sample_std)(
+                counts_b, sums, dsums, dsqs, means, stds
+            )
 
         means = means.astype(std_dtype, copy=False)
         stds = stds.astype(std_dtype, copy=False)
@@ -503,54 +603,115 @@ def regionprops_intensity_mean(
     )
 
 
-@cp.memoize(for_each_device=True)
-def get_mean_var_kernel(dtype, sample_std=False):
-    dtype = cp.dtype(dtype)
+def _std_finalize_source(mean_code, ssd_code, sample_std):
+    """Code that turns per-region sums into a mean and standard deviation.
 
-    if dtype.kind != "f":
-        raise ValueError("dtype must be a floating point type")
-    if dtype == cp.float64:
-        c_type = "double"
-        nan_val = "CUDART_NAN"
-    else:
-        c_type = "float"
-        nan_val = "CUDART_NAN_F"
-
-    # The one-pass formula sumsq - m * m * count can round to a small negative
-    # number when all values are equal (or nearly so), so the variance is
-    # clipped at 0 before taking the square root (otherwise sqrt gives NaN).
-    # The clip uses a comparison rather than max(), which is fmax in CUDA and
-    # would also replace a NaN variance (from NaN or inf values) with 0.
+    `mean_code` and `ssd_code` assign the double variables `mean` and `ssd`,
+    the sum of the squared deviations from the mean, for a region with at
+    least two pixels. The variance is clipped at 0 before the square root,
+    because rounding can leave a small negative `ssd` for constant regions;
+    the clip is a comparison rather than max(), which is fmax in CUDA and
+    would also replace a NaN (from NaN or inf values) by 0.
+    """
     if sample_std:
-        source = f"""
-            if (count == 1) {{
-              m = static_cast<{c_type}>(sum);
-              var = {nan_val};
-            }} else {{
-              m = static_cast<double>(sum) / count;
-              double v = (static_cast<double>(sumsq) - m * m * count)
-                         / (count - 1);
-              var = sqrt(v < 0.0 ? 0.0 : v);
-            }}\n"""
+        few = """
+            if (count == 1) {
+              m = static_cast<double>(sum);
+              s = CUDART_NAN;
+            } else {"""
+        divisor = "(static_cast<double>(count) - 1.0)"
     else:
-        source = f"""
-            if (count == 0) {{
-              m = static_cast<{c_type}>(sum);
-              var = {nan_val};
-            }} else if (count == 1) {{
-              m = static_cast<{c_type}>(sum);
-              var = 0.0;
-            }} else {{
-              m = static_cast<double>(sum) / count;
-              double v = (static_cast<double>(sumsq) - m * m * count) / count;
-              var = sqrt(v < 0.0 ? 0.0 : v);
+        few = """
+            if (count == 0) {
+              m = static_cast<double>(sum);
+              s = CUDART_NAN;
+            } else if (count == 1) {
+              m = static_cast<double>(sum);
+              s = 0.0;
+            } else {"""
+        divisor = "static_cast<double>(count)"
+    return f"""{few}
+              double mean, ssd;
+              {mean_code}
+              {ssd_code}
+              double v = ssd / {divisor};
+              m = mean;
+              s = sqrt(v < 0.0 ? 0.0 : v);
             }}\n"""
-    inputs = "X count, Y sum, Y sumsq"
-    outputs = "Z m, Z var"
-    name = f"cucim_sample_std_naive_{dtype.name}"
-    return cp.ElementwiseKernel(
-        inputs, outputs, source, preamble=_includes, name=name
+
+
+@cp.memoize(for_each_device=True)
+def get_mean_std_kernel(sample_std=False):
+    """Mean and standard deviation from the sums about the first-pass mean.
+
+    With d = x - m0 for the first-pass mean m0, the mean is m0 + Σd / n and
+    the sum of squared deviations is Σd² - (Σd)² / n. Because Σd is nearly
+    zero, the result is accurate however large the mean is relative to the
+    standard deviation (the "corrected two-pass algorithm").
+    """
+    source = _std_finalize_source(
+        mean_code="""
+              double n = static_cast<double>(count);
+              mean = static_cast<double>(sum) / n + dsum / n;""",
+        ssd_code="ssd = dsq - dsum * dsum / n;",
+        sample_std=sample_std,
     )
+    return cp.ElementwiseKernel(
+        "X count, Y sum, float64 dsum, float64 dsq",
+        "float64 m, float64 s",
+        source,
+        preamble=_includes,
+        name=f"cucim_mean_std_twopass_{'sample' if sample_std else 'pop'}",
+    )
+
+
+@cp.memoize(for_each_device=True)
+def get_exact_mean_std_kernel(sample_std=False):
+    """Mean and standard deviation from the exact integer sums.
+
+    For the sums Σx and Σx² of integer pixels, n Σx² - (Σx)² is exactly
+    n² times the variance, and is evaluated in 128-bit integer arithmetic,
+    so the cancellation does not lose accuracy. It uses the 64-bit
+    multiply-high instruction rather than the `__int128` type, so it also
+    compiles where NVRTC does not have that type (Windows).
+    """
+    source = _std_finalize_source(
+        mean_code="mean = static_cast<double>(sum) / count;",
+        ssd_code="""
+              // |sum| as unsigned, n * sumsq and sum**2 as (hi, lo) pairs
+              unsigned long long n = count;
+              unsigned long long a = sum < 0 ? 0ULL - (unsigned long long)sum
+                                             : (unsigned long long)sum;
+              unsigned long long nq_lo = n * sumsq;
+              unsigned long long nq_hi = __umul64hi(n, sumsq);
+              unsigned long long aa_lo = a * a;
+              unsigned long long aa_hi = __umul64hi(a, a);
+              // n * sumsq >= sum**2 (Cauchy-Schwarz), so there is no borrow
+              // out of the high word
+              unsigned long long lo = nq_lo - aa_lo;
+              unsigned long long hi = nq_hi - aa_hi - (nq_lo < aa_lo ? 1 : 0);
+              double num = static_cast<double>(hi) * 18446744073709551616.0
+                           + static_cast<double>(lo);
+              ssd = num / count;""",
+        sample_std=sample_std,
+    )
+    return cp.ElementwiseKernel(
+        "X count, int64 sum, uint64 sumsq",
+        "float64 m, float64 s",
+        source,
+        preamble=_includes,
+        name=f"cucim_mean_std_exact_{'sample' if sample_std else 'pop'}",
+    )
+
+
+def _has_exact_sums(image_dtype):
+    """Whether the sums of the values and squares are exact integers.
+
+    True for the 8 and 16-bit integer types (and bool): the sum of squares
+    of up to 2**32 pixels does not overflow 64 bits.
+    """
+    image_dtype = cp.dtype(image_dtype)
+    return image_dtype.kind in "biu" and image_dtype.itemsize <= 2
 
 
 def regionprops_intensity_std(

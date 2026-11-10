@@ -6,6 +6,7 @@ import functools
 import math
 import warnings
 from copy import deepcopy
+from fractions import Fraction
 
 import cupy as cp
 import numpy as np
@@ -58,6 +59,7 @@ from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
 from cucim.skimage.measure._regionprops_gpu_convex import convex_deps
 from cucim.skimage.measure._regionprops_gpu_intensity_kernels import (
     _regionprops_intensity,
+    get_exact_mean_std_kernel,
     intensity_deps,
 )
 from cucim.skimage.measure._regionprops_gpu_misc_kernels import (
@@ -539,6 +541,98 @@ def test_intensity_std_nonfinite(image_dtype, sample_std):
     std = props["intensity_std"]
     assert cp.all(cp.isnan(std[:3]))
     assert std[3] == 0
+
+
+def _reference_mean_std(labels, values, num_labels, ddof):
+    """Mean and standard deviation of each label, with extended precision."""
+    means = np.empty((num_labels,) + values.shape[labels.ndim :])
+    stds = np.empty_like(means)
+    for lab in range(1, num_labels + 1):
+        v = values[labels == lab].astype(np.longdouble)
+        mean = v.mean(axis=0)
+        means[lab - 1] = mean
+        ssd = ((v - mean) ** 2).sum(axis=0)
+        stds[lab - 1] = np.sqrt(ssd / (len(v) - ddof))
+    return means, stds
+
+
+@pytest.mark.parametrize("sample_std", [False, True])
+@pytest.mark.parametrize("num_channels", [1, 3])
+@pytest.mark.parametrize(
+    "image_dtype, offset, sigma",
+    [
+        # large mean compared to the standard deviation; the one-pass
+        # sumsq - mean**2 * n formula loses 6 to 16 digits for these
+        (cp.float64, 1e8, 1.0),
+        (cp.float64, 1e5, 1e-3),
+        (cp.float32, 1e6, 3.0),
+        (cp.uint16, 65000, 0.3),
+        (cp.uint16, 30000, 5.0),
+        (cp.uint8, 250, 0.5),
+        (cp.int16, -32000, 2.0),
+        # wider integers use the second pass
+        (cp.int32, 2**30, 4.0),
+        (cp.uint32, 4 * 10**9, 4.0),
+        (cp.int64, 2**40, 4.0),
+    ],
+)
+def test_intensity_std_accuracy(
+    image_dtype, offset, sigma, num_channels, sample_std
+):
+    rng = np.random.default_rng(1234)
+    shape = (96, 128)
+    num_labels = 5
+    labels = np.zeros(shape, dtype=np.int32)
+    labels[:, :] = 1 + (np.arange(shape[1]) * num_labels // shape[1])
+    labels[:4] = 0
+    labels[10, 10] = num_labels  # a few pixels to vary the region sizes
+    vshape = shape + ((num_channels,) if num_channels > 1 else ())
+    values = offset + sigma * rng.standard_normal(vshape)
+    if cp.dtype(image_dtype).kind in "iu":
+        iinfo = np.iinfo(image_dtype)
+        values = np.clip(np.round(values), iinfo.min, iinfo.max)
+    values = values.astype(image_dtype)
+
+    props = regionprops_intensity_std(
+        cp.asarray(labels),
+        cp.asarray(values),
+        sample_std=sample_std,
+        max_label=num_labels,
+    )
+    ddof = 1 if sample_std else 0
+    means, stds = _reference_mean_std(labels, values, num_labels, ddof)
+    assert props["intensity_std"].dtype == cp.float64
+    assert_allclose(props["intensity_std"], stds, rtol=1e-11)
+    assert_allclose(props["intensity_mean"], means, rtol=1e-13)
+
+
+@pytest.mark.parametrize("sample_std", [False, True])
+def test_intensity_std_exact_kernel_large_sums(sample_std):
+    # The exact kernel computes n * sumsq - sum**2 in 128 bits. Compare it to
+    # Python integers for sums that need all 128 bits (up to 2**32 pixels of
+    # 16-bit values), including negative sums and a variance of exactly 0.
+    n = 2**32 - 1
+    cases = [  # (count, sum, sumsq)
+        (n, n * 65535, n * 65535**2),  # constant: variance 0
+        (n, n * 65535 - 2**20, n * 65535**2 - 2**30 + 7),
+        (n, -n * 32768, n * 32768**2),  # negative constant
+        (2**31, 2**31 * 40000 + 12345, 2**31 * 40000**2 + 2**40),
+        (3, -5, 19),  # values -3, 1, -3
+        (2, 1, 1),  # values 0, 1
+    ]
+    counts = cp.asarray([c[0] for c in cases], dtype=cp.uint32)
+    sums = cp.asarray([c[1] for c in cases], dtype=cp.int64)
+    sumsqs = cp.asarray([c[2] for c in cases], dtype=cp.uint64)
+    means = cp.empty(len(cases))
+    stds = cp.empty(len(cases))
+    get_exact_mean_std_kernel(sample_std)(counts, sums, sumsqs, means, stds)
+
+    for i, (n_, s_, q_) in enumerate(cases):
+        ssd = Fraction(n_ * q_ - s_ * s_, n_)
+        var = ssd / (n_ - 1 if sample_std else n_)
+        assert var >= 0
+        assert_allclose(float(stds[i]), math.sqrt(var), rtol=1e-14, atol=0)
+        assert_allclose(float(means[i]), s_ / n_, rtol=1e-15)
 
 
 @pytest.mark.parametrize("precompute_max", [False, True])
