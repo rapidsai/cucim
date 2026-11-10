@@ -42,13 +42,12 @@ rapids-pip-retry install \
 rapids-logger "Installing system build dependencies (openslide) on CI"
 if [[ "${CI:-false}" == "true" ]]; then
     if type -f dnf > /dev/null 2>&1; then
-        sudo dnf install -y --setopt=install_weak_deps=False openslide-devel
+        dnf install -y --setopt=install_weak_deps=False openslide-devel
     else
-        DEBIAN_FRONTEND=noninteractive sudo apt update
-        DEBIAN_FRONTEND=noninteractive sudo apt install -y --no-install-recommends libopenslide-dev
+        DEBIAN_FRONTEND=noninteractive apt update
+        DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends libopenslide-dev
     fi
 fi
-
 sccache --zero-stats
 
 rapids-logger "pyenv rehash"
