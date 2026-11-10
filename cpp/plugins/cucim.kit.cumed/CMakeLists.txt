@@ -92,15 +92,6 @@ set(CMAKE_INSTALL_LIBDIR lib)
 include(ExternalProject)
 
 ################################################################################
-# Options
-################################################################################
-
-# Setup CXX11 ABI
-# : Adds CXX11 ABI definition to the compiler command line for targets in the current directory,
-#   whether added before or after this command is invoked, and for the ones in sub-directories added after.
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0) # See the top-level CMakeLists.txt for why this is 0.
-
-################################################################################
 # Define dependencies
 ################################################################################
 superbuild_depend(fmt)
@@ -195,11 +186,20 @@ add_subdirectory(benchmarks)
 ################################################################################
 # Install
 ################################################################################
+option(CUCIM_INSTALL_TESTS "Install the C++ test executables" ON)
+option(CUCIM_INSTALL_BENCHMARKS "Install the C++ benchmark executables" ON)
+
 set(INSTALL_TARGETS
         ${CUCIM_PLUGIN_NAME}
-        cumed_tests
-        cumed_benchmarks
         )
+
+if(CUCIM_INSTALL_TESTS)
+    list(APPEND INSTALL_TARGETS cumed_tests)
+endif()
+
+if(CUCIM_INSTALL_BENCHMARKS)
+    list(APPEND INSTALL_TARGETS cumed_benchmarks)
+endif()
 
 install(TARGETS ${INSTALL_TARGETS}
         EXPORT ${CUCIM_PLUGIN_NAME}-targets
