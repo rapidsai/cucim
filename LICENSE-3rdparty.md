@@ -63,22 +63,20 @@ CLI11
   - https://github.com/CLIUtils/CLI11/blob/master/LICENSE
 - Copyright: University of Cincinnati
 
-pybind11
+nanobind
 - License: BSD-3-Clause License
-  - https://github.com/pybind/pybind11/blob/master/LICENSE
+  - https://github.com/wjakob/nanobind/blob/master/LICENSE
 - Copyright: Wenzel Jakob
-- Files:
-  - python/pybind11/cucim_py.cpp : Implementation of `vector2pytuple()` method.
+
+robin-map (bundled with nanobind)
+- License: MIT License
+  - https://github.com/Tessil/robin-map/blob/master/LICENSE
+- Copyright: Thibaut Goetghebuer-Planchon
 
 JSON for Modern C++
 - License: MIT License
   - https://github.com/nlohmann/json/blob/develop/LICENSE.MIT
 - Copyright: Niels Lohmann
-
-pybind11_json
-- License: BSD-3-Clause License
-  - https://github.com/pybind/pybind11_json/blob/master/LICENSE
-- Copyright: Martin Renou
 
 DLPack
 - License: Apache-2.0 License
