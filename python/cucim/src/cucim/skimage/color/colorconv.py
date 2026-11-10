@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """Functions for converting between color spaces.
@@ -65,6 +65,7 @@ from .._shared.utils import (
     identity,
 )
 from ..util import dtype, dtype_limits
+from ._kernel_utils import elementwise_kernel
 
 # TODO: when minimum numpy dependency is 1.25 use:
 # np.exceptions.AxisError instead of AxisError
@@ -198,7 +199,7 @@ def _rgba2rgb_kernel(background, name="rgba2rgb"):
         val = (1 - alpha) * {background[ch]} + alpha * rgba[4*i + {ch}];
         rgb[3*i + {ch}] = min(max(val, (X)0.0), (X)1.0);
         """
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         "raw X rgba", "raw X rgb", code, name="cucim_skimage_color_" + name
     )
 
@@ -318,7 +319,7 @@ def _rgb_to_hsv_kernel(name="rgb2hsv"):
     }
     hsv[3*i + 2] = maxv;
     """
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         "raw X rgb", "raw X hsv", code, name="cucim_skimage_color_" + name
     )
 
@@ -426,7 +427,7 @@ def _hsv_to_rgb_kernel(name="hsv2rgb"):
             break;
     }
     """
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         "raw X hsv", "raw X rgb", code, name="cucim_skimage_color_" + name
     )
 
@@ -797,7 +798,7 @@ hpx_from_rgb = linalg.inv(rgb_from_hpx)
 @cp.memoize(for_each_device=True)
 def _get_convert_kernel(matrix_tuple, pre, post, name):
     # pre code may modify x so set both x and y as outputs
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         '',
         'raw X x, raw X y',
         pre + _get_core_colorconv_operation(matrix_tuple) + post,
@@ -1036,7 +1037,7 @@ def rgbcie2rgb(rgbcie, *, channel_axis=-1):
 
 @cp.memoize(for_each_device=True)
 def _rgb_to_gray_kernel(dtype):
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         'raw X rgb',
         'raw X gray',
         """
@@ -1207,7 +1208,7 @@ def _get_xyz_to_lab_kernel(xyz_ref_white, name='xyz2lab'):
     """
 
     # array will be modified in-place
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         '',
         'raw X arr, raw X lab',
         _xyz_to_lab,
@@ -1311,7 +1312,7 @@ def _get_lab_to_xyz_kernel(xyz_ref_white, name='lab2xyz'):
     """
 
     # array will be modified in-place
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         '',
         'raw X lab, raw X xyz, raw int32 warn',
         _lab_to_xyz,
@@ -1557,7 +1558,7 @@ def _get_xyz_to_luv_kernel(xyz_ref_white, dtype):
     """
 
     # array will be modified in-place
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         '',
         'raw X xyz, raw X luv',
         _xyz_to_luv,
@@ -1664,7 +1665,7 @@ def _get_luv_to_xyz_kernel(xyz_ref_white, dtype):
         xyz[3*i] = -(c / b + 3.0 * xyz[3*i + 2]);
 
     """  # noqa
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         '',
         'raw X luv, raw X xyz',
         _luv_to_xyz,
@@ -1882,7 +1883,7 @@ def _separate_stains_kernel(m):
     stains[3*i + 1] = tmp[0] * {m[1]} + tmp[1] * {m[4]} + tmp[2] * {m[7]};
     stains[3*i + 2] = tmp[0] * {m[2]} + tmp[1] * {m[5]} + tmp[2] * {m[8]};
     """  # noqa
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         'raw X rgb',
         'raw X stains',
         code,
@@ -1992,7 +1993,7 @@ def _combine_stains_kernel(m):
         rgb[3*i + ch] = min(max(exp(rgb[3*i + ch]), (X)0.0), (X)1.0);
     }}
     """  # noqa
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         'raw X stains',
         'raw X rgb',
         code,
@@ -2089,7 +2090,7 @@ def _lab2lch_kernel(nchannels=3, name='lab2lch'):
        lab[{nchannels}*i + 2] += 2 * M_PI;
     }}
     """  # noqa
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         '',
         'raw X lab',
         code,
@@ -2164,7 +2165,7 @@ def _lch2lab_kernel(nchannels=3, name='lch2lab'):
     lch[{nchannels}*i + 1] = lch[{nchannels}*i + 1] * cos_h;
 
     """  # noqa
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         '',
         'raw X lch',
         code,
