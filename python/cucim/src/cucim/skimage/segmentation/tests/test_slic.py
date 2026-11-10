@@ -625,8 +625,17 @@ def test_multichannel_2d_mask():
         enforce_connectivity=False,
         mask=mask,
         maximization_algorithm="scan",
-        # the expected label numbers follow scikit-image's random sample
-        rng_on_host=True,
+        # The expected label numbers follow scikit-image's initial centroids,
+        # so use the deterministic SciPy k-means (force_kmeans2) rather than
+        # cuVS. The 5 iterations of k-means leave the centroids far from the
+        # quadrant centers (e.g. (9.4, 4.5) and (9.3, 13.5) for the quadrants
+        # at rows 2:10), so the segmentation depends on their exact values.
+        # With cuVS this test failed in CI only for the "oldest-deps" jobs
+        # (wheels: CUDA 12.9.2, RTX PRO 6000; conda: CUDA 12.2.2, H100):
+        # seg[2:10, 2:10] contained labels 1 and 2 split along a diagonal
+        # instead of only label 2, i.e. different initial centroids, not
+        # wrong labels. It passed with newer cuVS (26.04) and kmeans2.
+        force_kmeans2=True,
     )
 
     assert_equal(len(cp.unique(seg)), 5)
