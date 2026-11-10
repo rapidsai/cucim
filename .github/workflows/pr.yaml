@@ -10,6 +10,7 @@ permissions: {}
 jobs:
   pr-builder:
     needs:
+      - burndown-pr
       - build-details
       - changed-files
       - checks
@@ -33,6 +34,13 @@ jobs:
     if: always()
     with:
       needs: ${{ toJSON(needs) }}
+  burndown-pr:
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    uses: rapidsai/shared-workflows/.github/workflows/burndown-pr.yaml@main
+
   build-details:
     uses: rapidsai/shared-workflows/.github/workflows/compute-build-details.yaml@main
   changed-files:
@@ -174,7 +182,9 @@ jobs:
           repo: ${{ github.repository }}
           target-branch: ${{ fromJSON(steps.get-pr-info.outputs.pr-info).base.ref }}
   conda-cpp-build:
-    needs: [build-details, checks]
+    if: >-
+      needs.burndown-pr.result == 'success' && needs.burndown-pr.outputs.skip-product-ci != 'true'
+    needs: [burndown-pr, build-details, checks]
     permissions:
       actions: read
       contents: read
@@ -189,7 +199,9 @@ jobs:
       script: ci/build_cpp.sh
       matrix_type: pull-request
   conda-python-build:
-    needs: [build-details, conda-cpp-build]
+    if: >-
+      needs.burndown-pr.result == 'success' && needs.burndown-pr.outputs.skip-product-ci != 'true'
+    needs: [burndown-pr, build-details, conda-cpp-build]
     permissions:
       actions: read
       contents: read
@@ -205,8 +217,9 @@ jobs:
       script: ci/build_python.sh
       matrix_type: pull-request
   conda-python-tests:
-    needs: [conda-python-build, changed-files]
-    if: fromJSON(needs.changed-files.outputs.changed_file_groups).test_python_conda
+    needs: [burndown-pr, conda-python-build, changed-files]
+    if: >-
+      needs.burndown-pr.result == 'success' && needs.burndown-pr.outputs.skip-product-ci != 'true' && (fromJSON(needs.changed-files.outputs.changed_file_groups).test_python_conda)
     permissions:
       actions: read
       contents: read
@@ -220,6 +233,9 @@ jobs:
       script: ci/test_python.sh
       matrix_type: pull-request
   docs-build-matrix:
+    if: >-
+      needs.burndown-pr.result == 'success' && needs.burndown-pr.outputs.skip-product-ci != 'true'
+    needs: [burndown-pr]
     permissions:
       contents: read
     uses: rapidsai/shared-workflows/.github/workflows/compute-matrix.yaml@main
@@ -228,8 +244,9 @@ jobs:
       matrix_name: docs-build
       matrix_type: pull-request
   docs-build:
-    needs: [docs-build-matrix, conda-python-build, changed-files]
-    if: fromJSON(needs.changed-files.outputs.changed_file_groups).build_docs
+    needs: [burndown-pr, docs-build-matrix, conda-python-build, changed-files]
+    if: >-
+      needs.burndown-pr.result == 'success' && needs.burndown-pr.outputs.skip-product-ci != 'true' && (fromJSON(needs.changed-files.outputs.changed_file_groups).build_docs)
     permissions:
       actions: read
       contents: read
@@ -248,7 +265,9 @@ jobs:
       container_image: "rapidsai/ci-conda:26.12-cuda${{ matrix.CUDA_VER }}-${{ matrix.LINUX_VER }}-py${{ matrix.PY_VER }}"
       script: "ci/build_docs.sh"
   publish-api-docs:
-    needs: [docs-build]
+    if: >-
+      needs.burndown-pr.result == 'success' && needs.burndown-pr.outputs.skip-product-ci != 'true'
+    needs: [burndown-pr, docs-build]
     permissions:
       contents: read
       id-token: write
@@ -268,7 +287,9 @@ jobs:
       docs-projects: cucim
       dry-run: true
   wheel-build:
-    needs: [build-details, checks]
+    if: >-
+      needs.burndown-pr.result == 'success' && needs.burndown-pr.outputs.skip-product-ci != 'true'
+    needs: [burndown-pr, build-details, checks]
     permissions:
       actions: read
       contents: read
@@ -286,8 +307,9 @@ jobs:
       package-type: python
       matrix_type: pull-request
   wheel-tests:
-    needs: [wheel-build, changed-files]
-    if: fromJSON(needs.changed-files.outputs.changed_file_groups).test_python_wheels
+    needs: [burndown-pr, wheel-build, changed-files]
+    if: >-
+      needs.burndown-pr.result == 'success' && needs.burndown-pr.outputs.skip-product-ci != 'true' && (fromJSON(needs.changed-files.outputs.changed_file_groups).test_python_wheels)
     permissions:
       actions: read
       contents: read
