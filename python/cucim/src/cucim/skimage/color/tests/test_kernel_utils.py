@@ -128,3 +128,64 @@ def test_elementwise_kernel_casts_operation_and_preamble():
     y = cp.empty_like(x)
     kern(x, y, size=x.size)
     cp.testing.assert_allclose(y, x * 0.5 + 0.25)
+
+
+_ALL_CONVERSIONS = (
+    [n for n in _RGB_FUNCS]
+    + [inv for inv, _ in _INVERSE_FUNCS]
+    + ["hed2rgb", "xyz2lab", "lab2xyz", "lab2lch", "lch2lab"]
+)
+
+
+@pytest.mark.parametrize("name", sorted(set(_ALL_CONVERSIONS)))
+@pytest.mark.parametrize(
+    "dtype", [cp.uint8, cp.uint16, cp.float16, cp.float32, cp.float64]
+)
+@pytest.mark.parametrize("contiguous", [True, False])
+def test_conversions_do_not_modify_their_input(name, dtype, contiguous):
+    # the kernels work on local variables and write to a new array: the input
+    # array is neither changed nor returned
+    rng = np.random.default_rng(7)
+    shape = (30, 20, 3) if contiguous else (20, 30, 3)
+    values = rng.random(shape)
+    if np.dtype(dtype).kind in "iu":
+        values = values * np.iinfo(dtype).max
+    img = cp.asarray(values.astype(dtype))
+    if not contiguous:
+        img = img.transpose(1, 0, 2)
+        assert not img.flags.c_contiguous
+    original = img.copy()
+    result = getattr(color, name)(img)
+    cp.testing.assert_array_equal(img, original)
+    assert not cp.shares_memory(result, img)
+    if name != "rgb2gray":
+        assert result.shape == img.shape
+
+
+@pytest.mark.parametrize("tospace", ["hsv", "xyz", "yuv", "ycbcr", "rgb cie"])
+def test_convert_colorspace_does_not_modify_its_input(tospace):
+    img = _rgb_image(cp.float32)
+    original = img.copy()
+    result = color.convert_colorspace(img, "rgb", tospace)
+    cp.testing.assert_array_equal(img, original)
+    assert not cp.shares_memory(result, img)
+
+
+@pytest.mark.parametrize("nchannels", [3, 5])
+def test_lab2lch_lch2lab_extra_channels_and_non_contiguous(nchannels):
+    rng = np.random.default_rng(8)
+    lab = cp.asarray(
+        (rng.normal(size=(nchannels, 20, 30)) * 40).astype(np.float32)
+    ).transpose(1, 2, 0)
+    assert not lab.flags.c_contiguous
+    lch = color.lab2lch(lab)
+    a, b = lab[..., 1], lab[..., 2]
+    expected_h = cp.arctan2(b, a)
+    expected_h = cp.where(expected_h < 0, expected_h + 2 * np.pi, expected_h)
+    cp.testing.assert_array_equal(lch[..., 0], lab[..., 0])
+    cp.testing.assert_allclose(lch[..., 1], cp.hypot(a, b), rtol=1e-6)
+    cp.testing.assert_allclose(lch[..., 2], expected_h, rtol=1e-6, atol=1e-6)
+    cp.testing.assert_array_equal(lch[..., 3:], lab[..., 3:])
+    back = color.lch2lab(lch)
+    cp.testing.assert_allclose(back, lab, rtol=0, atol=1e-3)
+    cp.testing.assert_array_equal(back[..., 3:], lab[..., 3:])

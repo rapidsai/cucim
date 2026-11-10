@@ -797,11 +797,10 @@ hpx_from_rgb = linalg.inv(rgb_from_hpx)
 
 @cp.memoize(for_each_device=True)
 def _get_convert_kernel(matrix_tuple, pre, post, name):
-    # pre code may modify x so set both x and y as outputs
     return elementwise_kernel(
-        '',
-        'raw X x, raw X y',
-        pre + _get_core_colorconv_operation(matrix_tuple) + post,
+        'raw X x',
+        'raw X y',
+        _get_core_colorconv_operation(matrix_tuple, pre, post),
         name='cucim_skimage_color_' + name)
 
 
@@ -828,17 +827,26 @@ def _convert(matrix, arr, pre='', post='', name='_convert'):
     return out
 
 
-def _get_core_colorconv_operation(m):
+def _get_core_colorconv_operation(m, pre="", post=""):
     """Generate inline CUDA kernel code for color conversions.
 
-    x is the input image with 3 channels on the last axis
-    y is the output image with 3 channels on the last axis
+    The input pixel x (3 channels on the last axis) is copied to the local
+    array v, which ``pre`` may modify; w = m v is computed in the local array
+    w, which ``post`` may modify, and is stored in the output y. The input
+    array is not modified.
     m is a 3x3 color conversion matrix
     """
     return f"""
-        y[3*i] = x[3*i] * {m[0]} + x[3*i + 1] * {m[1]} + x[3*i + 2] * {m[2]};
-        y[3*i + 1] = x[3*i] * {m[3]} + x[3*i + 1] * {m[4]} + x[3*i + 2] * {m[5]};
-        y[3*i + 2] = x[3*i] * {m[6]} + x[3*i + 1] * {m[7]} + x[3*i + 2] * {m[8]};
+        X v[3] = {{x[3*i], x[3*i + 1], x[3*i + 2]}};
+        {pre}
+        X w[3];
+        w[0] = v[0] * {m[0]} + v[1] * {m[1]} + v[2] * {m[2]};
+        w[1] = v[0] * {m[3]} + v[1] * {m[4]} + v[2] * {m[5]};
+        w[2] = v[0] * {m[6]} + v[1] * {m[7]} + v[2] * {m[8]};
+        {post}
+        y[3*i] = w[0];
+        y[3*i + 1] = w[1];
+        y[3*i + 2] = w[2];
     """  # noqa
 
 
@@ -891,12 +899,12 @@ def xyz2rgb(xyz, *, channel_axis=-1):
     # (c indexes over color channels here)
     _post_colorconv = """
         for (int c=0; c < 3; c++) {
-            if (y[3*i + c] > 0.0031308) {
-                y[3*i + c] = 1.055 * pow(y[3*i + c], (X)(1 / 2.4)) - 0.055;
+            if (w[c] > 0.0031308) {
+                w[c] = 1.055 * pow(w[c], (X)(1 / 2.4)) - 0.055;
             } else {
-                y[3*i + c] *= 12.92;
+                w[c] *= 12.92;
             }
-            y[3*i + c] = min(max(y[3*i + c], (X)0.0), (X)1.0);
+            w[c] = min(max(w[c], (X)0.0), (X)1.0);
         }
     """
     return _convert(rgb_from_xyz, arr, post=_post_colorconv, name='xyz2rgb')
@@ -943,17 +951,17 @@ def rgb2xyz(rgb, *, channel_axis=-1):
     """
     # Follow the algorithm from http://www.easyrgb.com/index.php
     # except we don't multiply/divide by 100 in the conversion
-    rgb = _prepare_colorarray(rgb, force_copy=True, force_c_contiguous=True,
+    rgb = _prepare_colorarray(rgb, force_copy=False, force_c_contiguous=True,
                               channel_axis=channel_axis)
 
     # scaling applied to the input before 3x3 conversion matrix multiplication
     # (c indexes over color channels here)
     _pre_colorconv = """
         for (int c=0; c < 3; c++) {
-            if (x[3*i + c] > 0.04045) {
-                x[3*i + c] = pow((x[3*i + c] + (X)0.055) / (X)1.055, (X)2.4);
+            if (v[c] > 0.04045) {
+                v[c] = pow((v[c] + (X)0.055) / (X)1.055, (X)2.4);
             } else {
-                x[3*i + c] /= 12.92;
+                v[c] /= 12.92;
             }
         }
     """
@@ -1186,31 +1194,31 @@ def gray2rgb(image, *, channel_axis=-1):
 def _get_xyz_to_lab_kernel(xyz_ref_white, name='xyz2lab'):
     _xyz_to_lab = f"""
         // scale by CIE XYZ tristimulus values of the reference white point
-        arr[3*i] /= {xyz_ref_white[0]};
-        arr[3*i + 1] /= {xyz_ref_white[1]};
-        arr[3*i + 2] /= {xyz_ref_white[2]};
+        X t[3];
+        t[0] = arr[3*i] / {xyz_ref_white[0]};
+        t[1] = arr[3*i + 1] / {xyz_ref_white[1]};
+        t[2] = arr[3*i + 2] / {xyz_ref_white[2]};
 
         // Nonlinear distortion and linear transformation
         for (int ch=0; ch < 3; ch++)
         {{
-            if (arr[3*i + ch] > 0.008856)
+            if (t[ch] > 0.008856)
             {{
-                arr[3*i + ch] = cbrt(arr[3*i + ch]);
+                t[ch] = cbrt(t[ch]);
             }} else {{
-                arr[3*i + ch] = 7.787 * arr[3*i + ch] + 16.0 / 116.0;
+                t[ch] = 7.787 * t[ch] + 16.0 / 116.0;
             }}
         }}
 
         // Vector scaling
-        lab[3*i] = (116. * arr[3*i + 1]) - 16.0;
-        lab[3*i + 1] = 500.0 * (arr[3*i] - arr[3*i + 1]);
-        lab[3*i + 2] = 200.0 * (arr[3*i + 1] - arr[3*i + 2]);
+        lab[3*i] = (116. * t[1]) - 16.0;
+        lab[3*i + 1] = 500.0 * (t[0] - t[1]);
+        lab[3*i + 2] = 200.0 * (t[1] - t[2]);
     """
 
-    # array will be modified in-place
     return elementwise_kernel(
-        '',
-        'raw X arr, raw X lab',
+        'raw X arr',
+        'raw X lab',
         _xyz_to_lab,
         name='cucim_skimage_color_' + name)
 
@@ -1266,7 +1274,7 @@ def xyz2lab(xyz, illuminant="D65", observer="2", *, channel_axis=-1):
     >>> img_xyz = rgb2xyz(img)
     >>> img_lab = xyz2lab(img_xyz)
     """
-    xyz = _prepare_colorarray(xyz, force_copy=True, force_c_contiguous=True,
+    xyz = _prepare_colorarray(xyz, force_copy=False, force_c_contiguous=True,
                               channel_axis=channel_axis)
 
     xyz_ref_white = xyz_tristimulus_values(
@@ -2076,23 +2084,27 @@ def combine_stains(stains, conv_matrix, *, channel_axis=-1):
 
 @cp.memoize(for_each_device=True)
 def _lab2lch_kernel(nchannels=3, name='lab2lch'):
+    # channels 0 and 3 and above are copied
     code = f"""
     X a = lab[{nchannels}*i + 1];
     X b = lab[{nchannels}*i + 2];
-
-    // update lab array in-place with the lch values
-    lab[{nchannels}*i + 1] = hypot(a, b);
-    lab[{nchannels}*i + 2] = atan2(b, a);
-
+    lch[{nchannels}*i] = lab[{nchannels}*i];
+    lch[{nchannels}*i + 1] = hypot(a, b);
+    X h = atan2(b, a);
     // NON-STANDARD RANGE! Maps to ``(0, 2*pi)`` rather than ``(-pi, +pi)``
-    if (lab[{nchannels}*i + 2] < 0)
+    if (h < 0)
     {{
-       lab[{nchannels}*i + 2] += 2 * M_PI;
+       h += 2 * M_PI;
+    }}
+    lch[{nchannels}*i + 2] = h;
+    for (int c = 3; c < {nchannels}; c++)
+    {{
+        lch[{nchannels}*i + c] = lab[{nchannels}*i + c];
     }}
     """  # noqa
     return elementwise_kernel(
-        '',
         'raw X lab',
+        'raw X lch',
         code,
         name='cucim_skimage_color_' + name)
 
@@ -2135,13 +2147,14 @@ def lab2lch(lab, *, channel_axis=-1):
     >>> img_lab = rgb2lab(img)
     >>> img_lch = lab2lch(img_lab)
     """
-    lab = _prepare_lab_array(lab, force_copy=True)
+    lab = _prepare_lab_array(lab)
     nchannels = lab.shape[-1]
 
     name = f'lab2lch_{nchannels}channel_{lab.dtype}'
     kern = _lab2lch_kernel(nchannels, name=name)
-    kern(lab, size=lab.size // nchannels)
-    return lab
+    lch = cp.empty_like(lab)
+    kern(lab, lch, size=lab.size // nchannels)
+    return lch
 
 
 def _cart2polar_2pi(x, y):
@@ -2156,18 +2169,22 @@ def _cart2polar_2pi(x, y):
 
 @cp.memoize(for_each_device=True)
 def _lch2lab_kernel(nchannels=3, name='lch2lab'):
+    # channels 0 and 3 and above are copied
     code = f"""
     X sin_h = sin(lch[{nchannels}*i + 2]);
     X cos_h = cos(lch[{nchannels}*i + 2]);
-
-    // update lch array in-place with the lab values
-    lch[{nchannels}*i + 2] = lch[{nchannels}*i + 1] * sin_h;
-    lch[{nchannels}*i + 1] = lch[{nchannels}*i + 1] * cos_h;
-
+    X c = lch[{nchannels}*i + 1];
+    lab[{nchannels}*i] = lch[{nchannels}*i];
+    lab[{nchannels}*i + 1] = c * cos_h;
+    lab[{nchannels}*i + 2] = c * sin_h;
+    for (int ch = 3; ch < {nchannels}; ch++)
+    {{
+        lab[{nchannels}*i + ch] = lch[{nchannels}*i + ch];
+    }}
     """  # noqa
     return elementwise_kernel(
-        '',
         'raw X lch',
+        'raw X lab',
         code,
         name='cucim_skimage_color_' + name)
 
@@ -2208,21 +2225,22 @@ def lch2lab(lch, *, channel_axis=-1):
     >>> img_lab2 = lch2lab(img_lch)
     """
 
-    # make a copy because lch will be modified in-place by the kernel below
-    lch = _prepare_lab_array(lch, force_copy=True)
+    lch = _prepare_lab_array(lch)
     nchannels = lch.shape[-1]
 
     name = f'lch2lab_{nchannels}channel_{lch.dtype}'
     kern = _lch2lab_kernel(nchannels, name=name)
-    kern(lch, size=lch.size // nchannels)
-    return lch
+    lab = cp.empty_like(lch)
+    kern(lch, lab, size=lch.size // nchannels)
+    return lab
 
 
-def _prepare_lab_array(arr, force_copy=True):
+def _prepare_lab_array(arr, force_copy=False):
     """Ensure input for lab2lch, lch2lab are well-posed.
 
-    Arrays must be in floating point and have at least 3 elements in
-    last dimension.  Return a new array.
+    Arrays must be in floating point, C-contiguous and have at least 3
+    elements in last dimension. A new array is returned only if the input
+    has to be converted or made contiguous (or ``force_copy`` is set).
     """
     shape = arr.shape
     if shape[-1] < 3:
@@ -2232,7 +2250,7 @@ def _prepare_lab_array(arr, force_copy=True):
         _func = dtype.img_as_float32
     else:
         _func = dtype.img_as_float64
-    return _func(arr, force_copy=force_copy)
+    return cp.ascontiguousarray(_func(arr, force_copy=force_copy))
 
 
 @channel_as_last_axis()
@@ -2359,9 +2377,9 @@ def rgb2ycbcr(rgb, *, channel_axis=-1):
     .. [1] https://en.wikipedia.org/wiki/YCbCr
     """
     _post_colorconv = """
-        y[3*i] += 16;
-        y[3*i + 1] += 128;
-        y[3*i + 2] += 128;
+        w[0] += 16;
+        w[1] += 128;
+        w[2] += 128;
     """
     arr = _convert(ycbcr_from_rgb, rgb, post=_post_colorconv, name='rgb2ycbcr')
     return arr
@@ -2517,11 +2535,11 @@ def ycbcr2rgb(ycbcr, *, channel_axis=-1):
     ----------
     .. [1] https://en.wikipedia.org/wiki/YCbCr
     """
-    arr = ycbcr.copy()
+    arr = ycbcr
     _pre_colorconv = """
-        x[3*i] -= 16;
-        x[3*i + 1] -= 128;
-        x[3*i + 2] -= 128;
+        v[0] -= 16;
+        v[1] -= 128;
+        v[2] -= 128;
     """
     return _convert(rgb_from_ycbcr, arr, pre=_pre_colorconv,
                     name='ycbcr2rgb')
