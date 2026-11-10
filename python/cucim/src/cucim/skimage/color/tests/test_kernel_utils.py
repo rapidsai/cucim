@@ -189,3 +189,45 @@ def test_lab2lch_lch2lab_extra_channels_and_non_contiguous(nchannels):
     back = color.lch2lab(lch)
     cp.testing.assert_allclose(back, lab, rtol=0, atol=1e-3)
     cp.testing.assert_array_equal(back[..., 3:], lab[..., 3:])
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["rgb2lab", "rgb2xyz", "rgb2luv", "rgb2hsv", "rgb2yuv", "rgb2ycbcr"]
+    + [
+        "rgb2yiq",
+        "rgb2ypbpr",
+        "rgb2ydbdr",
+        "rgb2rgbcie",
+        "rgb2gray",
+        "rgb2hed",
+    ],
+)
+@pytest.mark.parametrize(
+    "dtype", [cp.uint8, cp.uint16, cp.float16, cp.int8, cp.int16, cp.int32]
+)
+@pytest.mark.parametrize("contiguous", [True, False])
+def test_integer_and_float16_input_is_converted_in_the_kernel(
+    name, dtype, contiguous
+):
+    # the kernels convert the 8 and 16-bit integer and float16 values
+    # themselves (no separate img_as_float pass); the result is identical to
+    # the one for the converted array
+    from cucim.skimage import img_as_float
+
+    rng = np.random.default_rng(9)
+    info = np.iinfo(dtype) if np.dtype(dtype).kind in "iu" else None
+    if info is None:
+        img = rng.random((30, 20, 3)).astype(dtype)
+    else:
+        img = rng.integers(info.min, info.max, (30, 20, 3), dtype=dtype)
+    img = cp.asarray(img)
+    if not contiguous:
+        img = cp.asarray(np.ascontiguousarray(img.get().transpose(1, 0, 2)))
+        img = img.transpose(1, 0, 2)
+        assert not img.flags.c_contiguous
+    func = getattr(color, name)
+    expected = func(img_as_float(img))
+    result = func(img)
+    assert result.dtype == expected.dtype
+    cp.testing.assert_array_equal(result, expected)
