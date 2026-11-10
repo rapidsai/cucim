@@ -14,6 +14,7 @@ from scipy.cluster.vq import kmeans2
 from scipy.spatial.distance import pdist, squareform
 
 from cucim.skimage.color import rgb2lab
+from cucim.skimage.color.colorconv import xyz_from_rgb, xyz_tristimulus_values
 from cucim.skimage.filters import gaussian
 from cucim.skimage.measure import label as measure_label
 from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
@@ -27,6 +28,119 @@ try:
 except Exception:
     KMeansParams = None
     cuvs_kmeans_fit = None
+
+
+@cp.memoize(for_each_device=True)
+def _get_rgb2lab_scaled_kernel(from_uint8):
+    """Fused rescaling to [0, 1], RGB to CIE-Lab conversion and weighting.
+
+    This does in one pass over the image what ``img_as_float``, the rescaling
+    by the intensity range, ``rgb2lab`` and the multiplication by ``1 /
+    compactness`` do as separate passes (about eight kernels). The formulas
+    and constants are those of the ``rgb2xyz`` and ``xyz2lab`` kernels of
+    ``cucim.skimage.color``, but all of the arithmetic is in single
+    precision. Those kernels have double precision literals, so they compute
+    in double precision and round when storing, which is slow on most GPUs
+    (the double precision rate is 1/32 to 1/64 of the single precision rate);
+    the results differ in the last bits of a ``float32``.
+    """
+    m = tuple(xyz_from_rgb.ravel())
+    w = xyz_tristimulus_values(illuminant="D65", observer="2")
+    # `inv` is 1 / 255 for uint8 (img_as_float multiplies by it) and unused
+    # for floating point input. The product is rounded before the subtractions
+    # (no fused multiply-add) so that the range of a constant image is
+    # exactly zero.
+    convert = "__fmul_rn((X)({0}), inv)" if from_uint8 else "(X)({0})"
+    code = f"""
+        X imin = {convert.format("mn[0]")};
+        X imax = {convert.format("mx[0]")};
+        X scale = imax - imin;
+        X denom = scale > 0 ? scale : (X)1;
+        X x[3];
+        for (int c = 0; c < 3; c++) {{
+            X v = {convert.format("img[3 * i + c]")};
+            v = (v - imin) / denom;
+            if (v > (X)0.04045) {{
+                v = pow((v + (X)0.055) / (X)1.055, (X)2.4);
+            }} else {{
+                v /= (X)12.92;
+            }}
+            x[c] = v;
+        }}
+        X y[3];
+        y[0] = x[0] * (X){m[0]} + x[1] * (X){m[1]} + x[2] * (X){m[2]};
+        y[1] = x[0] * (X){m[3]} + x[1] * (X){m[4]} + x[2] * (X){m[5]};
+        y[2] = x[0] * (X){m[6]} + x[1] * (X){m[7]} + x[2] * (X){m[8]};
+        y[0] /= (X){w[0]};
+        y[1] /= (X){w[1]};
+        y[2] /= (X){w[2]};
+        for (int c = 0; c < 3; c++) {{
+            if (y[c] > (X)0.008856) {{
+                y[c] = cbrt(y[c]);
+            }} else {{
+                y[c] = (X)7.787 * y[c] + (X)(16.0 / 116.0);
+            }}
+        }}
+        out[3 * i] = ((X)116 * y[1] - (X)16) * ratio;
+        out[3 * i + 1] = (X)500 * (y[0] - y[1]) * ratio;
+        out[3 * i + 2] = (X)200 * (y[1] - y[2]) * ratio;
+    """
+    return cp.ElementwiseKernel(
+        "raw I img, raw I mn, raw I mx, X inv, X ratio",
+        "raw X out",
+        code,
+        name="cucim_skimage_slic_rgb2lab_scaled",
+    )
+
+
+def _rgb2lab_scaled(image, imin, imax, ratio):
+    """RGB (last axis) to CIE-Lab of the image rescaled by ``imin, imax``.
+
+    ``image`` is ``uint8`` or ``float32`` and C-contiguous; ``imin`` and
+    ``imax`` are its minimum and maximum as 0-d device arrays. The result is
+    ``float32`` and is multiplied by ``ratio``.
+    """
+    from_uint8 = image.dtype == cp.uint8
+    out = cp.empty(image.shape, dtype=cp.float32)
+    kern = _get_rgb2lab_scaled_kernel(from_uint8)
+    kern(
+        image,
+        imin,
+        imax,
+        np.float32(1 / 255),
+        np.float32(ratio),
+        out,
+        size=image.size // 3,
+    )
+    return out
+
+
+@cp.memoize(for_each_device=True)
+def _get_max_abs_kernel():
+    return cp.ReductionKernel(
+        "T x",
+        "T y",
+        "abs(x)",
+        "a != a ? a : (b != b ? b : (a > b ? a : b))",
+        "y = a",
+        "0",
+        "cucim_skimage_slic_max_abs",
+    )
+
+
+@cp.memoize(for_each_device=True)
+def _get_fixed_scale_kernel():
+    # the arithmetic is in the type of the image, as for CuPy functions of a
+    # floating point array and Python scalars
+    return cp.ElementwiseKernel(
+        "X max_abs, X n_values, X max_log2_scale",
+        "X scale",
+        """
+        X v = (X)1152921504606846976.0 / (n_values * fmax(max_abs, (X)1e-30));
+        scale = exp2(fmin(floor(log2(v)), max_log2_scale));
+        """,
+        "cucim_skimage_slic_fixed_scale",
+    )
 
 
 def _get_enforce_label_connectivity_cython():
@@ -188,8 +302,6 @@ def _get_grid_centroids(spatial_shape, n_centroids):
     centroids = xp.stack(tuple(g.ravel() for g in grids_1d), axis=-1)
     steps = tuple(float(s.step) if s.step is not None else 1.0 for s in slices)
     grid_shape = tuple(int(g.size) for g in grid_vecs)
-    if xp != cp:
-        centroids = cp.asarray(centroids)
     return centroids, steps, grid_shape
 
 
@@ -470,6 +582,50 @@ def box_kernel_config(im_shape, block=None, use_mask=False):
     return block, grid
 
 
+@cp.memoize(for_each_device=True)
+def _get_slic_module(
+    ndim_spatial,
+    n_features,
+    start_label,
+    is_float64,
+    pixels_per_thread,
+    slic_zero,
+    use_mask,
+    ignore_color,
+    extra_cells,
+):
+    """Compile (once per set of parameters) the SLIC CUDA module."""
+    module_path = os.path.join(
+        os.path.dirname(__file__),
+        "cuda",
+        "slic2d.cu" if ndim_spatial == 2 else "slic3d.cu",
+    )
+    with open(module_path) as f:
+        cuda_source = f.read()
+
+    float_type = "double" if is_float64 else "float"
+    cuda_source_defines = f"""
+#define N_PIXEL_FEATURES {n_features}
+#define START_LABEL {start_label}
+#define FLOAT_DTYPE {float_type}
+#define INTERNAL_FLOAT_DTYPE {float_type}
+#define PIXELS_PER_THREAD {pixels_per_thread}
+#define SLIC_ZERO {1 if slic_zero else 0}
+#define USE_MASK {1 if use_mask else 0}
+#define IGNORE_COLOR {1 if ignore_color else 0}
+#define EXTRA_CELLS {extra_cells}
+#define FIXED_ROUND {"llrint" if is_float64 else "llrintf"}
+"""
+    cuda_source = (
+        '#include "cupy/atomics.cuh"\n'
+        + 'extern "C" { '
+        + cuda_source_defines
+        + cuda_source
+        + " }"
+    )
+    return cp.RawModule(code=cuda_source, options=("-std=c++11",))
+
+
 def _slic(
     image,
     sp_shape,
@@ -504,14 +660,6 @@ def _slic(
     # initial 4 x 4 (x 4) neighborhood.
     extra_cells = int(os.environ.get("CUCIM_SLIC_EXTRA_CELLS", "4"))
 
-    __dirname__ = os.path.dirname(__file__)
-    if len(shape_spatial) == 2:
-        module_path = os.path.join(__dirname__, "cuda", "slic2d.cu")
-    else:
-        module_path = os.path.join(__dirname__, "cuda", "slic3d.cu")
-    with open(module_path) as f:
-        cuda_source = f.read()
-
     center_block, center_grid = line_kernel_config(n_centers)
     image_block, image_grid = box_kernel_config(
         shape_spatial, use_mask=use_mask
@@ -519,26 +667,17 @@ def _slic(
 
     ss = spatial_weight * spatial_weight
 
-    cuda_source_defines = f"""
-#define N_PIXEL_FEATURES {n_features}
-#define START_LABEL {start_label}
-#define FLOAT_DTYPE {"double" if image.dtype == np.float64 else "float"}
-#define INTERNAL_FLOAT_DTYPE {"double" if image.dtype == np.float64 else "float"}
-#define PIXELS_PER_THREAD {maximization_pixels_per_thread}
-#define SLIC_ZERO {1 if slic_zero else 0}
-#define USE_MASK {1 if use_mask else 0}
-#define IGNORE_COLOR {1 if ignore_color else 0}
-#define EXTRA_CELLS {extra_cells}
-#define FIXED_ROUND {"llrint" if image.dtype == np.float64 else "llrintf"}
-"""
-    cuda_source = (
-        '#include "cupy/atomics.cuh"\n'
-        + 'extern "C" { '
-        + cuda_source_defines
-        + cuda_source
-        + " }"
+    module = _get_slic_module(
+        len(shape_spatial),
+        n_features,
+        start_label,
+        image.dtype == np.float64,
+        maximization_pixels_per_thread,
+        slic_zero,
+        use_mask,
+        ignore_color,
+        extra_cells,
     )
-    module = cp.RawModule(code=cuda_source, options=("-std=c++11",))
     # gpu_slic_init = module.get_function("init_clusters")
     gpu_slic_expectation = module.get_function(
         "expectation_mask" if use_mask else "expectation"
@@ -564,28 +703,26 @@ def _slic(
         # Power-of-two scale for the fixed-point feature sums. It is chosen
         # so that the sum over all pixels cannot overflow an int64 (with a
         # factor of 2 margin) and is capped to keep the resolution finite.
-        max_abs = cp.maximum(cp.abs(image.max()), cp.abs(image.min()))
-        fixed_scale_gpu = cp.exp2(
-            cp.minimum(
-                cp.floor(
-                    cp.log2(
-                        2.0**60
-                        / (image.size / n_features * cp.maximum(max_abs, 1e-30))
-                    )
-                ),
-                _FIXED_POINT_MAX_LOG2_SCALE,
-            )
-        ).astype(image.dtype)
+        max_abs = _get_max_abs_kernel()(image)
+        fixed_scale_gpu = _get_fixed_scale_kernel()(
+            max_abs,
+            image.dtype.type(image.size / n_features),
+            image.dtype.type(_FIXED_POINT_MAX_LOG2_SCALE),
+        )
         center_counts_gpu = cp.empty(n_centers, dtype=cp.uint32)
     if use_mask:
         mask = cp.ascontiguousarray(mask, dtype=cp.uint8)
 
     float_dtype = image.dtype
-    spacing = cp.asarray(spacing, dtype=float_dtype)
-
-    # device scalar (passing Python float did not work, so changed to
-    # float* in the kernel)
-    ss = cp.asarray(ss, dtype=float_dtype)
+    # The spacing and the squared spatial weight are passed as device arrays
+    # (passing a Python float did not work, so they are float* in the
+    # kernel). They are transferred together, in one copy.
+    spacing_host = np.asarray(spacing, dtype=float_dtype).ravel()
+    scalars = cp.asarray(
+        np.concatenate([spacing_host, np.asarray([ss], dtype=float_dtype)])
+    )
+    spacing = scalars[: spacing_host.size]
+    ss = scalars[spacing_host.size :]
     if use_atomic_maximization or slic_zero:
         n_pixels = image.size // n_features
         accumulation_block, accumulation_grid = line_kernel_config(
@@ -979,13 +1116,28 @@ def slic(
             "the image is grayscale"
         )
 
-    image = img_as_float(image)
-    float_dtype = image.dtype
-
-    # copy=True so subsequent in-place operations do not modify the
-    # function input
-    image = image.astype(float_dtype, copy=True)
     use_mask = mask is not None
+    # RGB uint8 or float32 images that are rescaled and converted to Lab are
+    # handled in one fused kernel (below) instead of by a series of passes
+    fused_lab = (
+        not use_mask
+        and channel_axis is not None
+        and channel_axis % image.ndim == image.ndim - 1
+        and image.ndim in (3, 4)
+        and image.shape[-1] == 3
+        and (convert2lab or convert2lab is None)
+        and image.dtype in (cp.uint8, cp.float32)
+    )
+    if fused_lab:
+        float_dtype = cp.dtype(cp.float32)
+        image = cp.ascontiguousarray(image)
+    else:
+        image = img_as_float(image)
+        float_dtype = image.dtype
+
+        # copy=True so subsequent in-place operations do not modify the
+        # function input
+        image = image.astype(float_dtype, copy=True)
     if use_mask:
         mask = cp.ascontiguousarray(mask, dtype=cp.bool_)
         if channel_axis is None:
@@ -1010,6 +1162,7 @@ def slic(
     # input image scale.
     imin = image_values.min()
     imax = image_values.max()
+    ratio = 1.0 / compactness
     if check_finite_and_constant:
         imin_host = float(imin)
         imax_host = float(imax)
@@ -1019,11 +1172,17 @@ def slic(
             raise ValueError(
                 "unmasked infinite values in image are not supported"
             )
-    image -= imin
-    # A constant image is left at zero. The test is done on the device to
-    # avoid a synchronization.
-    scale = imax - imin
-    image /= cp.where(scale > 0, scale, 1).astype(image.dtype, copy=False)
+    if fused_lab:
+        # rescaled, converted to Lab and weighted by 1 / compactness in a
+        # single kernel; a constant image is left at zero (the test is done
+        # on the device to avoid a synchronization)
+        image = _rgb2lab_scaled(image, imin, imax, ratio)
+    else:
+        image -= imin
+        # A constant image is left at zero. The test is done on the device to
+        # avoid a synchronization.
+        scale = imax - imin
+        image /= cp.where(scale > 0, scale, 1).astype(image.dtype, copy=False)
 
     dtype = image.dtype
 
@@ -1042,7 +1201,9 @@ def slic(
         # Add channel as single last dimension
         image = image[..., cp.newaxis]
 
-    if multichannel and (convert2lab or convert2lab is None):
+    if fused_lab:
+        pass  # already converted to Lab
+    elif multichannel and (convert2lab or convert2lab is None):
         if image.shape[-1] != 3 and convert2lab:
             raise ValueError("Lab colorspace conversion requires a RGB image.")
         elif image.shape[-1] == 3:
@@ -1074,18 +1235,27 @@ def slic(
         )
 
     n_centroids = centroids.shape[0]
-    segments = cp.ascontiguousarray(
-        cp.concatenate(
-            [cp.zeros((n_centroids, image.shape[-1])), centroids], axis=-1
-        ),
-        dtype=float_dtype,
-    )
+    if isinstance(centroids, np.ndarray):
+        # build the array of centers on the host to transfer it in one copy
+        segments = np.zeros(
+            (n_centroids, image.shape[-1] + centroids.shape[-1]),
+            dtype=float_dtype,
+        )
+        segments[:, image.shape[-1] :] = centroids
+        segments = cp.asarray(segments)
+    else:
+        segments = cp.ascontiguousarray(
+            cp.concatenate(
+                [cp.zeros((n_centroids, image.shape[-1])), centroids], axis=-1
+            ),
+            dtype=float_dtype,
+        )
 
     # Scaling of ratio in the same way as in the SLIC paper so the
     # values have the same meaning
     max_step = max(steps)
-    ratio = 1.0 / compactness
-    image *= ratio
+    if not fused_lab:
+        image *= ratio
 
     # TODO (grelee):
     #   check step and ratio parameters and grid generation to make it closely

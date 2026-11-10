@@ -1182,3 +1182,86 @@ def test_raises_ValueError_if_input_has_inf(inf):
 
     # mask = np.isfinite(img)
     # slic(img, mask=mask, channel_axis=None)
+
+
+def _rescale_rgb2lab(image, ratio):
+    """Reference for the fused kernel: the separate passes."""
+    from cucim.skimage.color import rgb2lab
+
+    image = img_as_float(image).astype(cp.float32, copy=True)
+    imin = image.min()
+    imax = image.max()
+    scale = imax - imin
+    image -= imin
+    image /= cp.where(scale > 0, scale, 1).astype(image.dtype, copy=False)
+    lab = rgb2lab(image)
+    lab *= ratio
+    return lab
+
+
+@pytest.mark.parametrize(
+    "kind", ["uint8", "uint8_narrow", "uint8_constant", "float32", "3d"]
+)
+@pytest.mark.parametrize("ratio", [0.1, 1.0, 10.0])
+def test_fused_rgb2lab_matches_separate_passes(kind, ratio):
+    from cucim.skimage.segmentation.slic_superpixels import _rgb2lab_scaled
+
+    rng = np.random.default_rng(0)
+    if kind == "uint8":
+        img = rng.integers(0, 256, (40, 50, 3), dtype=np.uint8)
+    elif kind == "uint8_narrow":
+        img = rng.integers(100, 140, (40, 50, 3), dtype=np.uint8)
+    elif kind == "uint8_constant":
+        img = np.full((10, 12, 3), 77, dtype=np.uint8)
+    elif kind == "float32":
+        img = (rng.random((40, 50, 3)) * 3 - 1).astype(np.float32)
+    else:
+        img = rng.integers(0, 256, (6, 20, 24, 3), dtype=np.uint8)
+    img = cp.asarray(img)
+    expected = _rescale_rgb2lab(img, ratio)
+    result = _rgb2lab_scaled(img, img.min(), img.max(), ratio)
+    assert result.dtype == cp.float32
+    assert result.shape == img.shape
+    # single precision arithmetic, so equal up to rounding of the last bits
+    cp.testing.assert_allclose(result, expected, rtol=1e-4, atol=1e-4 * ratio)
+    if kind == "uint8_constant":
+        # a constant image is left at (nearly) zero
+        assert float(cp.abs(result).max()) < 1e-5 * ratio
+
+
+def test_fused_and_unfused_color_paths_agree():
+    # float64 input does not use the fused kernel
+    rng = np.random.default_rng(1)
+    img = cp.asarray(rng.integers(0, 256, (60, 80, 3), dtype=np.uint8))
+    labels_fused = slic(img, n_segments=30, start_label=0)
+    labels_other = slic(
+        img.astype(cp.float64) / 255, n_segments=30, start_label=0
+    )
+    assert float((labels_fused != labels_other).mean()) < 1e-3
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_fixed_point_scale_kernels(dtype):
+    from cucim.skimage.segmentation.slic_superpixels import (
+        _FIXED_POINT_MAX_LOG2_SCALE,
+        _get_fixed_scale_kernel,
+        _get_max_abs_kernel,
+    )
+
+    rng = np.random.default_rng(0)
+    for magnitude in (1e-9, 1e-3, 1.0, 100.0, 1e4):
+        x = cp.asarray(
+            (rng.random((7, 9)) * magnitude - magnitude / 3).astype(dtype)
+        )
+        max_abs = _get_max_abs_kernel()(x)
+        assert float(max_abs) == float(cp.abs(x).max())
+        n_values = x.size
+        scale = _get_fixed_scale_kernel()(
+            max_abs,
+            dtype(n_values),
+            dtype(_FIXED_POINT_MAX_LOG2_SCALE),
+        )
+        # power of two that keeps the sum of n_values values below 2**60
+        assert float(scale) == 2.0 ** int(np.log2(float(scale)))
+        assert float(scale) * n_values * float(max_abs) <= 2.0**60
+        assert float(scale) <= 2.0**_FIXED_POINT_MAX_LOG2_SCALE
