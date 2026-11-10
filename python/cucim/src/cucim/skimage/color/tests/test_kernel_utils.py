@@ -319,3 +319,35 @@ def test_separate_stains_is_not_negative_and_matches_reference(dtype):
     )
     tol = 1e-5 if dtype == cp.float32 or dtype == cp.uint8 else 1e-12
     cp.testing.assert_allclose(stains, expected, rtol=0, atol=tol)
+
+
+@pytest.mark.parametrize("dtype", [cp.uint8, cp.float32, cp.float64])
+def test_fused_rgb2luv_matches_the_two_step_conversion(dtype):
+    img = _rgb_image(dtype)
+    expected = color.xyz2luv(color.rgb2xyz(img))
+    result = color.rgb2luv(img)
+    assert result.dtype == expected.dtype
+    cp.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+def test_fused_luv2rgb_matches_the_two_step_conversion(dtype):
+    # The Luv to XYZ formula is ill-conditioned near black, so in float32 the
+    # two kernels and the fused kernel round differently (about 2e-5 at most
+    # for a float32 result). Both agree with the float64 result as well.
+    luv = color.rgb2luv(_rgb_image(dtype))
+    expected = color.xyz2rgb(color.luv2xyz(luv))
+    result = color.luv2rgb(luv)
+    assert result.dtype == expected.dtype
+    tol = 1e-4 if dtype == cp.float32 else 1e-10
+    cp.testing.assert_allclose(result, expected, rtol=0, atol=tol)
+    reference = color.luv2rgb(luv.astype(cp.float64))
+    cp.testing.assert_allclose(result, reference, rtol=0, atol=tol)
+
+
+def test_luv_conversions_of_a_single_pixel():
+    pixel = cp.asarray([0.2, 0.5, 0.7], dtype=cp.float32)
+    luv = color.rgb2luv(pixel)
+    assert luv.shape == (3,)
+    cp.testing.assert_array_equal(luv, color.xyz2luv(color.rgb2xyz(pixel)))
+    assert color.luv2rgb(luv).shape == (3,)

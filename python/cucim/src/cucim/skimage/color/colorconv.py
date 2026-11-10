@@ -236,6 +236,11 @@ def _prepare_colorarray_scaled(arr, channel_axis=-1):
     return cp.ascontiguousarray(arr), float_dtype, scale
 
 
+def _float_dtype_of(arr):
+    """The floating point dtype of the result of a conversion of ``arr``."""
+    return np.dtype(_supported_float_type(arr.dtype))
+
+
 def _validate_channel_axis(channel_axis, ndim):
     if not isinstance(channel_axis, int):
         raise TypeError("channel_axis must be an integer")
@@ -858,17 +863,25 @@ hpx_from_rgb = linalg.inv(rgb_from_hpx)
 
 
 @cp.memoize(for_each_device=True)
-def _get_convert_kernel(matrix_tuple, pre, post, name, with_counter=False):
+def _get_convert_kernel(
+    matrix_tuple, pre, post, name, with_counter=False, preamble=''
+):
     return elementwise_kernel(
         'raw I x, X scale',
         'raw X y' + (', raw int32 counter' if with_counter else ''),
         _get_core_colorconv_operation(matrix_tuple, pre, post),
         name='cucim_skimage_color_' + name,
-        preamble=_LOAD_PREAMBLE)
+        preamble=_LOAD_PREAMBLE + preamble)
 
 
 def _convert(
-    matrix, arr, pre='', post='', name='_convert', count_invalid=False
+    matrix,
+    arr,
+    pre='',
+    post='',
+    name='_convert',
+    count_invalid=False,
+    preamble='',
 ):
     """Do the color space conversion.
 
@@ -892,7 +905,12 @@ def _convert(
     arr, float_dtype, scale = _prepare_colorarray_scaled(arr)
     name = name + f'_{float_dtype.char}'
     kern = _get_convert_kernel(
-        tuple(matrix.ravel()), pre, post, name, with_counter=count_invalid
+        tuple(matrix.ravel()),
+        pre,
+        post,
+        name,
+        with_counter=count_invalid,
+        preamble=preamble,
     )
     out = cp.empty(arr.shape, dtype=float_dtype)
     if not count_invalid:
@@ -1023,6 +1041,76 @@ def _lab2xyz_pre(xyz_ref_white):
         v[1] *= {xyz_ref_white[1]};
         v[2] *= {xyz_ref_white[2]};
     """
+
+
+def _luv_white_point_uv(xyz_ref_white):
+    """u' and v' of the reference white point."""
+    denom = np.asarray([1, 15, 3]) @ np.asarray(xyz_ref_white, dtype=float)
+    denom = float(denom)
+    u0 = 4 * xyz_ref_white[0] / denom
+    v0 = 9 * xyz_ref_white[1] / denom
+    return u0, v0
+
+
+def _xyz2luv_post(xyz_ref_white, dtype):
+    """Code and preamble that convert the pixel ``w`` from XYZ to CIE-LUV."""
+    eps = np.finfo(dtype).eps
+    preamble = f"""
+    // u' and v' helper functions
+
+    static __device__ __inline__ X fu(X v0, X v1, X v2)
+    {{
+        return (4.0 * v0) / (v0 + 15.0 * v1 + 3.0 * v2 + {eps});
+    }}
+
+    static __device__ __inline__ X fv(X v0, X v1, X v2)
+    {{
+        return (9.0 * v1) / (v0 + 15.0 * v1 + 3.0 * v2 + {eps});
+    }}
+    """
+    u0, v0 = _luv_white_point_uv(xyz_ref_white)
+    code = f"""
+        X xyz_x = w[0];
+        X xyz_y = w[1];
+        X xyz_z = w[2];
+        w[0] = xyz_y / {xyz_ref_white[1]};
+        if (w[0] > 0.008856)
+        {{
+            w[0] = 116.0 * cbrt(w[0]) - 16.0;
+        }} else {{
+            w[0] *= 903.3;
+        }}
+        w[1] = 13.0 * w[0] * (fu(xyz_x, xyz_y, xyz_z) - {u0});
+        w[2] = 13.0 * w[0] * (fv(xyz_x, xyz_y, xyz_z) - {v0});
+    """
+    return code, preamble
+
+
+def _luv2xyz_pre(xyz_ref_white, dtype):
+    """Code that converts the pixel ``v`` from CIE-LUV to XYZ in place."""
+    eps = np.finfo(dtype).eps
+    u0, v0 = _luv_white_point_uv(xyz_ref_white)
+    return f"""
+        X luv_l = v[0];
+        X luv_u = v[1];
+        X luv_v = v[2];
+        X xyz_y;
+        if (luv_l > 7.999625)
+        {{
+            xyz_y = (luv_l + 16.0) / 116.0;
+            xyz_y *= xyz_y * xyz_y;
+        }} else {{
+            xyz_y = luv_l / 903.3;
+        }}
+        xyz_y *= {xyz_ref_white[1]};
+        X uv_a = {u0} + luv_u / (13.0 * luv_l + {eps});
+        X uv_b = {v0} + luv_v / (13.0 * luv_l + {eps});
+        X uv_c = 3.0 * xyz_y * (5.0 * uv_b - 3.0);
+        X xyz_z = ((uv_a - 4.0) * uv_c - 15.0 * uv_a * uv_b * xyz_y) / (12.0 * uv_b);
+        v[0] = -(uv_c / uv_b + 3.0 * xyz_z);
+        v[1] = xyz_y;
+        v[2] = xyz_z;
+    """  # noqa
 
 
 @channel_as_last_axis()
@@ -1671,51 +1759,18 @@ def lab2rgb(lab, illuminant="D65", observer="2", *, channel_axis=-1):
 
 @cp.memoize(for_each_device=True)
 def _get_xyz_to_luv_kernel(xyz_ref_white, dtype):
-
-    eps = np.finfo(dtype).eps
-
-    preamble = f"""
-    // u' and v' helper functions
-
-    static __device__ __inline__ X fu(X v0, X v1, X v2)
-    {{
-        return (4.0 * v0) / (v0 + 15.0 * v1 + 3.0 * v2 + {eps});
-    }}
-
-    static __device__ __inline__ X fv(X v0, X v1, X v2)
-    {{
-        return (9.0 * v1) / (v0 + 15.0 * v1 + 3.0 * v2 + {eps});
-    }}
+    post, preamble = _xyz2luv_post(xyz_ref_white, dtype)
+    code = f"""
+        X w[3] = {{xyz[3*i], xyz[3*i + 1], xyz[3*i + 2]}};
+        {post}
+        luv[3*i] = w[0];
+        luv[3*i + 1] = w[1];
+        luv[3*i + 2] = w[2];
     """
-
-    denom = np.asarray([1, 15, 3]) @ np.asarray(xyz_ref_white, dtype=float)
-    denom = float(denom)
-    u0 = 4 * xyz_ref_white[0] / denom
-    v0 = 9 * xyz_ref_white[1] / denom
-
-    _xyz_to_luv = f"""
-        luv[3*i] = xyz[3*i + 1] / {xyz_ref_white[1]};
-        if (luv[3*i] > 0.008856)
-        {{
-            luv[3*i] = 116.0 * cbrt(luv[3*i]) - 16.0;
-        }} else {{
-            luv[3*i] *= 903.3;
-        }}
-
-        luv[3*i + 1] = (
-            13.0 * luv[3*i] * (fu(xyz[3*i], xyz[3*i + 1], xyz[3*i + 2]) - {u0})
-        );
-        luv[3*i + 2] = (
-            13.0 * luv[3*i] * (fv(xyz[3*i], xyz[3*i + 1], xyz[3*i + 2]) - {v0})
-        );
-
-    """
-
-    # array will be modified in-place
     return elementwise_kernel(
-        '',
-        'raw X xyz, raw X luv',
-        _xyz_to_luv,
+        'raw X xyz',
+        'raw X luv',
+        code,
         preamble=preamble,
         name=f'cucim_skimage_color_xyz2luv_{np.dtype(dtype).char}')
 
@@ -1793,36 +1848,17 @@ def xyz2luv(xyz, illuminant="D65", observer="2", *, channel_axis=-1):
 
 @cp.memoize(for_each_device=True)
 def _get_luv_to_xyz_kernel(xyz_ref_white, dtype):
-
-    eps = np.finfo(dtype).eps
-
-    denom = np.asarray([1, 15, 3]) @ np.asarray(xyz_ref_white, dtype=float)
-    denom = float(denom)
-    u0 = 4 * xyz_ref_white[0] / denom
-    v0 = 9 * xyz_ref_white[1] / denom
-
-    _luv_to_xyz = f"""
-        if (luv[3*i] > 7.999625)
-        {{
-            xyz[3*i + 1] = (luv[3 * i] + 16.0) / 116.0;
-            xyz[3*i + 1] *= xyz[3*i + 1] * xyz[3*i + 1];
-        }} else {{
-            xyz[3*i + 1] = luv[3*i] / 903.3;
-        }}
-        xyz[3*i + 1] *= {xyz_ref_white[1]};
-
-        X a = {u0} + luv[3*i + 1] / (13.0 * luv[3*i] + {eps});
-        X b = {v0} + luv[3*i + 2] / (13.0 * luv[3*i] + {eps});
-        X c = 3.0 * xyz[3*i + 1] * (5.0 * b - 3.0);
-
-        xyz[3*i + 2] = ((a - 4.0) * c - 15.0 * a * b * xyz[3*i + 1]) / (12.0 * b);
-        xyz[3*i] = -(c / b + 3.0 * xyz[3*i + 2]);
-
-    """  # noqa
+    code = f"""
+        X v[3] = {{luv[3*i], luv[3*i + 1], luv[3*i + 2]}};
+        {_luv2xyz_pre(xyz_ref_white, dtype)}
+        xyz[3*i] = v[0];
+        xyz[3*i + 1] = v[1];
+        xyz[3*i + 2] = v[2];
+    """
     return elementwise_kernel(
-        '',
-        'raw X luv, raw X xyz',
-        _luv_to_xyz,
+        'raw X luv',
+        'raw X xyz',
+        code,
         name=f'cucim_skimage_color_luv2xyz_{np.dtype(dtype).char}')
 
 
@@ -1911,7 +1947,16 @@ def rgb2luv(rgb, *, channel_axis=-1):
     .. [1] http://www.easyrgb.com/en/math.php
     .. [2] https://en.wikipedia.org/wiki/CIELUV
     """
-    return xyz2luv(rgb2xyz(rgb))
+    xyz_ref_white = xyz_tristimulus_values(illuminant="D65", observer="2")
+    post, preamble = _xyz2luv_post(xyz_ref_white, _float_dtype_of(rgb))
+    return _convert(
+        xyz_from_rgb,
+        rgb,
+        pre=_RGB2XYZ_PRE,
+        post=post,
+        name='rgb2luv',
+        preamble=preamble,
+    )
 
 
 @channel_as_last_axis()
@@ -1938,7 +1983,11 @@ def luv2rgb(luv, *, channel_axis=-1):
     -----
     This function uses luv2xyz and xyz2rgb.
     """
-    return xyz2rgb(luv2xyz(luv))
+    xyz_ref_white = xyz_tristimulus_values(illuminant="D65", observer="2")
+    pre = _luv2xyz_pre(xyz_ref_white, _float_dtype_of(luv))
+    return _convert(
+        rgb_from_xyz, luv, pre=pre, post=_XYZ2RGB_POST, name='luv2rgb'
+    )
 
 
 @channel_as_last_axis()
