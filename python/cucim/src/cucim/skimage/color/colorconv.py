@@ -181,6 +181,61 @@ def _prepare_colorarray(
     return out
 
 
+# The value of an integer image is mapped to [0, 1] by img_as_float with a
+# multiplication by float32(1 / max) (computed in float32).
+_UNSCALED_INTEGER_MAX = {np.dtype(np.uint8): 255, np.dtype(np.uint16): 65535}
+
+# Kernels that read these inputs convert the value as ``mul_rn(X(x), scale)``.
+# The product is rounded on its own (no fused multiply-add with what follows),
+# as it is when the conversion is a separate pass.
+_LOAD_PREAMBLE = """
+static __device__ __forceinline__ float mul_rn(float a, float b)
+{
+    return __fmul_rn(a, b);
+}
+static __device__ __forceinline__ double mul_rn(double a, double b)
+{
+    return __dmul_rn(a, b);
+}
+"""
+
+
+def _prepare_colorarray_scaled(arr, channel_axis=-1):
+    """Like `_prepare_colorarray`, but without the conversion pass.
+
+    ``uint8``, ``uint16``, ``float16``, ``float32`` and ``float64`` arrays are
+    returned as they are (made C-contiguous) together with the floating point
+    dtype of the result and the factor ``scale`` that the kernel applies to
+    each value (``1 / 255`` or ``1 / 65535`` for the integer types, 1
+    otherwise), which gives the values of ``img_as_float``. The kernel does
+    the conversion while it reads the values, which saves a pass over the
+    array and reads only 1 or 2 bytes per value for the integer types. Other
+    dtypes are converted as in `_prepare_colorarray`.
+
+    Returns
+    -------
+    arr : ndarray
+    float_dtype : numpy.dtype
+        The dtype of the result.
+    scale : numpy scalar of float_dtype
+    """
+    if arr.shape[channel_axis] != 3:
+        msg = (
+            f"the input array must have size 3 along `channel_axis`, "
+            f"got {arr.shape}"
+        )
+        raise ValueError(msg)
+    float_dtype = np.dtype(_supported_float_type(arr.dtype))
+    if arr.dtype in _UNSCALED_INTEGER_MAX:
+        scale = float_dtype.type(1 / _UNSCALED_INTEGER_MAX[arr.dtype])
+    elif arr.dtype in (np.float16, np.float32, np.float64):
+        scale = float_dtype.type(1)
+    else:
+        arr = _prepare_colorarray(arr, channel_axis=channel_axis)
+        scale = float_dtype.type(1)
+    return cp.ascontiguousarray(arr), float_dtype, scale
+
+
 def _validate_channel_axis(channel_axis, ndim):
     if not isinstance(channel_axis, int):
         raise TypeError("channel_axis must be an integer")
@@ -283,12 +338,15 @@ def rgba2rgb(rgba, background=(1, 1, 1), *, channel_axis=-1):
 @cp.memoize(for_each_device=True)
 def _rgb_to_hsv_kernel(name="rgb2hsv"):
     code = """
-    X minv = rgb[3*i];
-    X maxv = rgb[3*i];
+    X c[3] = {mul_rn((X)(rgb[3*i]), scale),
+              mul_rn((X)(rgb[3*i + 1]), scale),
+              mul_rn((X)(rgb[3*i + 2]), scale)};
+    X minv = c[0];
+    X maxv = c[0];
     X tmp;
     for (int ch=1; ch < 3; ch++)
     {
-        tmp = rgb[3*i + ch];
+        tmp = c[ch];
         if (tmp > maxv)
         {
             maxv = tmp;
@@ -304,15 +362,15 @@ def _rgb_to_hsv_kernel(name="rgb2hsv"):
         hsv[3*i + 1] = 0.0;
     } else {
         hsv[3*i + 1] = delta / maxv;
-        if (rgb[3*i] == maxv)
+        if (c[0] == maxv)
         {
-           hsv[3*i]  = (rgb[3*i + 1] - rgb[3*i + 2]) / delta;
-        } else if (rgb[3*i + 1] == maxv)
+           hsv[3*i]  = (c[1] - c[2]) / delta;
+        } else if (c[1] == maxv)
         {
-           hsv[3*i]  = 2.0 + (rgb[3*i + 2] - rgb[3*i]) / delta;
-        } else if (rgb[3*i + 2] == maxv)
+           hsv[3*i]  = 2.0 + (c[2] - c[0]) / delta;
+        } else if (c[2] == maxv)
         {
-           hsv[3*i]  = 4.0 + (rgb[3*i] - rgb[3*i + 1]) / delta;
+           hsv[3*i]  = 4.0 + (c[0] - c[1]) / delta;
         }
         hsv[3*i] /= 6.0;
         hsv[3*i] = hsv[3*i] - floor(hsv[3*i] / (X)1.0);
@@ -320,7 +378,11 @@ def _rgb_to_hsv_kernel(name="rgb2hsv"):
     hsv[3*i + 2] = maxv;
     """
     return elementwise_kernel(
-        "raw X rgb", "raw X hsv", code, name="cucim_skimage_color_" + name
+        "raw I rgb, X scale",
+        "raw X hsv",
+        code,
+        name="cucim_skimage_color_" + name,
+        preamble=_LOAD_PREAMBLE,
     )
 
 
@@ -368,14 +430,14 @@ def rgb2hsv(rgb, *, channel_axis=-1):
     if input_is_one_pixel:
         rgb = rgb[np.newaxis, ...]
 
-    rgb = _prepare_colorarray(
-        rgb, force_c_contiguous=True, channel_axis=channel_axis
+    rgb, float_dtype, scale = _prepare_colorarray_scaled(
+        rgb, channel_axis=channel_axis
     )
-    hsv = cp.empty_like(rgb)
+    hsv = cp.empty(rgb.shape, dtype=float_dtype)
 
-    name = f"rgb2hsv_{rgb.dtype.char}"
+    name = f"rgb2hsv_{float_dtype.char}"
     kern = _rgb_to_hsv_kernel(name=name)
-    kern(rgb, hsv, size=rgb.size // 3)
+    kern(rgb, scale, hsv, size=rgb.size // 3)
 
     if input_is_one_pixel:
         hsv = cp.squeeze(hsv, axis=0)
@@ -798,10 +860,11 @@ hpx_from_rgb = linalg.inv(rgb_from_hpx)
 @cp.memoize(for_each_device=True)
 def _get_convert_kernel(matrix_tuple, pre, post, name):
     return elementwise_kernel(
-        'raw X x',
+        'raw I x, X scale',
         'raw X y',
         _get_core_colorconv_operation(matrix_tuple, pre, post),
-        name='cucim_skimage_color_' + name)
+        name='cucim_skimage_color_' + name,
+        preamble=_LOAD_PREAMBLE)
 
 
 def _convert(matrix, arr, pre='', post='', name='_convert'):
@@ -819,11 +882,11 @@ def _convert(matrix, arr, pre='', post='', name='_convert'):
     out : (..., C=3) ndarray
         The converted array. Same dimensions as input.
     """
-    arr = _prepare_colorarray(arr)
-    name = name + f'_{arr.dtype.char}'
+    arr, float_dtype, scale = _prepare_colorarray_scaled(arr)
+    name = name + f'_{float_dtype.char}'
     kern = _get_convert_kernel(tuple(matrix.ravel()), pre, post, name)
-    out = cp.empty_like(arr)
-    kern(arr, out, size=arr.size // 3)
+    out = cp.empty(arr.shape, dtype=float_dtype)
+    kern(arr, scale, out, size=arr.size // 3)
     return out
 
 
@@ -837,7 +900,9 @@ def _get_core_colorconv_operation(m, pre="", post=""):
     m is a 3x3 color conversion matrix
     """
     return f"""
-        X v[3] = {{x[3*i], x[3*i + 1], x[3*i + 2]}};
+        X v[3] = {{mul_rn((X)(x[3*i]), scale),
+                   mul_rn((X)(x[3*i + 1]), scale),
+                   mul_rn((X)(x[3*i + 2]), scale)}};
         {pre}
         X w[3];
         w[0] = v[0] * {m[0]} + v[1] * {m[1]} + v[2] * {m[2]};
@@ -951,9 +1016,6 @@ def rgb2xyz(rgb, *, channel_axis=-1):
     """
     # Follow the algorithm from http://www.easyrgb.com/index.php
     # except we don't multiply/divide by 100 in the conversion
-    rgb = _prepare_colorarray(rgb, force_copy=False, force_c_contiguous=True,
-                              channel_axis=channel_axis)
-
     # scaling applied to the input before 3x3 conversion matrix multiplication
     # (c indexes over color channels here)
     _pre_colorconv = """
@@ -1046,12 +1108,16 @@ def rgbcie2rgb(rgbcie, *, channel_axis=-1):
 @cp.memoize(for_each_device=True)
 def _rgb_to_gray_kernel(dtype):
     return elementwise_kernel(
-        'raw X rgb',
+        'raw I rgb, X scale',
         'raw X gray',
         """
-        gray[i] = 0.2125 * rgb[3*i] + 0.7154 * rgb[3*i + 1] + 0.0721 * rgb[3*i + 2];
+        X r = mul_rn((X)(rgb[3*i]), scale);
+        X g = mul_rn((X)(rgb[3*i + 1]), scale);
+        X b = mul_rn((X)(rgb[3*i + 2]), scale);
+        gray[i] = 0.2125 * r + 0.7154 * g + 0.0721 * b;
         """,  # noqa
-        name=f'cucim_skimage_color_rgb2gray_{np.dtype(dtype).char}')
+        name=f'cucim_skimage_color_rgb2gray_{np.dtype(dtype).char}',
+        preamble=_LOAD_PREAMBLE)
 
 
 @channel_as_last_axis(multichannel_output=False)
@@ -1096,11 +1162,12 @@ def rgb2gray(rgb, *, channel_axis=-1):
     >>> img = cp.array(data.astronaut())
     >>> img_gray = rgb2gray(img)
     """
-    rgb = _prepare_colorarray(rgb, force_c_contiguous=True,
-                              channel_axis=channel_axis)
-    kern = _rgb_to_gray_kernel(rgb.dtype)
-    gray = cp.empty(rgb.shape[:-1], dtype=rgb.dtype)
-    kern(rgb, gray, size=gray.size)
+    rgb, float_dtype, scale = _prepare_colorarray_scaled(
+        rgb, channel_axis=channel_axis
+    )
+    kern = _rgb_to_gray_kernel(float_dtype)
+    gray = cp.empty(rgb.shape[:-1], dtype=float_dtype)
+    kern(rgb, scale, gray, size=gray.size)
     return gray
 
 
@@ -1885,17 +1952,18 @@ def _separate_stains_kernel(m):
     X tmp[3];
     for (int ch=0; ch<3; ch++)
     {{
-        tmp[ch] = log(max(rgb[3*i + ch], 1e-6)) * {log_adjust};
+        tmp[ch] = log(max(mul_rn((X)(rgb[3*i + ch]), scale), 1e-6)) * {log_adjust};
     }}
     stains[3*i] = tmp[0] * {m[0]} + tmp[1] * {m[3]} + tmp[2] * {m[6]};
     stains[3*i + 1] = tmp[0] * {m[1]} + tmp[1] * {m[4]} + tmp[2] * {m[7]};
     stains[3*i + 2] = tmp[0] * {m[2]} + tmp[1] * {m[5]} + tmp[2] * {m[8]};
     """  # noqa
     return elementwise_kernel(
-        'raw X rgb',
+        'raw I rgb, X scale',
         'raw X stains',
         code,
-        name='cucim_skimage_color_seperate_stains')
+        name='cucim_skimage_color_seperate_stains',
+        preamble=_LOAD_PREAMBLE)
 
 
 @channel_as_last_axis()
@@ -1961,9 +2029,9 @@ def separate_stains(rgb, conv_matrix, *, channel_axis=-1):
     >>> ihc = cp.array(data.immunohistochemistry())
     >>> ihc_hdx = separate_stains(ihc, hdx_from_rgb)
     """  # noqa
-    rgb = _prepare_colorarray(rgb, force_c_contiguous=True,
-                              channel_axis=channel_axis)
-
+    rgb, float_dtype, scale = _prepare_colorarray_scaled(
+        rgb, channel_axis=channel_axis
+    )
     if conv_matrix.shape != (3, 3):
         raise ValueError("conv_matrix must have shape (3, 3)")
     conv_matrix = tuple(cp.asnumpy(conv_matrix).ravel())
@@ -1975,8 +2043,8 @@ def separate_stains(rgb, conv_matrix, *, channel_axis=-1):
     # stains = (cp.log(rgb) / log_adjust) @ conv_matrix
 
     kern = _separate_stains_kernel(conv_matrix)
-    stains = cp.empty_like(rgb)
-    kern(rgb, stains, size=rgb.size // 3)
+    stains = cp.empty(rgb.shape, dtype=float_dtype)
+    kern(rgb, scale, stains, size=rgb.size // 3)
     cp.maximum(stains, 0, out=stains)
     return stains
 
