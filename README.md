@@ -1,6 +1,6 @@
-# <div align="left"><img src="https://rapids.ai/assets/images/rapids_logo.png" width="90px"/>&nbsp;cuCIM</div>
+# NVIDIA cuCIM
 
-[RAPIDS](https://rapids.ai) cuCIM (pronounced "koo-sim", see [here]( https://ipa-reader.com/?text=ku%CB%90%CB%88s%C9%AAm&voice=Joey )) is an open-source, accelerated computer vision and image processing software library for multidimensional images used in biomedical, geospatial, material and life science, and remote sensing use cases.
+NVIDIA cuCIM (pronounced "koo-sim", see [here]( https://ipa-reader.com/?text=ku%CB%90%CB%88s%C9%AAm&voice=Joey )) is an open-source, accelerated computer vision and image processing software library for multidimensional images used in biomedical, geospatial, material and life science, and remote sensing use cases.
 
 cuCIM offers:
 
@@ -39,7 +39,7 @@ cuCIM supports the following formats:
 
 - [cuCIM: a GPU Image IO and Processing Library](https://www.youtube.com/watch?v=G46kOOM9xbQ)
 
-**[Documentation](https://docs.rapids.ai/api/cucim/stable)**
+**[Documentation](https://docs.nvidia.com/cucim)**
 
 **Release notes** are available on our [wiki page](https://github.com/rapidsai/cucim/wiki/Release-Notes).
 
