@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
@@ -82,6 +82,21 @@ class SkeletonizeBench(ImageBench):
         imaged = cp.asarray(image)
         self.args_cpu = (image,)
         self.args_gpu = (imaged,)
+
+
+class ConvexHullBench(ImageBench):
+    def set_args(self, dtype):
+        # binary blobs on a cube with the largest side, cropped to the shape
+        image = skimage.data.binary_blobs(
+            max(self.shape),
+            blob_size_fraction=0.05,
+            n_dim=len(self.shape),
+            volume_fraction=0.25,
+            rng=0,
+        )
+        image = image[tuple(slice(s) for s in self.shape)]
+        self.args_cpu = (image,)
+        self.args_gpu = (cp.asarray(image),)
 
 
 class ReconstructionBench(ImageBench):
@@ -175,6 +190,9 @@ def main(args):
             False,
         ),
         ("thin", dict(), dict(), False, True),
+        # convex_hull.py
+        ("convex_hull_image", dict(), dict(), False, True),
+        ("convex_hull_object", dict(), dict(), False, True),
         # grayreconstruct.py
         ("reconstruction", dict(), dict(), False, True),
         # extrema.py
@@ -273,6 +291,23 @@ def main(args):
                 run_cpu=run_cpu,
             )
 
+        elif function_name in ["convex_hull_image", "convex_hull_object"]:
+            if ndim > 3:
+                continue
+            B = ConvexHullBench(
+                function_name=function_name,
+                shape=shape,
+                dtypes=[bool],
+                fixed_kwargs=fixed_kwargs,
+                var_kwargs=var_kwargs,
+                module_cpu=skimage.morphology,
+                module_gpu=cucim.skimage.morphology,
+                # scikit-image's convex_hull_object is 2D only, and its 3D
+                # convex_hull_image tests every voxel against every facet
+                # (minutes for 192^3), so 3D is timed on the GPU only
+                run_cpu=run_cpu and ndim == 2,
+            )
+
         elif function_name in ["remove_small_holes", "remove_small_objects"]:
             if not allow_nd and ndim > 2:
                 continue
@@ -345,7 +380,8 @@ if __name__ == "__main__":
         'binary_closing', 'isotropic_erosion', 'isotropic_dilation',
         'isotropic_opening', 'isotropic_closing','remove_small_objects',
         'remove_small_holes', 'erosion', 'dilation', 'opening', 'closing',
-        'white_tophat', 'black_tophat', 'thin', 'medial_axis', 'reconstruction',
+        'white_tophat', 'black_tophat', 'thin', 'medial_axis',
+        'convex_hull_image', 'convex_hull_object', 'reconstruction',
         'local_maxima', 'local_minima', 'h_maxima', 'h_minima',
     ]
     # fmt: on

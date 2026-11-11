@@ -424,15 +424,48 @@ def convex_hull_object(
     convex_hull_image separately on each object or adjust ``connectivity``.
 
     The parameters listed under "Extra Parameters" above are present only
-    in cuCIM and not in scikit-image.
+    in cuCIM and not in scikit-image. Unlike scikit-image, images with more
+    than two dimensions are supported.
+
+    In 2D and 3D, the convex hulls of all objects are computed at once with
+    the batch convex-hull kernels of ``regionprops`` and written into the
+    output in one pass (`float64_computation` has no effect there). Other
+    images, and images smaller than an explicitly given
+    `cpu_fallback_threshold`, use ``convex_hull_image`` once per object.
     """
     if connectivity not in tuple(range(1, image.ndim + 1)):
         raise ValueError("`connectivity` must be between 1 and image.ndim.")
 
     labeled_im = label(image, connectivity=connectivity, background=0)
+    max_label = int(labeled_im.max())
+
+    # singleton axes are squeezed, as convex_hull_image does for each object
+    squeezed = cp.squeeze(labeled_im)
+    if (
+        squeezed.ndim in (2, 3)
+        and max_label > 0
+        and (
+            cpu_fallback_threshold is None
+            or image.size >= cpu_fallback_threshold
+        )
+    ):
+        # all objects at once
+        from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
+            _regionprops_label_pass,
+        )
+        from cucim.skimage.measure._regionprops_gpu_convex import (
+            _convex_hull_union,
+        )
+
+        squeezed = cp.ascontiguousarray(squeezed)
+        bbox = _regionprops_label_pass(squeezed, max_label, compute_bbox=True)[
+            "bbox"
+        ]
+        convex_img = _convex_hull_union(squeezed, bbox, max_label)
+        return convex_img.reshape(image.shape)
+
     convex_img = cp.zeros(image.shape, dtype=bool)
 
-    max_label = int(labeled_im.max())
     for i in range(1, max_label + 1):
         convex_obj = convex_hull_image(
             labeled_im == i,

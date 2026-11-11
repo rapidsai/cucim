@@ -498,6 +498,54 @@ def test_convex_hull_image_batch_3d_tolerance(tolerance):
         assert_array_equal(out, expected)
 
 
+@pytest.mark.parametrize("connectivity", [1, 2])
+def test_convex_hull_object_batch_2d(connectivity):
+    morphology_cpu = pytest.importorskip("skimage.morphology")
+    for blobs in _blob_images(2, (64, 150), range(3)):
+        out = convex_hull_object(cp.asarray(blobs), connectivity=connectivity)
+        expected = morphology_cpu.convex_hull_object(
+            blobs, connectivity=connectivity
+        )
+        assert_array_equal(out, expected)
+
+
+def test_convex_hull_object_batch_3d():
+    from cucim.skimage.measure import label
+
+    for blobs in _blob_images(3, (24,), range(2)):
+        image = cp.asarray(blobs)
+        out = convex_hull_object(image, connectivity=3)
+        # the union of the hulls of each object
+        labels = label(image, connectivity=3)
+        expected = cp.zeros_like(image)
+        for i in range(1, int(labels.max()) + 1):
+            expected |= convex_hull_image(labels == i)
+        assert_array_equal(out, expected)
+        # the per-object path (an explicit threshold above the image size)
+        assert_array_equal(
+            convex_hull_object(
+                image, connectivity=3, cpu_fallback_threshold=image.size + 1
+            ),
+            expected,
+        )
+
+
+def test_convex_hull_object_overlapping_hulls():
+    # an L-shaped object (hull: a triangle) and a segment that crosses the
+    # triangle without touching the L: the result is the union of the hulls
+    first = cp.zeros((12, 12), dtype=bool)
+    first[1:10, 1] = True
+    first[9, 1:10] = True
+    second = cp.zeros((12, 12), dtype=bool)
+    second[5, 3:11] = True
+    second[4, 10] = True
+    hull_first = convex_hull_image(first)
+    hull_second = convex_hull_image(second)
+    assert bool((hull_first & hull_second).any())
+    out = convex_hull_object(first | second)
+    assert_array_equal(out, hull_first | hull_second)
+
+
 @pytest.mark.parametrize("shape", [(1, 9, 11), (9, 1, 11), (5, 1, 9, 7)])
 def test_singleton_axes_shape(shape):
     # (the GPU paths: scikit-image, used below cpu_fallback_threshold, returns
@@ -511,3 +559,4 @@ def test_singleton_axes_shape(shape):
     out = convex_hull_image(image, cpu_fallback_threshold=0)
     assert out.shape == shape
     assert_array_equal(out, image)
+    assert convex_hull_object(image, connectivity=1).shape == shape
