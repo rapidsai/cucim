@@ -107,7 +107,7 @@ def _get_spline_output(input, output):
 
 
 def spline_filter1d(
-    input, order=3, axis=-1, output=cupy.float64, mode="mirror"
+    input, order=3, axis=-1, output=cupy.float64, mode="mirror", *, _cval=0.0
 ):
     """
     Calculate a 1-D spline filter along the given axis.
@@ -179,6 +179,7 @@ def spline_filter1d(
             pole_type=pole_type,
             warps_per_block=warps_per_block,
             channels=channels,
+            cval=_cval,
         )
         if smem > core._DEFAULT_MAX_DYNAMIC_SHARED_MEMORY:
             # Long lines opt in to the device's larger shared memory limit.
@@ -200,6 +201,7 @@ def spline_filter1d(
             index_type=index_type,
             data_type=data_type,
             pole_type=pole_type,
+            cval=_cval,
         )
         block = (32, n_segments)
         grid = ((n_signals + 31) // 32,)
@@ -224,6 +226,7 @@ def spline_filter1d(
             data_type=data_type,
             pole_type=pole_type,
             block_size=block_size,
+            cval=_cval,
         )
         # Due to recursive nature, a given line of data must be processed by
         # a single thread. n_signals lines will be processed in total.
@@ -309,7 +312,8 @@ def _check_coordinates(coordinates, order, allow_float32=True):
 
 def _prepad_for_spline_filter(input, mode, cval, batch_axes=None):
     if mode in ["nearest", "grid-constant"]:
-        # these modes need padding to get accurate boundary values
+        # Fallback when the exact constant-extension boundaries cannot be used
+        # (see _use_exact_constant_boundary): pad as SciPy does.
         npad = 12  # empirical factor chosen by SciPy
         if mode == "grid-constant":
             kwargs = dict(mode="constant", constant_values=cval)
@@ -332,23 +336,65 @@ def _prepad_for_spline_filter(input, mode, cval, batch_axes=None):
     return padded, npad
 
 
+def _use_exact_constant_boundary(image, mode, order, prefilter, batch_axes):
+    """Whether the padding-free constant-extension path applies.
+
+    'nearest' and 'grid-constant' use exact constant-extension boundaries
+    instead of 12-sample prepadding; the formulas and their derivation are
+    documented above ``EXACT_CONSTANT_MODES`` in
+    ``_ndimage_spline_prefilter_core``.
+
+    The interpolation kernel folds exterior coefficients into a window of
+    ``order + 1`` in-domain coefficients, so every interpolated axis needs at
+    least ``order + 1`` samples. Complex inputs keep the padded path.
+    """
+    if not (
+        prefilter
+        and order > 1
+        and mode in _spline_prefilter_core.EXACT_CONSTANT_MODES
+        and image.dtype.kind != "c"
+    ):
+        return False
+    batch_axes = batch_axes or ()
+    return all(
+        s >= order + 1
+        for axis, s in enumerate(image.shape)
+        if axis not in batch_axes
+    )
+
+
 def _filter_input(image, prefilter, mode, cval, order, batch_axes=None):
     """Perform spline prefiltering when needed.
 
     Spline orders > 1 need a prefiltering stage to preserve resolution.
 
-    For boundary modes without analytical spline boundary conditions, some
-    prepadding of the input is used to maintain accuracy.
-    ``npad`` is an integer corresponding to the amount of padding at each edge
-    of the array.
+    For 'nearest' and 'grid-constant', exact boundary initializations are
+    used when possible (``exact=True``); the interpolation kernel must then
+    evaluate the coefficients outside the array from the in-domain ones.
+    Otherwise these modes fall back to prepadding the input, and ``npad`` is
+    the amount of padding at each edge of the array.
 
     Parameters
     ----------
     batch_axes : tuple of int, optional
         Axes that should not be prefiltered (identity/batch dimensions).
+
+    Returns
+    -------
+    filtered, npad, exact
     """
     if not prefilter or order < 2:
-        return (cupy.ascontiguousarray(image), 0)
+        return (cupy.ascontiguousarray(image), 0, False)
+    if _use_exact_constant_boundary(image, mode, order, prefilter, batch_axes):
+        float_dtype = cupy.promote_types(image.dtype, cupy.float32)
+        temp = image.astype(float_dtype, order="C", copy=True)
+        exact_mode = _spline_prefilter_core.EXACT_CONSTANT_MODES[mode]
+        for axis in range(image.ndim):
+            if not batch_axes or axis not in batch_axes:
+                spline_filter1d(
+                    temp, order, axis, output=temp, mode=exact_mode, _cval=cval
+                )
+        return temp, 0, True
     padded, npad = _prepad_for_spline_filter(image, mode, cval, batch_axes)
     float_dtype = cupy.promote_types(image.dtype, cupy.float32)
 
@@ -363,7 +409,7 @@ def _filter_input(image, prefilter, mode, cval, order, batch_axes=None):
         # Only filter along non-batch axes (identity/batch dimensions).
         if not batch_axes or axis not in batch_axes:
             spline_filter1d(temp, order, axis, output=temp, mode=mode)
-    return temp, npad
+    return temp, npad, False
 
 
 def map_coordinates(
@@ -447,7 +493,7 @@ def map_coordinates(
         batch_axes, input.ndim, input.shape, ret.shape
     )
 
-    filtered, nprepad = _filter_input(
+    filtered, nprepad, exact_boundary = _filter_input(
         input, prefilter, mode, cval, order, batch_axes=batch_axes
     )
     float_dtype = cupy.promote_types(input.real.dtype, cupy.float32)
@@ -462,6 +508,7 @@ def map_coordinates(
         order=order,
         integer_output=integer_output,
         nprepad=nprepad,
+        exact_boundary=exact_boundary,
         float_dtype=float_dtype,
         batch_axes=batch_axes,
         output_c_contiguous=ret.flags.c_contiguous,
@@ -647,7 +694,7 @@ def affine_transform(
             )
         )
 
-        filtered, nprepad = _filter_input(
+        filtered, nprepad, exact_boundary = _filter_input(
             input, prefilter, mode, cval, order, batch_axes=batch_axes
         )
 
@@ -663,6 +710,7 @@ def affine_transform(
             order=order,
             integer_output=integer_output,
             nprepad=nprepad,
+            exact_boundary=exact_boundary,
             float_dtype=float_dtype,
             batch_axes=batch_axes,
             output_c_contiguous=output.flags.c_contiguous,
@@ -692,7 +740,7 @@ def affine_transform(
             )
         )
 
-        filtered, nprepad = _filter_input(
+        filtered, nprepad, exact_boundary = _filter_input(
             input, prefilter, mode, cval, order, batch_axes=batch_axes
         )
 
@@ -705,6 +753,7 @@ def affine_transform(
             order=order,
             integer_output=integer_output,
             nprepad=nprepad,
+            exact_boundary=exact_boundary,
             float_dtype=float_dtype,
             batch_axes=batch_axes,
             output_c_contiguous=output.flags.c_contiguous,
@@ -935,7 +984,7 @@ def shift(
         # identify batch axes where shift == 0 (no interpolation needed)
         batch_axes = tuple(j for j, s in enumerate(shift) if s == 0)
 
-        filtered, nprepad = _filter_input(
+        filtered, nprepad, exact_boundary = _filter_input(
             input, prefilter, mode, cval, order, batch_axes=batch_axes
         )
 
@@ -948,6 +997,7 @@ def shift(
             order=order,
             integer_output=integer_output,
             nprepad=nprepad,
+            exact_boundary=exact_boundary,
             float_dtype=float_dtype,
             batch_axes=batch_axes,
             output_c_contiguous=output.flags.c_contiguous,
@@ -1099,7 +1149,7 @@ def zoom(
             if in_s == out_s
         )
 
-        filtered, nprepad = _filter_input(
+        filtered, nprepad, exact_boundary = _filter_input(
             input, prefilter, mode, cval, order, batch_axes=batch_axes
         )
 
@@ -1108,10 +1158,12 @@ def zoom(
             large_int,
             output_shape,
             mode,
+            cval=cval,
             order=order,
             integer_output=integer_output,
             grid_mode=grid_mode,
             nprepad=nprepad,
+            exact_boundary=exact_boundary,
             float_dtype=float_dtype,
             batch_axes=batch_axes,
             output_c_contiguous=output.flags.c_contiguous,
