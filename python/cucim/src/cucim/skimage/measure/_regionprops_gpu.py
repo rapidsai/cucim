@@ -1,6 +1,7 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import itertools
 import warnings
 from collections.abc import Callable
 from copy import copy
@@ -15,6 +16,10 @@ from cucim.skimage.measure._regionprops import (
 )
 
 from ._regionprops_gpu_basic_kernels import (
+    _bbox_slices,
+    _fill_holes_by_label,
+    _regionprops_filled,
+    _regionprops_label_pass,
     basic_deps,
     equivalent_diameter_area,
     equivalent_spherical_perimeter,
@@ -30,11 +35,14 @@ from ._regionprops_gpu_basic_kernels import (
     regionprops_num_pixels,
 )
 from ._regionprops_gpu_convex import (
+    _regionprops_convex,
+    _regionprops_oriented_bbox,
     convex_deps,
     regionprops_area_convex,
     regionprops_feret_diameter_max,
 )
 from ._regionprops_gpu_intensity_kernels import (
+    _regionprops_intensity,
     intensity_deps,
     regionprops_intensity_mean,
     regionprops_intensity_min_max,
@@ -45,8 +53,10 @@ from ._regionprops_gpu_misc_kernels import (
     regionprops_euler,
     regionprops_perimeter,
     regionprops_perimeter_crofton,
+    regionprops_surface_area,
 )
 from ._regionprops_gpu_moments_kernels import (
+    _regionprops_centroid_from_sums,
     moment_deps,
     regionprops_centroid,
     regionprops_centroid_local,
@@ -59,7 +69,7 @@ from ._regionprops_gpu_moments_kernels import (
     regionprops_moments_normalized,
     required_order,
 )
-from ._regionprops_gpu_utils import _find_close_labels, _get_min_integer_dtype
+from ._regionprops_gpu_utils import _get_min_integer_dtype
 
 __all__ = [
     "equivalent_diameter_area",
@@ -89,6 +99,7 @@ __all__ = [
     "regionprops_perimeter",
     "regionprops_perimeter_crofton",
     # extra functions for cuCIM not currently in scikit-image
+    "regionprops_surface_area",
     "equivalent_spherical_perimeter",  # as in ITK
     "regionprops_num_boundary_pixels",
     "regionprops_num_perimeter_pixels",
@@ -114,6 +125,21 @@ PROPS_GPU_EXTRA = {
     "num_boundary_pixels": "num_boundary_pixels",
     "perimeter_on_border_ratio": "perimeter_on_border_ratio",
     "equivalent_spherical_perimeter": "equivalent_spherical_perimeter",
+    "surface_area": "surface_area",
+    # Feret diameters and angles as in DIPlib's Feret feature
+    "feret_diameter_min": "feret_diameter_min",
+    "feret_diameter_min_perpendicular": "feret_diameter_min_perpendicular",
+    "feret_angle_max": "feret_angle_max",
+    "feret_angle_min": "feret_angle_min",
+    # the perimeter of the convex hull, as DIPlib's ConvexPerimeter
+    "perimeter_convex": "perimeter_convex",
+    # the minimum-area enclosing rectangle of the convex hull
+    "min_area_bbox_size": "min_area_bbox_size",
+    "min_area_bbox_center": "min_area_bbox_center",
+    "min_area_bbox_angle": "min_area_bbox_angle",
+    # the oriented bounding box, as in ITK
+    "oriented_bbox_size": "oriented_bbox_size",
+    "oriented_bbox_center": "oriented_bbox_center",
 }
 PROPS_GPU.update(PROPS_GPU_EXTRA)
 # properties recently removed from PROPS dict (but still supported)
@@ -135,6 +161,17 @@ COL_DTYPES_EXTRA = {
     "num_boundary_pixels": int,
     "perimeter_on_border_ratio": float,
     "equivalent_spherical_perimeter": float,
+    "surface_area": float,
+    "feret_diameter_min": float,
+    "feret_diameter_min_perpendicular": float,
+    "feret_angle_max": float,
+    "feret_angle_min": float,
+    "perimeter_convex": float,
+    "min_area_bbox_size": float,
+    "min_area_bbox_center": float,
+    "min_area_bbox_angle": float,
+    "oriented_bbox_size": float,
+    "oriented_bbox_center": float,
 }
 
 # expand column dtypes from _regionprops to include the extra properties
@@ -188,6 +225,16 @@ property_requirements = {
     for k in (CURRENT_PROPS_GPU | GLOBAL_PROPS)
 }
 
+# The same, but with the (unweighted) centroids computed from coordinate sums
+# accumulated in the pass that counts the pixels instead of from the moments.
+_centroid_sums_deps = dict(property_deps)
+_centroid_sums_deps["centroid"] = ["num_pixels"]
+_centroid_sums_deps["centroid_local"] = ["num_pixels", "bbox"]
+property_requirements_centroid_sums = {
+    k: get_property_dependencies(_centroid_sums_deps, k)
+    for k in (CURRENT_PROPS_GPU | GLOBAL_PROPS)
+}
+
 # set of properties that require an intensity_image also be provided
 need_intensity_image = (
     set(intensity_deps.keys())
@@ -203,6 +250,19 @@ ndim_2_only = {
     "orientation",
     "perimeter",
     "perimeter_crofton",  # could be updated to nD as in ITK
+    "feret_diameter_min",
+    "feret_diameter_min_perpendicular",
+    "feret_angle_max",
+    "feret_angle_min",
+    "perimeter_convex",
+    "min_area_bbox_size",
+    "min_area_bbox_center",
+    "min_area_bbox_angle",
+}
+
+# set of properties that can only be computed for 3D regions
+ndim_3_only = {
+    "surface_area",
 }
 
 
@@ -236,6 +296,7 @@ def regionprops_dict(
     max_label=None,
     pixels_per_thread=16,
     robust_perimeter=True,
+    convex_hull_3d="gpu",
     to_table=False,
     table_separator="-",
     table_on_host=False,
@@ -288,14 +349,18 @@ def regionprops_dict(
         corresponds to `pixels_per_thread` and can be used as a performance
         tuning parameter.
     robust_perimeter : bool, optional
-        Batch computation of perimeter and euler characteristics can give
-        incorrect results for perimeter pixels that are not more than 1 pixel
-        spacing from another label. If True, a check for this condition is
-        performed and any labels close to another label have their perimeter
-        recomputed in isolation. Doing this check results in performance
-        overhead so can optionally be disabled. This parameter affects the
-        following regionprops: {"perimeter", "perimeter_crofton",
-        "euler_number"}.
+        Unused. The perimeter, Crofton perimeter and Euler number of every
+        region are computed as for the region in isolation, as in
+        scikit-image, also when regions are close to or touch each other.
+    convex_hull_3d : {"gpu", "qhull"}, optional
+        How the convex hulls of 3D regions are computed for the
+        "image_convex", "area_convex", "solidity" and "feret_diameter_max"
+        properties. With "gpu" (the default), the hulls of all regions are
+        computed on the GPU at once. With "qhull", each region's hull is
+        computed on the host with ``scipy.spatial.ConvexHull``, one region at
+        a time. The GPU is much faster for images with many regions, but
+        qhull can be faster for images with only a few large, round regions
+        (about 2.5x for a single ball of radius 120). Unused for 2D images.
     to_table : bool, optional
         If true, split up vector/matrix properties into separate keys for
         the individual elements to match the output format of
@@ -306,7 +371,77 @@ def regionprops_dict(
     table_on_host : bool, optional
         Copy any device arrays back to the host when creating the
         `regionprops_table` output. Unused if `to_table` is false.
+
+    Notes
+    -----
+    Besides the properties of scikit-image's ``regionprops_table``, the
+    following cuCIM-only properties are available:
+
+    - ``axis_lengths``: all ellipse (ellipsoid) axis lengths, longest first.
+    - ``inertia_tensor_eigenvectors``: the eigenvectors of
+      ``inertia_tensor``, as the columns of an (ndim, ndim) matrix per
+      region, in the (descending) order of ``inertia_tensor_eigvals``. The
+      first one is along the region's shortest axis.
+    - ``num_pixels_filled``: the pixel count with the holes filled.
+    - ``num_perimeter_pixels``, ``num_boundary_pixels``,
+      ``perimeter_on_border_ratio``, ``equivalent_spherical_perimeter``: as
+      in ITK.
+    - ``surface_area`` (3D only): the Crofton estimate of the surface area
+      with 13 directions, as ITK's ``Perimeter`` of 3D objects. Unlike ITK,
+      cuCIM recomputes the direction weights for anisotropic spacing. The
+      estimate is not exact, and its error does not decrease as the
+      resolution increases. Balls of radius 20 voxels or more are measured
+      to within 0.5% with isotropic spacing, but the error for a flat face
+      depends on its orientation. With isotropic spacing it ranges from
+      7.3% too small (faces normal to an axis) to 2.3% too large. For
+      spacing (2, 1, 1) the range is 12.6% too small to 9.4% too large.
+    - ``feret_diameter_min``, ``feret_diameter_min_perpendicular``,
+      ``feret_angle_max``, ``feret_angle_min`` (2D only): the minimum Feret
+      diameter (caliper width), the caliper width perpendicular to it, and
+      the directions of the maximum and minimum Feret diameters, as in
+      DIPlib's ``Feret``. They are measured on the polygon of
+      ``feret_diameter_max`` (the hull of the convex image's pixel-edge
+      midpoints). An angle is that of the direction (d0, d1) from axis 0
+      towards axis 1, ``atan2(d1, d0)``, in (-pi/2, pi/2], the convention
+      of ``orientation``. With ties, one of the tied directions is
+      returned.
+    - ``perimeter_convex`` (2D only): the perimeter of that polygon, as
+      DIPlib's ``ConvexPerimeter``.
+    - ``min_area_bbox_size``, ``min_area_bbox_center``,
+      ``min_area_bbox_angle`` (2D only): the rectangle of the smallest area
+      that encloses that polygon, which has a side along an edge of the
+      polygon (the rotating calipers of Freeman and Shapira). The size is
+      (length, width) with length >= width, the center is in the coordinates
+      of ``centroid``, and the angle is that of the direction of the length
+      side, ``atan2(d1, d0)`` in (-pi/2, pi/2] as for the Feret angles. The
+      corners are ``min_area_bbox_corners(props)``.
+      Unlike ``oriented_bbox_size``, it does not depend on the mass
+      distribution, so it is well defined for squares and discs. It
+      encloses the polygon of the pixel-edge midpoints, like the Feret
+      diameters, not whole pixels as ``oriented_bbox_size`` does.
+    - ``oriented_bbox_size``, ``oriented_bbox_center``: the bounding box
+      aligned with the principal axes (the columns ``V[:, a]`` of
+      ``inertia_tensor_eigenvectors``) that encloses all the region's pixels,
+      as ITK's oriented bounding box. ``oriented_bbox_size[a]`` is its
+      extent along ``V[:, a]``, and ``oriented_bbox_center`` its center, in
+      the coordinates of ``centroid``. Its ``2**ndim`` corners are
+      ``center + sum_a s_a * size[a] / 2 * V[:, a]`` for all choices of
+      signs ``s_a`` in {-1, +1} (`oriented_bbox_corners` computes them from
+      the result of this function or of `regionprops_table`); in a table,
+      ``V[d, a]`` is the column
+      ``inertia_tensor_eigenvectors-d-a``. Unlike ITK's corner (origin), the
+      size and the center do not depend on the signs of the eigenvectors.
+      It is not the smallest box that encloses the region: for a right
+      triangle with legs of 200 and 100 pixels it is 6% larger than the
+      smallest rectangle. When principal moments are equal, as for squares
+      and cubes, the axes (and so the box) are not unique, and the box can
+      be much larger: a square rotated by 45 degrees can get an
+      axis-aligned box of twice its area.
     """
+    if convex_hull_3d not in ("gpu", "qhull"):
+        raise ValueError(
+            f"convex_hull_3d must be 'gpu' or 'qhull', got {convex_hull_3d!r}"
+        )
     supported_properties = CURRENT_PROPS_GPU | GLOBAL_PROPS
     properties = set(properties)
     if extra_properties is None:
@@ -353,11 +488,32 @@ def regionprops_dict(
     if len(requested_props) == 0:
         return {}
 
+    # The centroids only need the first moments. Unless another property needs
+    # the raw moments anyway, they are computed from coordinate sums
+    # accumulated in the pass that counts the pixels, which saves the moments
+    # pass (and the bounding boxes for the global centroid).
+    centroid_props = {"centroid", "centroid_local"}
+    centroid_from_sums = bool(requested_props & centroid_props) and not any(
+        "moments" in property_requirements[prop]
+        for prop in requested_props - centroid_props
+    )
+    requirements = (
+        property_requirements_centroid_sums
+        if centroid_from_sums
+        else property_requirements
+    )
     required_props = set()
     for prop in requested_props:
-        required_props.update(property_requirements[prop])
+        required_props.update(requirements[prop])
 
     ndim = label_image.ndim
+    if ndim != 3:
+        invalid_names = requested_props & ndim_3_only
+        if any(invalid_names):
+            raise ValueError(
+                f"{label_image.ndim=}, but the following properties are for "
+                f"3D label images only: {invalid_names}"
+            )
     if ndim != 2:
         invalid_names = requested_props & ndim_2_only
         if any(invalid_names):
@@ -375,15 +531,30 @@ def regionprops_dict(
             )
     else:
         has_intensity = True
+    if spacing is not None and any(s != 1 for s in spacing):
+        # as in scikit-image, Hu moments are not defined for non-unit spacing
+        invalid_names = requested_props & {"moments_hu", "moments_weighted_hu"}
+        if invalid_names:
+            raise NotImplementedError(
+                f"{invalid_names} support spacing = (1, 1) only"
+            )
+        # as in scikit-image, the perimeters support isotropic spacing only
+        invalid_names = requested_props & {"perimeter", "perimeter_crofton"}
+        if invalid_names and len(set(float(s) for s in spacing)) != 1:
+            raise NotImplementedError(
+                f"{invalid_names} support isotropic spacings only"
+            )
 
     out = {}
     if max_label is None:
         max_label = int(label_image.max())
     label_dtype = _get_min_integer_dtype(max_label, signed=False)
-    # For performance, shrink label's data type to the minimum possible
-    # unsigned integer type.
-    if label_image.dtype != label_dtype:
-        label_image = label_image.astype(label_dtype)
+    # The kernels read integer labels of any size (4 and 8-byte labels with
+    # 16-byte loads), and casting the labels costs more than the narrower
+    # labels save, unless the label image has to be copied anyway (when it is
+    # not C-contiguous) or is not an integer image.
+    if not label_image.flags.c_contiguous or label_image.dtype.kind not in "iu":
+        label_image = label_image.astype(label_dtype, order="C")
 
     # create vector of label values
     if "label" in required_props:
@@ -393,11 +564,51 @@ def regionprops_dict(
     if pixels_per_thread is not None:
         perf_kwargs["pixels_per_thread"] = pixels_per_thread
 
-    if "num_pixels" in required_props:
-        regionprops_num_pixels(
+    compute_bbox = "bbox" in required_props
+    compute_num_pixels = "num_pixels" in required_props
+    compute_std = has_intensity and "intensity_std" in required_props
+    # std also computes mean
+    compute_mean = (
+        has_intensity and "intensity_mean" in required_props and not compute_std
+    )
+    compute_min = has_intensity and "intensity_min" in required_props
+    compute_max = has_intensity and "intensity_max" in required_props
+    compute_intensity = (
+        compute_mean or compute_std or compute_min or compute_max
+    )
+
+    # Each pass over the label image costs about the same for any number of
+    # statistics, so the pixels are counted in the same pass as the bounding
+    # boxes or coordinate sums or, if those are not needed, as the intensity
+    # sums.
+    count_in_label_pass = compute_num_pixels and (
+        compute_bbox or centroid_from_sums or not (compute_mean or compute_std)
+    )
+    if compute_bbox or centroid_from_sums or count_in_label_pass:
+        _regionprops_label_pass(
             label_image,
             max_label=max_label,
-            filled=False,
+            compute_num_pixels=count_in_label_pass,
+            compute_bbox=compute_bbox,
+            compute_coordinate_sums=centroid_from_sums,
+            **perf_kwargs,
+            props_dict=out,
+        )
+        if "slice" in required_props:
+            out["slice"] = _bbox_slices(out["bbox"])
+
+    if compute_intensity:
+        _regionprops_intensity(
+            label_image,
+            intensity_image,
+            max_label=max_label,
+            compute_mean=compute_mean,
+            compute_std=compute_std,
+            compute_min=compute_min,
+            compute_max=compute_max,
+            mean_dtype=cp.float32,
+            std_dtype=cp.float64,
+            sample_std=False,
             **perf_kwargs,
             props_dict=out,
         )
@@ -421,58 +632,12 @@ def regionprops_dict(
                     equivalent_spherical_perimeter(out["area"], ndim, ed)
                 )
 
-    if has_intensity:
-        if "intensity_std" in required_props:
-            # std also computes mean
-            regionprops_intensity_std(
-                label_image,
-                intensity_image,
-                max_label=max_label,
-                std_dtype=cp.float64,
-                sample_std=False,
-                **perf_kwargs,
-                props_dict=out,
-            )
-
-        elif "intensity_mean" in required_props:
-            regionprops_intensity_mean(
-                label_image,
-                intensity_image,
-                max_label=max_label,
-                mean_dtype=cp.float32,
-                **perf_kwargs,
-                props_dict=out,
-            )
-
-        compute_min = "intensity_min" in required_props
-        compute_max = "intensity_max" in required_props
-        if compute_min or compute_max:
-            regionprops_intensity_min_max(
-                label_image,
-                intensity_image,
-                max_label=max_label,
-                compute_min=compute_min,
-                compute_max=compute_max,
-                **perf_kwargs,
-                props_dict=out,
-            )
-
-    compute_bbox = "bbox" in required_props
     if compute_bbox:
-        # compute bbox (and slice)
-        regionprops_bbox_coords(
-            label_image,
-            max_label=max_label,
-            return_slices="slice" in required_props,
-            **perf_kwargs,
-            props_dict=out,
-        )
-
         if "area_bbox" in required_props:
             regionprops_area_bbox(
                 out["bbox"],
                 area_dtype=cp.float32,
-                spacing=None,
+                spacing=spacing,
                 props_dict=out,
             )
 
@@ -498,6 +663,17 @@ def regionprops_dict(
             out["num_boundary_pixels"] / out["num_perimeter_pixels"]
         )
 
+    if centroid_from_sums:
+        _regionprops_centroid_from_sums(
+            out["coordinate_sums"],
+            out["num_pixels"],
+            bbox=out.get("bbox"),
+            compute_local="centroid_local" in required_props,
+            compute_global="centroid" in required_props,
+            spacing=spacing,
+            props_dict=out,
+        )
+
     compute_unweighted_moments = "moments" in required_props
     compute_weighted_moments = "moments_weighted" in required_props
     compute_moments = compute_unweighted_moments or compute_weighted_moments
@@ -506,7 +682,13 @@ def regionprops_dict(
     if compute_moments:
         required_moment_props = set(moment_deps.keys()) & required_props
         # determine minimum necessary order (or validate the user-provided one)
-        order = _check_moment_order(moment_order, required_moment_props)
+        # from the properties computed from the raw moments (the raw moments
+        # themselves need order 2 only if they were requested)
+        raw_moments = {"moments", "moments_weighted"}
+        order_props = required_moment_props - (raw_moments - requested_props)
+        order = _check_moment_order(
+            moment_order, order_props or required_moment_props
+        )
 
         imgs = []
         if compute_unweighted_moments:
@@ -536,6 +718,7 @@ def regionprops_dict(
                 compute_local=compute_centroid_local,
                 compute_global=compute_centroid,
                 weighted=False,
+                spacing=spacing,
                 props_dict=out,
             )
 
@@ -551,6 +734,7 @@ def regionprops_dict(
                 compute_local=compute_centroid_weighted_local,
                 compute_global=compute_centroid_weighted,
                 weighted=True,
+                spacing=spacing,
                 props_dict=out,
             )
 
@@ -563,7 +747,7 @@ def regionprops_dict(
                 regionprops_moments_normalized(
                     out["moments_central"],
                     ndim=ndim,
-                    spacing=None,
+                    spacing=spacing,
                     pixel_correction=False,
                     weighted=False,
                     props_dict=out,
@@ -584,7 +768,7 @@ def regionprops_dict(
                 regionprops_moments_normalized(
                     out["moments_weighted_central"],
                     ndim=ndim,
-                    spacing=None,
+                    spacing=spacing,
                     pixel_correction=False,
                     weighted=True,
                     props_dict=out,
@@ -610,6 +794,7 @@ def regionprops_dict(
                 compute_axis_lengths = (
                     "axis_minor_length" in required_moment_props
                     or "axis_major_length" in required_moment_props
+                    or "axis_lengths" in required_moment_props
                 )
                 regionprops_inertia_tensor_eigvals(
                     out["inertia_tensor"],
@@ -627,63 +812,48 @@ def regionprops_dict(
     compute_perimeter_crofton = "perimeter_crofton" in required_props
     compute_euler = "euler_number" in required_props
 
-    if compute_euler or compute_perimeter or compute_perimeter_crofton:
-        # precompute list of labels with <2 pixels space between them
-        if label_image.dtype == cp.uint8:
-            labels_mask = label_image.view("bool")
-        else:
-            labels_mask = label_image > 0
-        if robust_perimeter:
-            # avoid repeatedly computing "labels_close" for
-            # perimeter, perimeter_crofton and euler_number regionprops
-            labels_close = _find_close_labels(
-                label_image, binary_image=labels_mask, max_label=max_label
+    # each region is measured in isolation, as in scikit-image
+    if compute_perimeter:
+        regionprops_perimeter(
+            label_image,
+            neighborhood=4,
+            max_label=max_label,
+            props_dict=out,
+        )
+        if spacing is not None:
+            out["perimeter"] = out["perimeter"] * float(spacing[0])
+    if compute_perimeter_crofton:
+        regionprops_perimeter_crofton(
+            label_image,
+            directions=4,
+            max_label=max_label,
+            omit_image_edges=False,
+            props_dict=out,
+        )
+        if spacing is not None:
+            out["perimeter_crofton"] = out["perimeter_crofton"] * float(
+                spacing[0]
             )
-            if labels_close.size > 0:
-                print(
-                    f"Found {labels_close.size} regions with <=1 background "
-                    "pixel spacing from another region. Using slower robust "
-                    "perimeter/euler measurements for these regions."
-                )
-        else:
-            labels_close = None
-
-        if compute_perimeter:
-            regionprops_perimeter(
-                label_image,
-                neighborhood=4,
-                max_label=max_label,
-                robust=robust_perimeter,
-                labels_close=labels_close,
-                props_dict=out,
-            )
-        if compute_perimeter_crofton:
-            regionprops_perimeter_crofton(
-                label_image,
-                directions=4,
-                max_label=max_label,
-                robust=robust_perimeter,
-                omit_image_edges=False,
-                labels_close=labels_close,
-                props_dict=out,
-            )
-
-        if compute_euler:
-            regionprops_euler(
-                label_image,
-                connectivity=None,
-                max_label=max_label,
-                robust=robust_perimeter,
-                labels_close=labels_close,
-                props_dict=out,
-            )
+    if compute_euler:
+        regionprops_euler(
+            label_image,
+            connectivity=None,
+            max_label=max_label,
+            props_dict=out,
+        )
+    if "surface_area" in required_props:
+        regionprops_surface_area(
+            label_image,
+            spacing=spacing,
+            max_label=max_label,
+            props_dict=out,
+        )
 
     compute_images = ("image" in required_props) or (len(extra_properties) > 0)
     compute_intensity_images = ("image_intensity" in required_props) or (
         (intensity_image is not None) and (len(extra_properties) > 0)
     )
-    compute_convex = "image_convex" in required_props
-    if compute_intensity_images or compute_images or compute_convex:
+    if compute_intensity_images or compute_images:
         regionprops_image(
             label_image,
             intensity_image=(
@@ -692,22 +862,58 @@ def regionprops_dict(
             max_label=max_label,
             props_dict=out,
             compute_image=compute_images,
-            compute_convex=compute_convex,
             offset_coordinates=True,
         )
 
-    if "area_convex" in required_props:
-        regionprops_area_convex(
-            out["image_convex"], max_label=max_label, props_dict=out
+    compute_convex_image = "image_convex" in required_props
+    compute_area_convex = "area_convex" in required_props
+    compute_feret = "feret_diameter_max" in required_props
+    compute_feret_calipers = bool(
+        required_props
+        & {
+            "feret_diameter_min",
+            "feret_diameter_min_perpendicular",
+            "feret_angle_max",
+            "feret_angle_min",
+            "perimeter_convex",
+            "min_area_bbox_size",
+            "min_area_bbox_center",
+            "min_area_bbox_angle",
+        }
+    )
+    if (
+        compute_convex_image
+        or compute_area_convex
+        or compute_feret
+        or compute_feret_calipers
+    ):
+        _regionprops_convex(
+            label_image,
+            out["bbox"],
+            max_label,
+            spacing=spacing,
+            compute_image=compute_convex_image,
+            compute_area=compute_area_convex,
+            compute_feret=compute_feret,
+            compute_feret_calipers=compute_feret_calipers,
+            use_qhull=convex_hull_3d == "qhull",
+            props_dict=out,
         )
 
     if "solidity" in required_props:
         out["solidity"] = out["area"] / out["area_convex"]
 
-    if "feret_diameter_max" in required_props:
-        regionprops_feret_diameter_max(
-            out["image_convex"],
+    compute_obb_size = "oriented_bbox_size" in required_props
+    compute_obb_center = "oriented_bbox_center" in required_props
+    if compute_obb_size or compute_obb_center:
+        _regionprops_oriented_bbox(
+            label_image,
+            out["bbox"],
+            out["inertia_tensor_eigenvectors"],
+            max_label,
             spacing=spacing,
+            compute_size=compute_obb_size,
+            compute_center=compute_obb_center,
             props_dict=out,
         )
 
@@ -724,34 +930,23 @@ def regionprops_dict(
         )
 
     if "label_filled" in required_props:
-        regionprops_label_filled(
-            label_image,
-            max_label=max_label,
-            props_dict=out,
+        label_filled, labels_inexact = _fill_holes_by_label(
+            label_image, max_label=max_label, bbox=out.get("bbox")
         )
-        if "area_filled" in required_props:
-            # also handles "num_pixels_filled"
-            out["area_filled"] = regionprops_area(
-                out["label_filled"],
-                max_label=max_label,
-                filled=True,
-                props_dict=out,
-            )
-        elif "num_pixels_filled" in required_props:
-            regionprops_num_pixels(
+        # with the smallest unsigned integer type that holds max_label
+        out["label_filled"] = label_filled.astype(label_dtype, copy=False)
+        compute_image_filled = "image_filled" in required_props
+        if compute_image_filled or "num_pixels_filled" in required_props:
+            # labels in labels_inexact are recomputed on per-label crops
+            _regionprops_filled(
                 label_image,
+                label_filled,
+                labels_inexact,
                 max_label=max_label,
-                filled=True,
-                **perf_kwargs,
+                spacing=spacing,
+                compute_image=compute_image_filled,
+                bbox=out.get("bbox"),
                 props_dict=out,
-            )
-        if "image_filled" in required_props:
-            out["image_filled"], _, _ = regionprops_image(
-                out["label_filled"],
-                max_label=max_label,
-                compute_image=True,
-                compute_convex=False,
-                props_dict=None,  # omit: using custom "image_filled" key
             )
 
     # If user had requested properties via their deprecated names, set the
@@ -820,6 +1015,178 @@ def regionprops_dict(
             extra_property_names=tuple(f.__name__ for f in extra_properties),
         )
     return out
+
+
+def _property_array(props, name, separator):
+    """``props[name]``, or the columns ``name-i-j`` of a `regionprops_table`
+    result stacked into an array of shape (n_labels, i, j); None if absent.
+    """
+    if name in props:
+        return props[name]
+    prefix = name + separator
+    columns = {
+        tuple(int(i) for i in key[len(prefix) :].split(separator)): value
+        for key, value in props.items()
+        if key.startswith(prefix)
+        and key[len(prefix) :].replace(separator, "").isdigit()
+    }
+    if not columns:
+        return None
+    first = next(iter(columns.values()))
+    xp = cp.get_array_module(first)
+    shape = tuple(
+        1 + max(i[d] for i in columns) for d in range(len(next(iter(columns))))
+    )
+    out = xp.empty(first.shape + shape, dtype=xp.float64)
+    for index, column in columns.items():
+        out[(Ellipsis, *index)] = column
+    return out
+
+
+def _required_properties(props, names, function, separator):
+    """The arrays of the properties `names`, or a ValueError that lists the
+    missing ones and how to request them."""
+    arrays = [_property_array(props, name, separator) for name in names]
+    missing = [name for name, array in zip(names, arrays) if array is None]
+    if missing:
+        raise ValueError(
+            f"{function} needs the properties {', '.join(names)}; missing: "
+            f"{', '.join(missing)}. Request them in the `properties` argument "
+            "of regionprops_table or regionprops_dict."
+        )
+    return arrays
+
+
+def _box_corners(size, center, axes):
+    """The corners ``center + sum_a s_a * size[a] / 2 * axes[:, a]`` for all
+    sign choices, of arrays with any leading shape."""
+    xp = cp.get_array_module(size, center, axes)
+    size = xp.asarray(size, dtype=xp.float64)
+    center = xp.asarray(center, dtype=xp.float64)
+    axes = xp.asarray(axes, dtype=xp.float64)
+    ndim = size.shape[-1]
+    if center.shape[-1] != ndim or axes.shape[-2:] != (ndim, ndim):
+        raise ValueError(
+            "size, center and axes must have shapes (..., ndim), "
+            "(..., ndim) and (..., ndim, ndim)"
+        )
+    signs = xp.asarray(list(itertools.product((-1.0, 1.0), repeat=ndim)))
+    along_axes = signs * (0.5 * size[..., None, :])
+    return center[..., None, :] + along_axes @ xp.swapaxes(axes, -1, -2)
+
+
+def oriented_bbox_corners(props, *, separator="-"):
+    """Corners of the oriented bounding boxes of regions.
+
+    The corners of the box of the ``oriented_bbox_size`` and
+    ``oriented_bbox_center`` properties, which is aligned with the principal
+    axes of the region, the columns of ``inertia_tensor_eigenvectors``.
+
+    Parameters
+    ----------
+    props : dict
+        The result of `regionprops_dict` or `regionprops_table` with the
+        properties ``oriented_bbox_size``, ``oriented_bbox_center`` and
+        ``inertia_tensor_eigenvectors`` (a `ValueError` lists any that are
+        missing). Columns of a table (``oriented_bbox_size-0``, ...) are
+        stacked back into arrays.
+    separator : str, optional
+        The `separator` that was passed to `regionprops_table`.
+
+    Returns
+    -------
+    corners : ndarray, shape (n_labels, 2**ndim, ndim)
+        ``center + sum_a s_a * size[a] / 2 * V[:, a]`` for all choices of the
+        signs ``s_a`` in {-1, +1}, where ``V`` is
+        ``inertia_tensor_eigenvectors``. The corners are in the order of
+        ``itertools.product([-1, 1], repeat=ndim)`` (the sign of the last
+        axis changes fastest), which is not an order along the outline: in
+        2D, the order 0, 1, 3, 2 goes around the rectangle. They are in the
+        coordinates of ``centroid`` (array axes, scaled by the spacing if one
+        was given). The corners of absent labels are NaN. The result is a
+        CuPy array, or a NumPy array if the properties are NumPy arrays (a
+        table made with ``copy_output_to_host=True``).
+
+    Notes
+    -----
+    The flipping of an eigenvector's sign relabels the corners but does not
+    change their set. When principal moments are equal, as for a square or a
+    cube, the axes are not unique, and neither are the corners.
+
+    Examples
+    --------
+    >>> import cupy as cp
+    >>> from cucim.skimage.measure import oriented_bbox_corners, regionprops_table
+    >>> labels = cp.zeros((8, 8), dtype=cp.uint8)
+    >>> labels[2:6, 1:7] = 1
+    >>> props = regionprops_table(
+    ...     labels,
+    ...     properties=(
+    ...         "oriented_bbox_size",
+    ...         "oriented_bbox_center",
+    ...         "inertia_tensor_eigenvectors",
+    ...     ),
+    ... )
+    >>> oriented_bbox_corners(props).shape
+    (1, 4, 2)
+    """
+    size, center, eigenvectors = _required_properties(
+        props,
+        (
+            "oriented_bbox_size",
+            "oriented_bbox_center",
+            "inertia_tensor_eigenvectors",
+        ),
+        "oriented_bbox_corners",
+        separator,
+    )
+    return _box_corners(size, center, eigenvectors)
+
+
+def min_area_bbox_corners(props, *, separator="-"):
+    """Corners of the minimum-area rectangles of 2D regions.
+
+    The corners of the rectangle of the ``min_area_bbox_size``,
+    ``min_area_bbox_center`` and ``min_area_bbox_angle`` properties.
+
+    Parameters
+    ----------
+    props : dict
+        The result of `regionprops_dict` or `regionprops_table` with the
+        properties ``min_area_bbox_size``, ``min_area_bbox_center`` and
+        ``min_area_bbox_angle`` (a `ValueError` lists any that are missing).
+        Columns of a table (``min_area_bbox_size-0``, ...) are stacked back
+        into arrays.
+    separator : str, optional
+        The `separator` that was passed to `regionprops_table`.
+
+    Returns
+    -------
+    corners : ndarray, shape (n_labels, 4, 2)
+        The corners (row, column) in the coordinates of ``centroid``, in the
+        order of ``itertools.product([-1, 1], repeat=2)`` for the signs along
+        the length side and the width side; the order 0, 1, 3, 2 goes around
+        the rectangle. The corners of absent labels are NaN. The result is a CuPy
+        array, or a NumPy array if the properties are NumPy arrays (a table
+        made with ``copy_output_to_host=True``).
+
+    Notes
+    -----
+    The first axis of the rectangle is the direction ``(cos(a), sin(a))`` of
+    the length side, for the angle ``a``, and the second is perpendicular to
+    it; `oriented_bbox_corners` computes the same for the oriented box.
+    """
+    size, center, angle = _required_properties(
+        props,
+        ("min_area_bbox_size", "min_area_bbox_center", "min_area_bbox_angle"),
+        "min_area_bbox_corners",
+        separator,
+    )
+    xp = cp.get_array_module(size, center, angle)
+    angle = xp.asarray(angle, dtype=xp.float64)
+    cos, sin = xp.cos(angle), xp.sin(angle)
+    axes = xp.stack([xp.stack([cos, -sin], -1), xp.stack([sin, cos], -1)], -2)
+    return _box_corners(size, center, axes)
 
 
 def _props_dict_to_table(
