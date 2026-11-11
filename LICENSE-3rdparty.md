@@ -281,3 +281,11 @@ PBA+
   - https://github.com/orzzzjq/Parallel-Banding-Algorithm-plus/blob/master/LICENSE
 - Copyright: School of Computing, National University of Singapore
 - Usage: PBA+ is used to implement the Euclidean distance transform.
+
+cuda-slic
+- License: Apache-2.0 License
+  - https://github.com/rosalindfranklininstitute/cuda-slic/blob/master/LICENSE
+- Copyright: Omar Elamin
+- Usage: the SLIC superpixel CUDA kernels (slic2d.cu, slic3d.cu) started as an
+  adaptation of the 3D kernel (slic3d_template.cu); slic2d.cu was obtained from
+  it by reducing the dimensionality.

@@ -68,6 +68,8 @@ files:
   py_optional_test:
     output: pyproject
     pyproject_dir: python/cucim
+    matrix:
+      cuda_suffixed: ["true"]
     extras:
       table: project.optional-dependencies
       key: test
@@ -404,3 +406,28 @@ dependencies:
       - output_types: [pyproject, requirements, constraints]
         packages:
           - *numpydoc
+    # cuVS is optional at run time (GPU k-means for the initial maskSLIC
+    # centroids in cucim.skimage.segmentation.slic, which falls back to SciPy
+    # without it); install it for testing so that path is covered.
+    specific:
+      - output_types: conda
+        matrices:
+          - matrix:
+            packages:
+              - cuvs==26.12.*,>=0.0.0a0
+      - output_types: [requirements, pyproject]
+        matrices:
+          - matrix:
+              cuda: "12.*"
+              cuda_suffixed: "true"
+            packages:
+              - cuvs-cu12==26.12.*,>=0.0.0a0
+          # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
+          - matrix:
+              cuda_suffixed: "true"
+            packages:
+              - cuvs-cu13==26.12.*,>=0.0.0a0
+          - matrix:
+              cuda_suffixed: "false"
+            packages:
+              - cuvs==26.12.*,>=0.0.0a0

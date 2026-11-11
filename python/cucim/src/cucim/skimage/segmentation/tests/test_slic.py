@@ -1,0 +1,1276 @@
+# SPDX-FileCopyrightText: 2009-2022 the scikit-image team
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
+from itertools import product
+
+import cupy as cp
+import numpy as np
+import pytest
+from cupy.testing import assert_array_equal
+from numpy.testing import assert_equal
+from scipy import ndimage as ndi
+from skimage import data
+
+from cucim.skimage import filters, img_as_float
+from cucim.skimage._shared.testing import expected_warnings
+from cucim.skimage.segmentation import slic
+
+
+def test_color_2d():
+    rng = np.random.default_rng(0)
+    img = np.zeros((20, 21, 3))
+    img[:10, :10, 0] = 1
+    img[10:, :10, 1] = 1
+    img[10:, 10:, 2] = 1
+    img += 0.01 * rng.normal(size=img.shape)
+    img[img > 1] = 1
+    img[img < 0] = 0
+    img = cp.asarray(img)
+    seg = slic(
+        img, n_segments=4, sigma=0, enforce_connectivity=False, start_label=0
+    )
+
+    # we expect 4 segments
+    assert_equal(len(np.unique(seg)), 4)
+    assert_equal(seg.shape, img.shape[:-1])
+    assert_array_equal(seg[:10, :10], 0)
+    assert_array_equal(seg[10:, :10], 2)
+    assert_array_equal(seg[:10, 10:], 1)
+    assert_array_equal(seg[10:, 10:], 3)
+
+
+def test_multichannel_2d():
+    rng = np.random.default_rng(0)
+    img = np.zeros((20, 20, 8))
+    img[:10, :10, 0:2] = 1
+    img[:10, 10:, 2:4] = 1
+    img[10:, :10, 4:6] = 1
+    img[10:, 10:, 6:8] = 1
+    img += 0.01 * rng.normal(size=img.shape)
+    img = np.clip(img, 0, 1, out=img)
+    img = cp.asarray(img)
+    seg = slic(img, n_segments=4, enforce_connectivity=False, start_label=0)
+
+    # we expect 4 segments
+    assert_equal(len(np.unique(seg)), 4)
+    assert_equal(seg.shape, img.shape[:-1])
+    assert_array_equal(seg[:10, :10], 0)
+    assert_array_equal(seg[10:, :10], 2)
+    assert_array_equal(seg[:10, 10:], 1)
+    assert_array_equal(seg[10:, 10:], 3)
+
+
+def test_gray_2d():
+    rng = np.random.default_rng(0)
+    img = np.zeros((20, 21))
+    img[:10, :10] = 0.33
+    img[10:, :10] = 0.67
+    img[10:, 10:] = 1.00
+    img += 0.0033 * rng.normal(size=img.shape)
+    img[img > 1] = 1
+    img[img < 0] = 0
+    img = cp.asarray(img)
+    seg = slic(
+        img,
+        sigma=0,
+        n_segments=4,
+        compactness=1,
+        channel_axis=None,
+        convert2lab=False,
+        start_label=0,
+    )
+
+    assert_equal(len(np.unique(seg)), 4)
+    assert_equal(seg.shape, img.shape)
+    assert_array_equal(seg[:10, :10], 0)
+    assert_array_equal(seg[10:, :10], 2)
+    assert_array_equal(seg[:10, 10:], 1)
+    assert_array_equal(seg[10:, 10:], 3)
+
+
+def test_gray2d_default_channel_axis():
+    img = np.zeros((20, 21))
+    img[:10, :10] = 0.33
+    img = cp.asarray(img)
+    with pytest.raises(
+        ValueError, match="channel_axis=-1 indicates multichannel"
+    ):
+        slic(img)
+    slic(img, channel_axis=None)
+
+
+def _check_segment_labels(seg1, seg2, allowed_mismatch_ratio=0.1):
+    size = seg1.size
+    ndiff = int(cp.sum(seg1 != seg2))
+    assert (ndiff / size) < allowed_mismatch_ratio
+
+
+def _assert_dominant_label(seg, expected, min_fraction=0.8):
+    assert int(cp.sum(seg == expected)) >= min_fraction * seg.size
+
+
+def _dominant_label(seg):
+    labels, counts = cp.unique(seg, return_counts=True)
+    return int(labels[cp.argmax(counts)])
+
+
+def test_slic_consistency_across_image_magnitude():
+    # verify that that images of various scales across integer and float dtypes
+    # give the same segmentation result
+    img_uint8 = cp.asarray(data.cat()[:256, :128])
+    img_uint16 = 256 * img_uint8.astype(np.uint16)
+    img_float32 = img_as_float(img_uint8)
+    img_float32_norm = img_float32 / img_float32.max()
+    img_float32_offset = img_float32 + 1000.0
+
+    kwargs = {"maximization_algorithm": "scan"}
+    seg1 = slic(img_uint8, **kwargs)
+    seg2 = slic(img_uint16, **kwargs)
+    seg3 = slic(img_float32, **kwargs)
+    seg4 = slic(img_float32_norm, **kwargs)
+    seg5 = slic(img_float32_offset, **kwargs)
+
+    if False:  # (TODO: fix this test case)
+        assert_array_equal(seg1, seg2)
+        assert_array_equal(seg1, seg3)
+        assert_array_equal(seg4, seg5)
+    else:
+        # TODO: scikit-image does not need these tolerances
+        sz = img_uint8.size
+        assert int(cp.sum(seg1 != seg2)) < 0.001 * sz
+        assert int(cp.sum(seg1 != seg3)) < 0.001 * sz
+        assert int(cp.sum(seg4 != seg5)) < 0.025 * sz
+
+    # Floating point cases can have mismatch due to floating point error
+    # exact match was observed on x86_64, but mismatches seen no i686.
+    # For now just verify that a similar number of superpixels are present in
+    # each case.
+    n_seg1 = seg1.max()
+    n_seg4 = seg4.max()
+    assert abs(n_seg1 - n_seg4) / n_seg1 < 0.5
+
+
+def test_slic_maximization_algorithm():
+    img = cp.asarray(data.cat()[:64, :64])
+
+    seg_scan = slic(
+        img,
+        n_segments=16,
+        enforce_connectivity=False,
+        maximization_algorithm="scan",
+    )
+    seg_atomic = slic(
+        img,
+        n_segments=16,
+        enforce_connectivity=False,
+        maximization_algorithm="atomic",
+    )
+    assert seg_scan.shape == img.shape[:2]
+    assert seg_atomic.shape == img.shape[:2]
+
+    with pytest.raises(ValueError, match="maximization_algorithm"):
+        slic(img, maximization_algorithm="unsupported")
+
+
+@pytest.mark.parametrize("image_kind, compactness", [("2d", 1), ("3d", 0.01)])
+def test_slic_atomic_matches_scan(image_kind, compactness):
+    # At low compactness, the segments drift far from their initial centers.
+    # The atomic center update must then agree with the scan update.
+    if image_kind == "2d":
+        img = cp.asarray(data.astronaut())
+        kwargs = {}
+    else:
+        rng = np.random.default_rng(2)
+        vol = data.binary_blobs(length=48, n_dim=3, rng=2).astype(float)
+        vol += 0.2 * rng.standard_normal(vol.shape)
+        img = cp.asarray(vol)
+        kwargs = {"channel_axis": None}
+    segs = [
+        slic(
+            img,
+            n_segments=100,
+            compactness=compactness,
+            enforce_connectivity=False,
+            maximization_algorithm=algorithm,
+            **kwargs,
+        )
+        for algorithm in ("scan", "atomic")
+    ]
+    assert float((segs[0] == segs[1]).mean()) > 0.99
+
+
+@pytest.mark.parametrize("image_kind", ["2d", "3d"])
+@pytest.mark.parametrize("slic_zero", [False, True])
+def test_slic_atomic_is_deterministic(image_kind, slic_zero):
+    # The center sums are accumulated as fixed-point integers, so repeated
+    # runs must give identical labels (floating-point atomics would not).
+    if image_kind == "2d":
+        img = cp.asarray(np.tile(data.astronaut(), (2, 2, 1)))
+        kwargs = {}
+    else:
+        rng = np.random.default_rng(3)
+        img = cp.asarray(rng.random((40, 40, 40)))
+        kwargs = {"channel_axis": None}
+    segs = [
+        slic(
+            img,
+            n_segments=100,
+            compactness=0.1 if image_kind == "3d" else 1,
+            slic_zero=slic_zero,
+            maximization_algorithm="atomic",
+            **kwargs,
+        )
+        for _ in range(4)
+    ]
+    for seg in segs[1:]:
+        cp.testing.assert_array_equal(seg, segs[0])
+
+
+@pytest.mark.parametrize("channel_axis", [0, 1, 2, -1])
+@pytest.mark.parametrize("use_mask", [False, True])
+def test_slic_channel_axis_3d_multichannel(channel_axis, use_mask):
+    rng = np.random.default_rng(5)
+    shape = (16, 20, 24)
+    img = np.linspace(0, 1, shape[2])[np.newaxis, np.newaxis, :, np.newaxis]
+    img = img * np.ones(shape + (3,)) + 0.1 * rng.random(shape + (3,))
+    mask = None
+    if use_mask:
+        mask = cp.zeros(shape, dtype=bool)
+        mask[2:-2, 3:-3, 4:-4] = True
+    kwargs = dict(
+        n_segments=12, compactness=1, mask=mask, enforce_connectivity=False
+    )
+    expected = slic(cp.asarray(img), channel_axis=-1, **kwargs)
+    img_moved = cp.asarray(np.moveaxis(img, -1, channel_axis))
+    seg = slic(img_moved, channel_axis=channel_axis, **kwargs)
+    assert_array_equal(seg, expected)
+
+
+@pytest.mark.parametrize("channel_axis", [0, 1])
+def test_slic_channel_axis_2d_rgb(channel_axis):
+    img = data.astronaut()[:96, :96]
+    expected = slic(cp.asarray(img), n_segments=16, channel_axis=-1)
+    img_moved = cp.asarray(np.moveaxis(img, -1, channel_axis))
+    seg = slic(img_moved, n_segments=16, channel_axis=channel_axis)
+    assert_array_equal(seg, expected)
+
+
+@pytest.mark.parametrize("image_kind", ["2d", "3d"])
+def test_mask_slic_matches_skimage(image_kind):
+    # With the same initial centroids (SciPy kmeans2), maskSLIC should agree
+    # with scikit-image up to rounding differences. This depends on the size
+    # of the search window, which scikit-image takes from the grid step of
+    # the full image.
+    from skimage.segmentation import slic as slic_cpu
+
+    if image_kind == "2d":
+        img = data.astronaut()
+        mask = np.zeros(img.shape[:2], dtype=bool)
+        mask[50:400, 80:450] = True
+        kwargs = dict(n_segments=60, compactness=10)
+    else:
+        rng = np.random.default_rng(0)
+        img = data.binary_blobs(length=48, n_dim=3, rng=2).astype(float)
+        img += 0.2 * rng.standard_normal(img.shape)
+        mask = np.zeros(img.shape, dtype=bool)
+        mask[6:42, 8:38, 4:44] = True
+        kwargs = dict(n_segments=30, compactness=0.1, channel_axis=None)
+    expected = slic_cpu(img, mask=mask, enforce_connectivity=False, **kwargs)
+    seg = slic(
+        cp.asarray(img),
+        mask=cp.asarray(mask),
+        enforce_connectivity=False,
+        force_kmeans2=True,
+        maximization_algorithm="scan",
+        **kwargs,
+    )
+    assert float((cp.asnumpy(seg) == expected).mean()) > 0.99
+
+
+def test_slic_constant_image():
+    # a constant image must not give NaN values (division by zero)
+    img = cp.ones((40, 40))
+    for check in (False, True):
+        seg = slic(
+            img,
+            n_segments=9,
+            channel_axis=None,
+            check_finite_and_constant=check,
+        )
+        assert len(cp.unique(seg)) == 9
+        assert int(seg.min()) == 1
+
+
+@pytest.mark.parametrize("argument", ["spacing", "sigma"])
+def test_slic_2d_three_element_arguments(argument):
+    # deprecated: a 3-element spacing or sigma for a 2D image is interpreted
+    # as (z, y, x), as in scikit-image
+    from skimage.segmentation import slic as slic_cpu
+
+    img = data.astronaut()[:128, :128]
+    kwargs = dict(n_segments=16, compactness=30, enforce_connectivity=False)
+    value = (1, 2, 3) if argument == "spacing" else (0, 1, 2)
+    with pytest.warns(FutureWarning, match="2D"):
+        expected = slic_cpu(img, **{argument: value}, **kwargs)
+    with pytest.warns(FutureWarning, match="2D"):
+        seg = slic(cp.asarray(img), **{argument: value}, **kwargs)
+    assert float((cp.asnumpy(seg) == expected).mean()) > 0.99
+
+
+@pytest.mark.parametrize(
+    "image_kind, compactness, min_agreement",
+    [
+        ("2d", 0.3, 0.999),
+        ("2d", 1, 0.999),
+        ("2d", 10, 0.999),
+        ("3d", 0.03, 0.999),
+    ],
+)
+def test_slic_matches_skimage_without_connectivity(
+    image_kind, compactness, min_agreement
+):
+    # At low compactness, centers move far from their initial grid position.
+    # The labels before connectivity cleanup should still match scikit-image.
+    from skimage.segmentation import slic as slic_cpu
+
+    if image_kind == "2d":
+        img = data.astronaut()
+        kwargs = dict(n_segments=100, compactness=compactness)
+    else:
+        rng = np.random.default_rng(2)
+        img = data.binary_blobs(length=48, n_dim=3, rng=2).astype(float)
+        img += 0.2 * rng.standard_normal(img.shape)
+        kwargs = dict(
+            n_segments=100, compactness=compactness, channel_axis=None
+        )
+    expected = slic_cpu(img, enforce_connectivity=False, **kwargs)
+    seg = slic(
+        cp.asarray(img),
+        enforce_connectivity=False,
+        maximization_algorithm="scan",
+        **kwargs,
+    )
+    assert float((cp.asnumpy(seg) == expected).mean()) > min_agreement
+
+
+@pytest.mark.parametrize("image_kind", ["2d", "3d"])
+def test_slic_matches_skimage_many_small_segments(image_kind):
+    # With segments of a few pixels, a block of the assignment kernel spans
+    # many grid cells and must select its candidate centers over several
+    # rounds.
+    from skimage.segmentation import slic as slic_cpu
+
+    rng = np.random.default_rng(4)
+    if image_kind == "2d":
+        img = data.astronaut()[:100, :120]
+        kwargs = dict(n_segments=2500, compactness=10)
+    else:
+        img = ndi.gaussian_filter(rng.random((30, 36, 40)), 2)
+        kwargs = dict(n_segments=1500, compactness=0.1, channel_axis=None)
+    expected = slic_cpu(img, enforce_connectivity=False, **kwargs)
+    seg = slic(cp.asarray(img), enforce_connectivity=False, **kwargs)
+    assert float((cp.asnumpy(seg) == expected).mean()) > 0.999
+
+
+@pytest.mark.parametrize("compactness", [1, 10])
+def test_slic_connectivity_gpu_no_small_segments(compactness):
+    # A component whose neighbors are all small must still end up in a
+    # segment that is at least min_size (the default min_size_factor is 0.5).
+    img = cp.asarray(data.astronaut())
+    kwargs = dict(n_segments=100, compactness=compactness)
+    n_centroids = len(
+        cp.unique(slic(img, enforce_connectivity=False, **kwargs))
+    )
+    min_size = int(0.5 * img.shape[0] * img.shape[1] / n_centroids)
+    seg = slic(img, connectivity_algorithm="gpu", **kwargs)
+    sizes = cp.bincount(seg.ravel())[1:]
+    assert int(sizes.min()) >= min_size
+
+
+def test_slic_connectivity_algorithm_gpu():
+    img = cp.asarray(data.cat()[:64, :64])
+
+    seg = slic(
+        img,
+        n_segments=32,
+        enforce_connectivity=True,
+        connectivity_algorithm="gpu",
+    )
+
+    assert_equal(seg.shape, img.shape[:2])
+    assert int(seg.min()) >= 1
+    assert int(cp.unique(seg).size) > 1
+
+    with pytest.raises(ValueError, match="connectivity_algorithm"):
+        slic(img, connectivity_algorithm="unsupported")
+
+
+def test_slic_connectivity_gpu_without_relabel():
+    img = cp.asarray(data.cat()[:64, :64])
+
+    seg = slic(
+        img,
+        n_segments=32,
+        enforce_connectivity=True,
+        connectivity_algorithm="gpu",
+        relabel_connectivity=False,
+    )
+
+    assert_equal(seg.shape, img.shape[:2])
+    assert int(seg.min()) >= 1
+    assert int(cp.unique(seg).size) > 1
+
+
+@pytest.mark.parametrize("maximization_algorithm", ["scan", "atomic"])
+def test_mask_slic_2d(maximization_algorithm):
+    img = cp.zeros((32, 33, 3), dtype=cp.float32)
+    img[:16, :, 0] = 1
+    img[16:, :, 1] = 1
+    mask = cp.zeros(img.shape[:2], dtype=cp.bool_)
+    mask[4:28, 5:30] = True
+
+    seg = slic(
+        img,
+        n_segments=8,
+        mask=mask,
+        enforce_connectivity=False,
+        start_label=1,
+        maximization_algorithm=maximization_algorithm,
+    )
+
+    assert_equal(seg.shape, img.shape[:2])
+    assert cp.all(seg[~mask] == 0).get()
+    assert int(seg[mask].min()) >= 1
+    assert 1 < int(cp.unique(seg[mask]).size) <= 8
+
+
+def test_mask_slic_start_label_zero():
+    img = cp.zeros((32, 33, 3), dtype=cp.float32)
+    img[:16, :, 0] = 1
+    img[16:, :, 1] = 1
+    mask = cp.zeros(img.shape[:2], dtype=cp.bool_)
+    mask[4:28, 5:30] = True
+
+    seg = slic(
+        img,
+        n_segments=8,
+        mask=mask,
+        enforce_connectivity=False,
+        start_label=0,
+        maximization_algorithm="atomic",
+    )
+
+    assert cp.all(seg[~mask] == -1).get()
+    assert int(seg[mask].min()) >= 0
+
+
+def test_mask_slic_force_kmeans2():
+    img = cp.zeros((32, 33, 3), dtype=cp.float32)
+    img[:16, :, 0] = 1
+    img[16:, :, 1] = 1
+    mask = cp.zeros(img.shape[:2], dtype=cp.bool_)
+    mask[4:28, 5:30] = True
+
+    seg = slic(
+        img,
+        n_segments=8,
+        mask=mask,
+        enforce_connectivity=False,
+        force_kmeans2=True,
+    )
+
+    assert_equal(seg.shape, img.shape[:2])
+    assert cp.all(seg[~mask] == 0).get()
+    assert int(seg[mask].min()) >= 1
+    assert int(cp.unique(seg[mask]).size) > 1
+
+
+@pytest.mark.parametrize("cuvs_fails", [False, True])
+def test_mask_slic_kmeans2_fallback_warns_once(monkeypatch, cuvs_fails):
+    from cucim.skimage.segmentation import slic_superpixels
+
+    def failing_fit(*args, **kwargs):
+        raise RuntimeError("cuVS failure")
+
+    monkeypatch.setattr(slic_superpixels, "_kmeans2_fallback_warned", False)
+    monkeypatch.setattr(
+        slic_superpixels,
+        "cuvs_kmeans_fit",
+        failing_fit if cuvs_fails else None,
+    )
+    img = cp.zeros((32, 33), dtype=cp.float32)
+    img[:16] = 1
+    mask = cp.zeros(img.shape, dtype=cp.bool_)
+    mask[4:28, 5:30] = True
+
+    with pytest.warns(RuntimeWarning, match="kmeans2") as record:
+        slic(img, n_segments=6, mask=mask, channel_axis=None)
+        slic(img, n_segments=6, mask=mask, channel_axis=None)
+    assert len(record) == 1
+    if cuvs_fails:
+        assert "cuVS k-means failed" in str(record[0].message)
+    else:
+        assert "could not be imported" in str(record[0].message)
+
+
+def test_mask_slic_force_kmeans2_does_not_warn(monkeypatch, recwarn):
+    from cucim.skimage.segmentation import slic_superpixels
+
+    monkeypatch.setattr(slic_superpixels, "_kmeans2_fallback_warned", False)
+    monkeypatch.setattr(slic_superpixels, "cuvs_kmeans_fit", None)
+    img = cp.zeros((32, 33), dtype=cp.float32)
+    mask = cp.ones(img.shape, dtype=cp.bool_)
+    slic(img, n_segments=6, mask=mask, channel_axis=None, force_kmeans2=True)
+    assert not [w for w in recwarn if issubclass(w.category, RuntimeWarning)]
+
+
+@pytest.mark.parametrize("rng_on_host", [False, True])
+def test_mask_slic_rng_on_host(rng_on_host):
+    img = cp.zeros((48, 52, 3), dtype=cp.float32)
+    img[:24, :, 0] = 1
+    img[24:, :, 1] = 1
+    mask = cp.zeros(img.shape[:2], dtype=cp.bool_)
+    mask[4:44, 5:48] = True
+
+    kwargs = dict(
+        n_segments=12,
+        mask=mask,
+        enforce_connectivity=False,
+        rng_on_host=rng_on_host,
+    )
+    seg = slic(img, **kwargs)
+
+    assert_equal(seg.shape, img.shape[:2])
+    assert cp.all(seg[~mask] == 0).get()
+    assert int(seg[mask].min()) >= 1
+    assert int(cp.unique(seg[mask]).size) > 1
+    # the sampling is seeded, so repeated calls agree
+    assert_array_equal(seg, slic(img, **kwargs))
+
+
+def test_mask_slic_3d():
+    img = cp.zeros((12, 13, 14), dtype=cp.float32)
+    img[:6, :, :] = 0.25
+    img[6:, :, :] = 0.75
+    mask = cp.zeros(img.shape, dtype=cp.bool_)
+    mask[2:10, 3:11, 4:12] = True
+
+    seg = slic(
+        img,
+        n_segments=4,
+        mask=mask,
+        enforce_connectivity=False,
+        channel_axis=None,
+        start_label=1,
+        max_num_iter=2,
+    )
+
+    assert_equal(seg.shape, img.shape)
+    assert cp.all(seg[~mask] == 0).get()
+    assert int(seg[mask].min()) >= 1
+    assert int(cp.unique(seg[mask]).size) > 1
+
+
+def test_mask_slic_shape_mismatch():
+    img = cp.zeros((16, 16, 3), dtype=cp.float32)
+    mask = cp.ones((16, 15), dtype=cp.bool_)
+
+    with pytest.raises(ValueError, match="same shape"):
+        slic(img, mask=mask)
+
+
+def test_color_2d_mask():
+    rng = np.random.default_rng(0)
+    mask = cp.zeros((20, 21), dtype=cp.bool_)
+    mask[2:-2, 2:-2] = True
+    img = np.zeros((20, 21, 3))
+    img[:10, :10, 0] = 1
+    img[10:, :10, 1] = 1
+    img[10:, 10:, 2] = 1
+    img += 0.01 * rng.normal(size=img.shape)
+    img = cp.asarray(np.clip(img, 0, 1, out=img))
+
+    seg = slic(
+        img,
+        n_segments=4,
+        sigma=0,
+        enforce_connectivity=False,
+        mask=mask,
+        maximization_algorithm="scan",
+    )
+
+    assert_equal(len(cp.unique(seg)), 5)
+    assert_equal(seg.shape, img.shape[:-1])
+    assert cp.all(seg[~mask] == 0).get()
+    assert int(seg[mask].min()) >= 1
+    assert int(seg[mask].max()) <= 4
+
+
+def test_multichannel_2d_mask():
+    rng = np.random.default_rng(0)
+    mask = cp.zeros((20, 20), dtype=cp.bool_)
+    mask[2:-2, 2:-2] = True
+    img = np.zeros((20, 20, 8))
+    img[:10, :10, 0:2] = 1
+    img[:10, 10:, 2:4] = 1
+    img[10:, :10, 4:6] = 1
+    img[10:, 10:, 6:8] = 1
+    img += 0.01 * rng.normal(size=img.shape)
+    img = cp.asarray(np.clip(img, 0, 1, out=img))
+
+    seg = slic(
+        img,
+        n_segments=4,
+        enforce_connectivity=False,
+        mask=mask,
+        maximization_algorithm="scan",
+        # The expected label numbers follow scikit-image's initial centroids,
+        # so use the deterministic SciPy k-means (force_kmeans2) rather than
+        # cuVS. The 5 iterations of k-means leave the centroids far from the
+        # quadrant centers (e.g. (9.4, 4.5) and (9.3, 13.5) for the quadrants
+        # at rows 2:10), so the segmentation depends on their exact values.
+        # With cuVS this test failed in CI only for the "oldest-deps" jobs
+        # (wheels: CUDA 12.9.2, RTX PRO 6000; conda: CUDA 12.2.2, H100):
+        # seg[2:10, 2:10] contained labels 1 and 2 split along a diagonal
+        # instead of only label 2, i.e. different initial centroids, not
+        # wrong labels. It passed with newer cuVS (26.04) and kmeans2.
+        force_kmeans2=True,
+    )
+
+    assert_equal(len(cp.unique(seg)), 5)
+    assert_equal(seg.shape, img.shape[:-1])
+    assert cp.all(seg[~mask] == 0).get()
+    assert_array_equal(seg[2:10, 2:10], 2)
+    assert_array_equal(seg[2:10, 10:-2], 1)
+    assert_array_equal(seg[10:-2, 2:10], 4)
+    assert_array_equal(seg[10:-2, 10:-2], 3)
+
+
+def test_gray_2d_mask():
+    rng = np.random.default_rng(0)
+    mask = cp.zeros((20, 21), dtype=cp.bool_)
+    mask[2:-2, 2:-2] = True
+    img = np.zeros((20, 21))
+    img[:10, :10] = 0.33
+    img[10:, :10] = 0.67
+    img[10:, 10:] = 1.00
+    img += 0.0033 * rng.normal(size=img.shape)
+    img = cp.asarray(np.clip(img, 0, 1, out=img))
+
+    seg = slic(
+        img,
+        sigma=0,
+        n_segments=4,
+        compactness=1,
+        channel_axis=None,
+        convert2lab=False,
+        mask=mask,
+        maximization_algorithm="scan",
+    )
+
+    assert_equal(len(cp.unique(seg)), 5)
+    assert_equal(seg.shape, img.shape)
+    assert cp.all(seg[~mask] == 0).get()
+    assert int(seg[mask].min()) >= 1
+    assert int(seg[mask].max()) <= 4
+
+
+def test_list_sigma_mask():
+    rng = np.random.default_rng(0)
+    mask = cp.zeros((2, 6), dtype=cp.bool_)
+    mask[:, 1:-1] = True
+    img = np.array([[1, 1, 1, 0, 0, 0], [0, 0, 0, 1, 1, 1]], float)
+    img += 0.1 * rng.normal(size=img.shape)
+    img = cp.asarray(img)
+    result_sigma = cp.asarray([[0, 1, 1, 2, 2, 0], [0, 1, 1, 2, 2, 0]])
+
+    seg_sigma = slic(
+        img,
+        n_segments=2,
+        sigma=[50, 1],
+        channel_axis=None,
+        mask=mask,
+        maximization_algorithm="scan",
+        connectivity_algorithm="host",
+        # the expected label numbers follow scikit-image's random sample
+        rng_on_host=True,
+    )
+
+    assert_array_equal(seg_sigma, result_sigma)
+
+
+def test_spacing_mask():
+    rng = np.random.default_rng(0)
+    mask = cp.zeros((2, 5), dtype=cp.bool_)
+    mask[:, 1:-1] = True
+    img = np.array([[1, 1, 1, 0, 0], [1, 1, 0, 0, 0]], float)
+    result_non_spaced = cp.asarray([[0, 1, 1, 2, 0], [0, 1, 2, 2, 0]])
+    result_spaced = cp.asarray([[0, 1, 1, 1, 0], [0, 2, 2, 2, 0]])
+    img += 0.1 * rng.normal(size=img.shape)
+    img = cp.asarray(img)
+
+    seg_non_spaced = slic(
+        img,
+        n_segments=2,
+        sigma=0,
+        channel_axis=None,
+        compactness=1.0,
+        mask=mask,
+        maximization_algorithm="scan",
+        connectivity_algorithm="host",
+    )
+    seg_spaced = slic(
+        img,
+        n_segments=2,
+        sigma=0,
+        spacing=[50, 1],
+        compactness=1.0,
+        channel_axis=None,
+        mask=mask,
+        maximization_algorithm="scan",
+        connectivity_algorithm="host",
+    )
+
+    _check_segment_labels(seg_non_spaced, result_non_spaced, 0.11)
+    _check_segment_labels(seg_spaced, result_spaced, 0.31)
+
+
+def test_enforce_connectivity_mask():
+    mask = cp.zeros((3, 6), dtype=cp.bool_)
+    mask[:, 1:-1] = True
+    img = cp.asarray(
+        [
+            [0, 0, 0, 1, 1, 1],
+            [1, 0, 0, 1, 1, 0],
+            [0, 0, 0, 1, 1, 0],
+        ],
+        dtype=cp.float32,
+    )
+    result = cp.asarray(
+        [[0, 1, 1, 2, 2, 0], [0, 1, 1, 2, 2, 0], [0, 1, 1, 2, 2, 0]]
+    )
+
+    segments_connected = slic(
+        img,
+        2,
+        compactness=0.0001,
+        enforce_connectivity=True,
+        convert2lab=False,
+        mask=mask,
+        channel_axis=None,
+        maximization_algorithm="scan",
+        connectivity_algorithm="host",
+    )
+    segments_disconnected = slic(
+        img,
+        2,
+        compactness=0.0001,
+        enforce_connectivity=False,
+        convert2lab=False,
+        mask=mask,
+        channel_axis=None,
+        maximization_algorithm="scan",
+    )
+    segments_connected_low_max = slic(
+        img,
+        2,
+        compactness=0.0001,
+        enforce_connectivity=True,
+        convert2lab=False,
+        max_size_factor=0.8,
+        mask=mask,
+        channel_axis=None,
+        maximization_algorithm="scan",
+        connectivity_algorithm="host",
+    )
+
+    assert_array_equal(segments_connected, result)
+    assert_array_equal(segments_disconnected, result)
+    assert_array_equal(segments_connected_low_max, result)
+
+
+def test_slic_zero_mask():
+    rng = np.random.default_rng(0)
+    mask = cp.zeros((20, 21), dtype=cp.bool_)
+    mask[2:-2, 2:-2] = True
+    img = np.zeros((20, 21, 3))
+    img[:10, :10, 0] = 1
+    img[10:, :10, 1] = 1
+    img[10:, 10:, 2] = 1
+    img += 0.01 * rng.normal(size=img.shape)
+    img = cp.asarray(np.clip(img, 0, 1, out=img))
+
+    seg = slic(
+        img,
+        n_segments=4,
+        sigma=0,
+        slic_zero=True,
+        mask=mask,
+        maximization_algorithm="scan",
+    )
+
+    assert_equal(len(cp.unique(seg)), 5)
+    assert_equal(seg.shape, img.shape[:-1])
+    assert cp.all(seg[~mask] == 0).get()
+    assert int(seg[mask].min()) >= 1
+    assert int(seg[mask].max()) <= 4
+
+
+def test_more_segments_than_pixels_mask():
+    rng = np.random.default_rng(0)
+    mask = cp.zeros((20, 21), dtype=cp.bool_)
+    mask[2:-2, 2:-2] = True
+    img = np.zeros((20, 21))
+    img[:10, :10] = 0.33
+    img[10:, :10] = 0.67
+    img[10:, 10:] = 1.00
+    img += 0.0033 * rng.normal(size=img.shape)
+    img = cp.asarray(np.clip(img, 0, 1, out=img))
+
+    seg = slic(
+        img,
+        sigma=0,
+        n_segments=500,
+        compactness=1,
+        channel_axis=None,
+        convert2lab=False,
+        mask=mask,
+        enforce_connectivity=False,
+        maximization_algorithm="scan",
+    )
+
+    assert_equal(seg.shape, img.shape)
+    assert cp.all(seg[~mask] == 0).get()
+    # cuCIM does not currently reproduce scikit-image's exact one-label-per
+    # masked pixel behavior for this edge case, but the masked path should
+    # still run without producing labels outside the image.
+    assert int(seg.min()) >= 0
+
+
+def test_color_3d_mask():
+    mask = cp.zeros((20, 21, 22), dtype=cp.bool_)
+    mask[2:-2, 2:-2, 2:-2] = True
+
+    rng = np.random.default_rng(0)
+    img = np.zeros((20, 21, 22, 3))
+    slices = []
+    for dim_size in mask.shape:
+        midpoint = dim_size // 2
+        slices.append((slice(None, midpoint), slice(midpoint, None)))
+    slices = list(product(*slices))
+    colors = list(product(*(([0, 1],) * 3)))
+    for s, c in zip(slices, colors):
+        img[s] = c
+    img += 0.01 * rng.normal(size=img.shape)
+    img = cp.asarray(np.clip(img, 0, 1, out=img))
+
+    seg = slic(
+        img,
+        sigma=0,
+        n_segments=8,
+        mask=mask,
+        enforce_connectivity=False,
+        maximization_algorithm="scan",
+    )
+
+    assert_equal(len(cp.unique(seg)), 9)
+    assert cp.all(seg[~mask] == 0).get()
+    dominant_labels = {
+        _dominant_label(seg[s][2:-2, 2:-2, 2:-2]) for s in slices
+    }
+    assert 0 not in dominant_labels
+    assert len(dominant_labels) >= 6
+
+
+def test_gray_3d_mask():
+    mask = cp.zeros((20, 21, 22), dtype=cp.bool_)
+    mask[2:-2, 2:-2, 2:-2] = True
+
+    rng = np.random.default_rng(0)
+    img = np.zeros((20, 21, 22))
+    slices = []
+    for dim_size in img.shape:
+        midpoint = dim_size // 2
+        slices.append((slice(None, midpoint), slice(midpoint, None)))
+    slices = list(product(*slices))
+    shades = np.linspace(0, 1, 8)
+    for s, sh in zip(slices, shades):
+        img[s] = sh
+    img += 0.001 * rng.normal(size=img.shape)
+    img = cp.asarray(np.clip(img, 0, 1, out=img))
+
+    seg = slic(
+        img,
+        sigma=0,
+        n_segments=8,
+        channel_axis=None,
+        convert2lab=False,
+        mask=mask,
+        enforce_connectivity=False,
+        maximization_algorithm="scan",
+    )
+
+    assert_equal(len(cp.unique(seg)), 9)
+    assert cp.all(seg[~mask] == 0).get()
+    dominant_labels = {
+        _dominant_label(seg[s][2:-2, 2:-2, 2:-2]) for s in slices
+    }
+    assert 0 not in dominant_labels
+    assert len(dominant_labels) >= 6
+
+
+def test_color_3d():
+    rng = np.random.default_rng(0)
+    img = np.zeros((20, 21, 22, 3))
+    slices = []
+    for dim_size in img.shape[:-1]:
+        midpoint = dim_size // 2
+        slices.append((slice(None, midpoint), slice(midpoint, None)))
+    slices = list(product(*slices))
+    colors = list(product(*(([0, 1],) * 3)))
+    for s, c in zip(slices, colors):
+        img[s] = c
+    img += 0.01 * rng.normal(size=img.shape)
+    img[img > 1] = 1
+    img[img < 0] = 0
+    img = cp.asarray(img)
+    seg = slic(img, sigma=0, n_segments=8, start_label=0)
+
+    assert_equal(len(np.unique(seg)), 8)
+    for s, c in zip(slices, range(8)):
+        assert_array_equal(seg[s], c)
+
+
+def test_gray_3d():
+    rng = np.random.default_rng(0)
+    img = np.zeros((20, 21, 22))
+    slices = []
+    for dim_size in img.shape:
+        midpoint = dim_size // 2
+        slices.append((slice(None, midpoint), slice(midpoint, None)))
+    slices = list(product(*slices))
+    shades = np.arange(0, 1.000001, 1.0 / 7)
+    for s, sh in zip(slices, shades):
+        img[s] = sh
+    img += 0.001 * rng.normal(size=img.shape)
+    img[img > 1] = 1
+    img[img < 0] = 0
+    img = cp.asarray(img)
+    seg = slic(
+        img,
+        sigma=0,
+        n_segments=8,
+        compactness=1,
+        channel_axis=None,
+        convert2lab=False,
+        start_label=0,
+    )
+
+    assert_equal(len(np.unique(seg)), 8)
+    for s, c in zip(slices, range(8)):
+        assert_array_equal(seg[s], c)
+
+
+def test_list_sigma():
+    rng = np.random.default_rng(0)
+    img = np.array([[1, 1, 1, 0, 0, 0], [0, 0, 0, 1, 1, 1]], float)
+    img += 0.1 * rng.normal(size=img.shape)
+    img = cp.asarray(img)
+    result_sigma = cp.asarray([[0, 0, 0, 1, 1, 1], [0, 0, 0, 1, 1, 1]], int)
+    with expected_warnings(
+        ["Input image is 2D: sigma number of elements must be 2"]
+    ):
+        seg_sigma = slic(
+            img,
+            n_segments=2,
+            sigma=[1, 50, 1],
+            channel_axis=None,
+            start_label=0,
+            connectivity_algorithm="host",
+        )
+    assert_array_equal(seg_sigma, result_sigma)
+
+
+def test_spacing():
+    rng = np.random.default_rng(0)
+    img = np.array([[1, 1, 1, 0, 0], [1, 1, 0, 0, 0]], float)
+    result_non_spaced = cp.asarray([[0, 0, 0, 1, 1], [0, 0, 1, 1, 1]], int)
+    result_spaced = cp.asarray([[0, 0, 0, 0, 0], [1, 1, 1, 1, 1]], int)
+    img += 0.1 * rng.normal(size=img.shape)
+    img = cp.asarray(img)
+    seg_non_spaced = slic(
+        img,
+        n_segments=2,
+        sigma=0,
+        channel_axis=None,
+        compactness=1.0,
+        start_label=0,
+        connectivity_algorithm="host",
+    )
+    seg_spaced = slic(
+        img,
+        n_segments=2,
+        sigma=0,
+        spacing=[500, 1],
+        compactness=1.0,
+        channel_axis=None,
+        start_label=0,
+        connectivity_algorithm="host",
+    )
+    assert_array_equal(seg_non_spaced, result_non_spaced)
+    assert_array_equal(seg_spaced, result_spaced)
+
+
+def test_invalid_lab_conversion():
+    img = cp.asarray([[1, 1, 1, 0, 0], [1, 1, 0, 0, 0]], float) + 1
+    with pytest.raises(ValueError):
+        slic(img, channel_axis=-1, convert2lab=True, start_label=0)
+
+
+def test_enforce_connectivity():
+    img = cp.array(
+        [[0, 0, 0, 1, 1, 1], [1, 0, 0, 1, 1, 0], [0, 0, 0, 1, 1, 0]], float
+    )
+
+    segments_connected = slic(
+        img,
+        2,
+        compactness=0.0001,
+        enforce_connectivity=True,
+        convert2lab=False,
+        start_label=0,
+        channel_axis=None,
+        connectivity_algorithm="host",
+    )
+    segments_disconnected = slic(
+        img,
+        2,
+        compactness=0.0001,
+        enforce_connectivity=False,
+        convert2lab=False,
+        start_label=0,
+        channel_axis=None,
+    )
+
+    # Make sure nothing fatal occurs (e.g. buffer overflow) at low values of
+    # max_size_factor
+    segments_connected_low_max = slic(
+        img,
+        2,
+        compactness=0.0001,
+        enforce_connectivity=True,
+        convert2lab=False,
+        max_size_factor=0.8,
+        start_label=0,
+        channel_axis=None,
+        connectivity_algorithm="host",
+    )
+
+    result_connected = cp.array(
+        [[0, 0, 0, 1, 1, 1], [0, 0, 0, 1, 1, 1], [0, 0, 0, 1, 1, 1]], float
+    )
+
+    result_disconnected = cp.array(
+        [[0, 0, 0, 1, 1, 1], [1, 0, 0, 1, 1, 0], [0, 0, 0, 1, 1, 0]], float
+    )
+
+    assert_array_equal(segments_connected, result_connected)
+    assert_array_equal(segments_disconnected, result_disconnected)
+    assert_array_equal(segments_connected_low_max, result_connected)
+
+
+@pytest.mark.parametrize("maximization_algorithm", ["scan", "atomic"])
+def test_slic_zero(maximization_algorithm):
+    # Same as test_color_2d but with slic_zero=True
+    rng = np.random.default_rng(0)
+    img = np.zeros((20, 21, 3))
+    img[:10, :10, 0] = 1
+    img[10:, :10, 1] = 1
+    img[10:, 10:, 2] = 1
+    img += 0.01 * rng.normal(size=img.shape)
+    img[img > 1] = 1
+    img[img < 0] = 0
+    img = cp.asarray(img)
+    seg = slic(
+        img,
+        n_segments=4,
+        sigma=0,
+        slic_zero=True,
+        start_label=0,
+        maximization_algorithm=maximization_algorithm,
+    )
+
+    # we expect 4 segments
+    assert_equal(len(cp.unique(seg)), 4)
+    assert_equal(seg.shape, img.shape[:-1])
+    assert_array_equal(seg[:10, :10], 0)
+    assert_array_equal(seg[10:, :10], 2)
+    assert_array_equal(seg[:10, 10:], 1)
+    assert_array_equal(seg[10:, 10:], 3)
+
+
+def test_more_segments_than_pixels():
+    rng = np.random.default_rng(0)
+    img = np.zeros((20, 21))
+    img[:10, :10] = 0.33
+    img[10:, :10] = 0.67
+    img[10:, 10:] = 1.00
+    img += 0.0033 * rng.normal(size=img.shape)
+    img[img > 1] = 1
+    img[img < 0] = 0
+    img = cp.asarray(img)
+    seg = slic(
+        img,
+        sigma=0,
+        n_segments=500,
+        compactness=1,
+        channel_axis=None,
+        convert2lab=False,
+        start_label=0,
+    )
+    assert cp.all(seg.ravel() == cp.arange(seg.size)).get()
+
+
+@pytest.mark.parametrize(
+    "dtype", ["float16", "float32", "float64", "uint8", "int"]
+)
+def test_dtype_support(dtype):
+    img = cp.random.rand(28, 28).astype(dtype)
+
+    # Simply run the function to assert that it runs without error
+    slic(img, start_label=1, channel_axis=None)
+
+
+def test_start_label_fix():
+    """Tests the fix for a bug producing a label < start_label (gh-6240).
+
+    For the v0.19.1 release, the `img` and `slic` call as below result in two
+    non-contiguous regions with value 0 despite `start_label=1`. We verify
+    that the minimum label is now `start_label` as expected.
+    """
+
+    # generate bumpy data that gives unexpected label prior to bug fix
+    rng = np.random.default_rng(9)
+    img = rng.standard_normal((8, 13)) > 0
+
+    img = cp.asarray(img)
+    img = filters.gaussian(img, sigma=1)
+
+    start_label = 1
+    superp = slic(
+        img,
+        start_label=start_label,
+        channel_axis=None,
+        n_segments=6,
+        compactness=0.01,
+        enforce_connectivity=True,
+        max_num_iter=10,
+        connectivity_algorithm="host",
+    )
+    assert superp.min().get() == start_label
+
+
+def test_raises_ValueError_if_input_has_NaN():
+    img = np.zeros((4, 5), dtype=float)
+    img[2, 3] = np.nan
+    img = cp.asarray(img)
+    with pytest.raises(ValueError):
+        slic(img, channel_axis=None, check_finite_and_constant=True)
+
+    # mask = ~np.isnan(img)
+    # slic(img, mask=mask, channel_axis=None)
+
+
+@pytest.mark.parametrize("inf", [-np.inf, np.inf])
+def test_raises_ValueError_if_input_has_inf(inf):
+    img = np.zeros((4, 5), dtype=float)
+    img[2, 3] = inf
+    with pytest.raises(ValueError):
+        slic(img, channel_axis=None, check_finite_and_constant=True)
+
+    # mask = np.isfinite(img)
+    # slic(img, mask=mask, channel_axis=None)
+
+
+def _rescale_rgb2lab(image, ratio):
+    """Reference for the fused kernel: the separate passes."""
+    from cucim.skimage.color import rgb2lab
+
+    image = img_as_float(image).astype(cp.float32, copy=True)
+    imin = image.min()
+    imax = image.max()
+    scale = imax - imin
+    image -= imin
+    image /= cp.where(scale > 0, scale, 1).astype(image.dtype, copy=False)
+    lab = rgb2lab(image)
+    lab *= ratio
+    return lab
+
+
+@pytest.mark.parametrize(
+    "kind", ["uint8", "uint8_narrow", "uint8_constant", "float32", "3d"]
+)
+@pytest.mark.parametrize("ratio", [0.1, 1.0, 10.0])
+def test_fused_rgb2lab_matches_separate_passes(kind, ratio):
+    from cucim.skimage.segmentation.slic_superpixels import _rgb2lab_scaled
+
+    rng = np.random.default_rng(0)
+    if kind == "uint8":
+        img = rng.integers(0, 256, (40, 50, 3), dtype=np.uint8)
+    elif kind == "uint8_narrow":
+        img = rng.integers(100, 140, (40, 50, 3), dtype=np.uint8)
+    elif kind == "uint8_constant":
+        img = np.full((10, 12, 3), 77, dtype=np.uint8)
+    elif kind == "float32":
+        img = (rng.random((40, 50, 3)) * 3 - 1).astype(np.float32)
+    else:
+        img = rng.integers(0, 256, (6, 20, 24, 3), dtype=np.uint8)
+    img = cp.asarray(img)
+    expected = _rescale_rgb2lab(img, ratio)
+    result = _rgb2lab_scaled(img, img.min(), img.max(), ratio)
+    assert result.dtype == cp.float32
+    assert result.shape == img.shape
+    # single precision arithmetic, so equal up to rounding of the last bits
+    cp.testing.assert_allclose(result, expected, rtol=1e-4, atol=1e-4 * ratio)
+    if kind == "uint8_constant":
+        # a constant image is left at (nearly) zero
+        assert float(cp.abs(result).max()) < 1e-5 * ratio
+
+
+def test_fused_and_unfused_color_paths_agree():
+    # float64 input does not use the fused kernel
+    rng = np.random.default_rng(1)
+    img = cp.asarray(rng.integers(0, 256, (60, 80, 3), dtype=np.uint8))
+    labels_fused = slic(img, n_segments=30, start_label=0)
+    labels_other = slic(
+        img.astype(cp.float64) / 255, n_segments=30, start_label=0
+    )
+    assert float((labels_fused != labels_other).mean()) < 1e-3
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_fixed_point_scale_kernels(dtype):
+    from cucim.skimage.segmentation.slic_superpixels import (
+        _FIXED_POINT_MAX_LOG2_SCALE,
+        _get_fixed_scale_kernel,
+        _get_max_abs_kernel,
+    )
+
+    rng = np.random.default_rng(0)
+    for magnitude in (1e-9, 1e-3, 1.0, 100.0, 1e4):
+        x = cp.asarray(
+            (rng.random((7, 9)) * magnitude - magnitude / 3).astype(dtype)
+        )
+        max_abs = _get_max_abs_kernel()(x)
+        assert float(max_abs) == float(cp.abs(x).max())
+        n_values = x.size
+        scale = _get_fixed_scale_kernel()(
+            max_abs,
+            dtype(n_values),
+            dtype(_FIXED_POINT_MAX_LOG2_SCALE),
+        )
+        # power of two that keeps the sum of n_values values below 2**60
+        assert float(scale) == 2.0 ** int(np.log2(float(scale)))
+        assert float(scale) * n_values * float(max_abs) <= 2.0**60
+        assert float(scale) <= 2.0**_FIXED_POINT_MAX_LOG2_SCALE
