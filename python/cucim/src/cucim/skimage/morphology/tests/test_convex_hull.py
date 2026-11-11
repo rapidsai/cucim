@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -442,3 +442,72 @@ def test_cpu_fallback(radius, offset_coordinates, cpu_fallback_threshold):
         num_mismatch = cp.sum(chimage != expected)
         percent_mismatch = 100 * num_mismatch / expected.sum()
         assert percent_mismatch < 5
+
+
+# The batch convex-hull kernels (2D and 3D with offset_coordinates=True)
+# against scikit-image and against the per-image Qhull path
+
+
+def _blob_images(ndim, sizes, seeds):
+    from skimage import data
+
+    for size in sizes:
+        for seed in seeds:
+            blobs = data.binary_blobs(
+                size,
+                blob_size_fraction=0.15,
+                n_dim=ndim,
+                volume_fraction=0.25,
+                rng=seed,
+            )
+            if blobs.any():
+                yield blobs
+
+
+@pytest.mark.parametrize("ndim, sizes", [(2, (24, 100)), (3, (20, 32))])
+def test_convex_hull_image_batch(ndim, sizes):
+    morphology_cpu = pytest.importorskip("skimage.morphology")
+    from cucim.skimage.morphology.convex_hull import _convex_hull_image
+
+    for blobs in _blob_images(ndim, sizes, range(3)):
+        image = cp.asarray(blobs)
+        out = convex_hull_image(image, cpu_fallback_threshold=0)
+        # the per-image Qhull path
+        expected = _convex_hull_image(
+            image, cpu_fallback_threshold=0, use_batch_kernels=False
+        )
+        assert_array_equal(out, expected)
+        if ndim == 2:
+            # (scikit-image's 3D path takes minutes on these images)
+            assert_array_equal(out, morphology_cpu.convex_hull_image(blobs))
+
+
+@pytest.mark.parametrize("tolerance", [1e-10, 0.3])
+def test_convex_hull_image_batch_3d_tolerance(tolerance):
+    from cucim.skimage.morphology.convex_hull import _convex_hull_image
+
+    for blobs in _blob_images(3, (24,), range(2)):
+        image = cp.asarray(blobs)
+        out = convex_hull_image(image, tolerance=tolerance)
+        expected = _convex_hull_image(
+            image,
+            tolerance=tolerance,
+            cpu_fallback_threshold=0,
+            use_batch_kernels=False,
+        )
+        assert_array_equal(out, expected)
+
+
+@pytest.mark.parametrize("shape", [(1, 9, 11), (9, 1, 11), (5, 1, 9, 7)])
+def test_singleton_axes_shape(shape):
+    # (the GPU paths: scikit-image, used below cpu_fallback_threshold, returns
+    # an empty 3D image with a warning for a single voxel)
+    image = cp.zeros(shape, dtype=bool)
+    with expected_warnings(["entirely zero"]):
+        out = convex_hull_image(image, cpu_fallback_threshold=0)
+    assert out.shape == shape
+    index = tuple(min(2, s - 1) for s in shape)
+    image[index] = True
+    out = convex_hull_image(image, cpu_fallback_threshold=0)
+    assert out.shape == shape
+    assert_array_equal(out, image)

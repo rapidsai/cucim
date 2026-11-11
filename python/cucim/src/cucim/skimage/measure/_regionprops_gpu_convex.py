@@ -11,7 +11,6 @@ import numpy as np
 from cucim.skimage._shared.distance import pdist_max_blockwise
 from cucim.skimage._shared.utils import _ndarray_argwhere
 from cucim.skimage._vendored import ndimage as ndi
-from cucim.skimage.morphology import convex_hull_image
 
 from ._regionprops_gpu_basic_kernels import _bbox_slices, regionprops_image
 from ._regionprops_gpu_utils import _warp_includes
@@ -986,7 +985,14 @@ def _feret_diameter_max_3d(
 
 
 def _convex_hull_rows_3d(
-    label_image, row_first, row_last, offsets, num_rows, bbox, max_label
+    label_image,
+    row_first,
+    row_last,
+    offsets,
+    num_rows,
+    bbox,
+    max_label,
+    tolerance=1e-10,
 ):
     """Rows of each 3D region's convex image (see `_convex_hull_rows_2d`).
 
@@ -994,8 +1000,10 @@ def _convex_hull_rows_3d(
     ``scipy.spatial.ConvexHull`` (Qhull [1]_) from the candidates of
     `_convex_hull_candidates_3d` (one transfer for all labels), and its facet
     equations are copied back to the device in one transfer for
-    `_get_hull_rows_3d_kernel`. If qhull fails for a label, its convex image
-    is computed with ``convex_hull_image`` instead.
+    `_get_hull_rows_3d_kernel`. A voxel is inside if its distance outside
+    every facet is below `tolerance` (``convex_hull_image``'s parameter). If
+    qhull fails for a label, its convex image is computed with
+    ``convex_hull_image``'s per-image Qhull path instead.
 
     References
     ----------
@@ -1004,6 +1012,8 @@ def _convex_hull_rows_3d(
            Software 22(4), 469-483, 1996. :DOI:`10.1145/235815.235821`
     """
     from scipy.spatial import ConvexHull, QhullError
+
+    from cucim.skimage.morphology.convex_hull import _convex_hull_image
 
     bbox_host = cp.asnumpy(bbox).astype(np.int64)
     points, point_offsets = _convex_hull_candidates_3d(
@@ -1044,7 +1054,7 @@ def _convex_hull_rows_3d(
             cp.asarray(eq_offsets),
             offsets,
             bbox,
-            1e-10,
+            float(tolerance),
             max_label,
             row_lo,
             row_hi,
@@ -1056,10 +1066,12 @@ def _convex_hull_rows_3d(
             slice(int(bbox_host[lab, d]), int(bbox_host[lab, d + 3]))
             for d in range(3)
         )
-        image = convex_hull_image(
+        image = _convex_hull_image(
             label_image[sl] == lab + 1,
+            tolerance=tolerance,
             omit_empty_coords_check=True,
             float64_computation=True,
+            use_batch_kernels=False,
         )
         rows = image.reshape(-1, image.shape[-1])
         nonempty = rows.any(axis=1)
@@ -1145,6 +1157,137 @@ def _convex_images(row_lo, row_hi, offsets, bbox, max_label):
         cp.ndarray(tuple(shape), dtype=bool, memptr=memptr + offset)
         for shape, offset in zip(shapes.tolist(), image_offsets[:-1].tolist())
     )
+
+
+@cp.memoize(for_each_device=True)
+def _get_paint_convex_kernel(ndim, int32_index):
+    """Kernel setting the pixels of every label's convex image in one image.
+
+    One thread per pixel of each label's bounding box (in the layout of
+    `_get_convex_image_kernel`). A pixel inside the label's row interval is
+    set in the output, which has the shape of the label image; pixels
+    outside are left as they are, so the output is the union of the convex
+    images even where bounding boxes overlap (all writes store true).
+    """
+    index_t = "int" if int32_index else "long long"
+    source = f"""
+      typedef {index_t} cucim_index_t;
+      // the label of this pixel: the last l with image_offsets[l] <= i
+      long long l = 0;
+      long long l_end = max_label;
+      while (l_end - l > 1) {{
+        long long mid = (l + l_end) / 2;
+        if (image_offsets[mid] <= i) {{
+          l = mid;
+        }} else {{
+          l_end = mid;
+        }}
+      }}
+      const B* box = &bbox[l * {2 * ndim}];
+      cucim_index_t local = static_cast<cucim_index_t>(i - image_offsets[l]);
+      cucim_index_t width = static_cast<cucim_index_t>(
+          box[{2 * ndim - 1}] - box[{ndim - 1}]);
+      cucim_index_t line = local / width;
+      cucim_index_t col = local - line * width;
+      long long row = offsets[l] + line;
+      if (row_lo[row] <= col && col <= row_hi[row]) {{"""
+    if ndim == 2:
+        source += """
+        cucim_index_t y = static_cast<cucim_index_t>(box[0]) + line;
+        cucim_index_t index = y * static_cast<cucim_index_t>(shape1);"""
+    else:
+        source += """
+        cucim_index_t h = static_cast<cucim_index_t>(box[4] - box[1]);
+        cucim_index_t zl = line / h;
+        cucim_index_t z = static_cast<cucim_index_t>(box[0]) + zl;
+        cucim_index_t y = static_cast<cucim_index_t>(box[1]) + (line - zl * h);
+        cucim_index_t index = (z * static_cast<cucim_index_t>(shape0) + y)
+                              * static_cast<cucim_index_t>(shape1);"""
+    source += f"""
+        index += static_cast<cucim_index_t>(box[{ndim - 1}]) + col;
+        out[index] = true;
+      }}\n"""
+    inputs = (
+        "raw E row_lo, raw E row_hi, raw int64 offsets, "
+        "raw int64 image_offsets, raw B bbox, int64 max_label, "
+        "int64 shape0, int64 shape1"
+    )
+    name = f"cucim_paint_convex_{ndim}d"
+    if not int32_index:
+        name += "_index64"
+    return cp.ElementwiseKernel(inputs, "raw bool out", source, name=name)
+
+
+def _convex_hull_union(label_image, bbox, max_label, *, tolerance=1e-10):
+    """Union of the convex images of all regions of a 2D or 3D label image.
+
+    Each region's convex image is the one of ``convex_hull_image`` with
+    ``offset_coordinates=True`` and ``include_borders=True`` (in 3D, voxels
+    are inside a hull if their distance outside every facet is below
+    `tolerance`). The images are computed for all labels at once as in
+    `_regionprops_convex` and written into one boolean image of the label
+    image's shape, so overlapping hulls are combined with logical OR (as in
+    ``convex_hull_object``).
+
+    Parameters
+    ----------
+    label_image : cupy.ndarray
+        2D or 3D label image (any integer or boolean type; 0 is the
+        background).
+    bbox : cupy.ndarray
+        Minimum and maximum (exclusive) coordinates of each label, of shape
+        (max_label, 2 * ndim), as from `_regionprops_label_pass`.
+    max_label : int
+        The number of labels.
+    """
+    ndim = label_image.ndim
+    if ndim not in (2, 3):
+        raise ValueError("label_image must be 2D or 3D")
+    out = cp.zeros(label_image.shape, dtype=bool)
+    if max_label == 0:
+        return out
+    if not label_image.flags.c_contiguous:
+        label_image = cp.ascontiguousarray(label_image)
+    row_first, row_last, offsets, num_rows = _regionprops_row_extents(
+        label_image, bbox, max_label
+    )
+    if ndim == 2:
+        row_lo, row_hi, _ = _convex_hull_rows_2d(
+            row_first, row_last, offsets, num_rows, max_label
+        )
+    else:
+        row_lo, row_hi, _ = _convex_hull_rows_3d(
+            label_image,
+            row_first,
+            row_last,
+            offsets,
+            num_rows,
+            bbox,
+            max_label,
+            tolerance=tolerance,
+        )
+    bbox_host = cp.asnumpy(bbox).astype(np.int64)
+    shapes = np.maximum(bbox_host[:, ndim:] - bbox_host[:, :ndim], 0)
+    image_offsets = np.zeros((max_label + 1,), dtype=np.int64)
+    np.cumsum(shapes.prod(axis=1), out=image_offsets[1:])
+    total = int(image_offsets[-1])
+    if total > 0:
+        kernel = _get_paint_convex_kernel(
+            ndim, total < 2**31 and out.size < 2**31
+        )
+        kernel(
+            row_lo,
+            row_hi,
+            offsets,
+            cp.asarray(image_offsets),
+            bbox,
+            max_label,
+            label_image.shape[-2] if ndim == 3 else 0,
+            label_image.shape[-1],
+            out,
+            size=total,
+        )
+    return out
 
 
 def _pixel_area(spacing):
