@@ -2254,7 +2254,9 @@ def _get_paint_convex_kernel(ndim, int32_index):
     )
 
 
-def _convex_hull_union(label_image, bbox, max_label, *, tolerance=1e-10):
+def _convex_hull_union(
+    label_image, bbox, max_label, *, tolerance=1e-10, use_qhull=False
+):
     """Union of the convex images of all regions of a 2D or 3D label image.
 
     Each region's convex image is the one of ``convex_hull_image`` with
@@ -2275,6 +2277,11 @@ def _convex_hull_union(label_image, bbox, max_label, *, tolerance=1e-10):
         (max_label, 2 * ndim), as from `_regionprops_label_pass`.
     max_label : int
         The number of labels.
+    tolerance : float, optional
+        Tolerance of the 3D inside test (``convex_hull_image``'s parameter).
+    use_qhull : bool, optional
+        If True, compute the 3D hulls with ``scipy.spatial.ConvexHull`` on the
+        host instead of on the GPU (see `_convex_hull_rows_3d`).
     """
     ndim = label_image.ndim
     if ndim not in (2, 3):
@@ -2301,6 +2308,7 @@ def _convex_hull_union(label_image, bbox, max_label, *, tolerance=1e-10):
             bbox,
             max_label,
             tolerance=tolerance,
+            use_qhull=use_qhull,
         )
     bbox_host = cp.asnumpy(bbox).astype(np.int64)
     shapes = np.maximum(bbox_host[:, ndim:] - bbox_host[:, :ndim], 0)

@@ -321,7 +321,12 @@ def _convex_hull_image(
 
         labels = cp.ascontiguousarray(image).view(cp.uint8)
         bbox = _regionprops_label_pass(labels, 1, compute_bbox=True)["bbox"]
-        convex_image = _convex_hull_union(labels, bbox, 1, tolerance=tolerance)
+        # In 3D, the hull of the one label is computed with qhull on the
+        # host: for a large round region the GPU hull kernel is slower (2.2x
+        # for a ball of radius 120), while for blobs qhull costs < 1 ms more.
+        convex_image = _convex_hull_union(
+            labels, bbox, 1, tolerance=tolerance, use_qhull=True
+        )
         return convex_image.reshape(original_shape)
 
     # xor with eroded version to keep only edge pixels of the binary image
@@ -461,6 +466,8 @@ def convex_hull_object(
         bbox = _regionprops_label_pass(squeezed, max_label, compute_bbox=True)[
             "bbox"
         ]
+        # (in 3D, the hulls are computed on the GPU: with many objects this
+        # is much faster than one qhull call per object)
         convex_img = _convex_hull_union(squeezed, bbox, max_label)
         return convex_img.reshape(image.shape)
 
