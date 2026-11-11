@@ -57,6 +57,9 @@ stronger FP64 is a heuristic, rather than a measured crossover.
 
 Spline poles and boundary handling are implemented as in SciPy:
 https://github.com/scipy/scipy/blob/master/scipy/ndimage/src/ni_splines.c
+except for the interpolation functions' 'nearest' and 'grid-constant' modes,
+which use exact constant-extension initializations instead of SciPy's
+12-sample prepadding (see the notes above ``EXACT_CONSTANT_MODES``).
 """
 
 from __future__ import annotations
@@ -181,21 +184,272 @@ def _anticausal_init_code(mode):
     return code
 
 
+# Exact boundaries for constant extensions ('nearest', 'grid-constant')
+# ---------------------------------------------------------------------
+# SciPy pads these modes by 12 samples per side and filters the padded line
+# with the reflect or mirror initialization (``_prepad_for_spline_filter``).
+# Briand and Monasse note that a constant extension is not "transmitted" by
+# the exponential filters, so it cannot be handled on the line's own domain
+# like the mirror, reflect and periodic extensions, and they extend the
+# domain instead [1, Section 3.2]. The padding is therefore an approximation:
+# about 1e-9 inside the array for order 5 in float64, and up to ~1e-4 for
+# coordinates beyond the padding, where indices are clamped (or cval used).
+#
+# The internal modes below are exact without padding. The formulas were
+# derived for cuCIM directly from the recursions (they do not appear in
+# [1-3], which handle the constant extension by padding [1] or not at all
+# [2]); tests compare them with a 64-sample padded reference, whose
+# truncation error is far below float64 rounding.
+#
+# Derivation. With the gain g applied to the input and one pole z, the
+# prefilter is the causal and anti-causal recursions of [3]:
+#
+#     c+[i] = g*s[i] + z*c+[i-1],        c[i] = z*(c[i+1] - c+[i]).
+#
+# Outside the line, every sequence that these recursions produce from a
+# constant extension is an exponential polynomial: the left tail is
+# x[-m] = sum_r a_r * r**m (m >= 1) and the right tail
+# x[n-1+m] = sum_r b_r * r**m, with roots r in {1, z_1, ..., z_p} (1 for the
+# constant, plus every pole applied so far). The input tails have the single
+# root 1 with amplitude g*s[0] and g*s[n-1] ('nearest') or g*cval
+# ('grid-constant'). Summing the geometric series of each recursion gives,
+# for a pass with pole z:
+#
+#     causal initial value:  c+[0] = g*s[0] + z * sum_r a_r*r / (1 - z*r)
+#     left tail of c+:       a+_r = a_r / (1 - z*r)
+#     right tail of c+:      b+_r = b_r*r / (r - z), plus h*z**m with
+#                            h = c+[n-1] - sum_r b+_r   (homogeneous part)
+#     anti-causal initial:   c[n-1] = -z * sum_t q_t / (1 - z*t), where the
+#                            q_t are the amplitudes of the right tail of c+
+#                            (t over the roots r and z)
+#     right tail of c:       -z*q_t / (1 - z*t)
+#     left tail of c:        -z*a+_r*r / (r - z), plus h'*z**m with
+#                            h' = c[0] - sum_r (-z*a+_r*r / (r - z))
+#
+# Each initialization is therefore a finite sum of at most three terms per
+# side (orders 4 and 5 have two poles), with no truncation. The tail
+# amplitudes live in a few registers of the thread that runs the
+# initialization; see ``_exact_causal_init_code`` and
+# ``_exact_anticausal_init_code``. The interpolation kernels need the
+# coefficients outside the line as well; ``exterior_coefficient_terms``
+# expresses them through the first (or last) coefficients of the line.
+#
+# These modes are used only by the interpolation functions' own
+# prefiltering (``_filter_input``); the public ``spline_filter1d`` keeps
+# SciPy's behavior for 'nearest' and 'grid-constant'.
+#
+# [1] T. Briand, P. Monasse. Theory and practice of image B-spline
+#     interpolation. Image Processing On Line 8:99-141, 2018.
+#     https://doi.org/10.5201/ipol.2018.221
+# [2] P. Getreuer. Linear methods for image interpolation. Image Processing
+#     On Line 1:238-259, 2011. https://doi.org/10.5201/ipol.2011.g_lmii
+# [3] M. Unser, A. Aldroubi, M. Eden. Fast B-spline transforms for
+#     continuous image representation and interpolation. IEEE Trans. Pattern
+#     Anal. Mach. Intell. 13(3):277-285, 1991. https://doi.org/10.1109/34.75515
+EXACT_CONSTANT_MODES = {
+    "nearest": "_exact_nearest",
+    "grid-constant": "_exact_grid_constant",
+}
+
+
+def _is_exact_constant_mode(mode):
+    return mode in ("_exact_nearest", "_exact_grid_constant")
+
+
+def _tail_roots(poles, p):
+    """Roots of the tails entering pole ``p``: 1, then the earlier poles."""
+    return [1.0] + list(poles[:p])
+
+
+def _lit(value):
+    return repr(float(value))
+
+
+def _exact_tail_decl(n_poles, channels=1):
+    """Per-line tail amplitudes (left, right, and left after a causal pass)."""
+    n = n_poles + 1
+    return f"""
+        T tl[{channels}][{n}], tr[{channels}][{n + 1}], tlp[{channels}][{n}];
+        (void)tl; (void)tr; (void)tlp;"""
+
+
+def _exact_causal_init_code(mode, poles, p, cval=0.0, ch="0"):
+    """Exact causal initialization for a constant extension.
+
+    Outside the line, every intermediate sequence is an exponential
+    polynomial ``sum_r a_r * r**m`` whose roots are 1 and the poles applied
+    so far. ``tl`` holds the amplitudes of the left tail of this pole's
+    input (indices -1, -2, ...), ``tr`` those of the right tail (indices
+    n, n + 1, ...). Each pass maps the tails to new tails in closed form, so
+    the initial values are finite sums (no truncation and no padding).
+    """
+    z = poles[p]
+    code = [f"\n        // exact causal init for mode={mode}, pole {p}"]
+    if p == 0:
+        if mode == "_exact_nearest":
+            # c[0] was already scaled by the gain; c[n - 1] was not.
+            code.append(f"tl[{ch}][0] = c[0];")
+            code.append(f"tr[{ch}][0] = gain * c[(n - 1) * element_stride];")
+        else:
+            code.append(f"tl[{ch}][0] = gain * (T){_lit(cval)};")
+            code.append(f"tr[{ch}][0] = gain * (T){_lit(cval)};")
+    else:
+        # Left tail of the previous pole's output: particular solutions for
+        # the roots of its causal tail plus a homogeneous term in its pole.
+        zq = poles[p - 1]
+        prev_roots = _tail_roots(poles, p - 1)
+        terms = []
+        for k, r in enumerate(prev_roots):
+            coef = -zq * r / (r - zq)
+            code.append(f"tl[{ch}][{k}] = (P){_lit(coef)} * tlp[{ch}][{k}];")
+            terms.append(f"tl[{ch}][{k}]")
+        code.append(f"tl[{ch}][{p}] = c[0] - ({' + '.join(terms)});")
+    roots = _tail_roots(poles, p)
+    terms = []
+    for k, r in enumerate(roots):
+        code.append(
+            f"tlp[{ch}][{k}] = (P){_lit(1.0 / (1.0 - z * r))} * tl[{ch}][{k}];"
+        )
+        terms.append(f"(P){_lit(r)} * tlp[{ch}][{k}]")
+    code.append(f"c[0] = c[0] + (P){_lit(z)} * ({' + '.join(terms)});")
+    return "\n        ".join(code)
+
+
+def _exact_anticausal_init_code(mode, poles, p, ch="0"):
+    """Exact anti-causal initialization for a constant extension.
+
+    Uses the right tail of this pole's causal output: the input's right tail
+    mapped through the causal recursion, plus a homogeneous term fixed by the
+    last causal value c+[n - 1]. The new amplitudes describe the right tail
+    of this pole's output, which is the next pole's input.
+    """
+    z = poles[p]
+    roots = _tail_roots(poles, p)
+    code = [f"\n        // exact anti-causal init for mode={mode}, pole {p}"]
+    terms = []
+    for k, r in enumerate(roots):
+        code.append(f"tr[{ch}][{k}] = (P){_lit(r / (r - z))} * tr[{ch}][{k}];")
+        terms.append(f"tr[{ch}][{k}]")
+    kz = len(roots)
+    code.append(
+        f"tr[{ch}][{kz}] = c[(n - 1) * element_stride] - ({' + '.join(terms)});"
+    )
+    sum_terms = []
+    for k, r in enumerate(roots + [z]):
+        coef = -z / (1.0 - z * r)
+        code.append(f"tr[{ch}][{k}] = (P){_lit(coef)} * tr[{ch}][{k}];")
+        sum_terms.append(f"tr[{ch}][{k}]")
+    # c-[n - 1] = -z * sum_m z**m c+[n - 1 + m] = sum of the new amplitudes
+    code.append(f"c[(n - 1) * element_stride] = {' + '.join(sum_terms)};")
+    return "\n        ".join(code)
+
+
+def _init_codes(mode, poles, p, n_boundary, cval=0.0, ch="0"):
+    """(causal, anti-causal) initialization code for pole ``p``."""
+    if _is_exact_constant_mode(mode):
+        return (
+            _exact_causal_init_code(mode, poles, p, cval=cval, ch=ch),
+            _exact_anticausal_init_code(mode, poles, p, ch=ch),
+        )
+    return (
+        _causal_init_code(mode).format(n_boundary=n_boundary),
+        _anticausal_init_code(mode).format(n_boundary=n_boundary),
+    )
+
+
+# B-spline samples beta_n(k), k = -n//2 .. n//2 (Unser et al. 1991, Table II)
+_BSPLINE_SAMPLES = {
+    2: (1 / 8, 6 / 8, 1 / 8),
+    3: (1 / 6, 4 / 6, 1 / 6),
+    4: (1 / 384, 76 / 384, 230 / 384, 76 / 384, 1 / 384),
+    5: (1 / 120, 26 / 120, 66 / 120, 26 / 120, 1 / 120),
+}
+
+
+@functools.cache
+def exterior_coefficient_terms(order, nearest):
+    """Coefficients outside a line as combinations of in-domain coefficients.
+
+    Derived for cuCIM together with the exact constant-extension
+    initializations (see the notes above ``EXACT_CONSTANT_MODES``).
+
+    After the last anti-causal pass, the coefficients left of a line are an
+    exponential polynomial ``d[-m] = sum_r a_r * r**m`` (m >= 0), with roots
+    the spline poles, plus root 1 for ``'nearest'``; ``d = c - cval`` for
+    ``'grid-constant'`` (whose root-1 amplitude is cval) and ``d = c`` for
+    ``'nearest'``. The unknown amplitudes follow from two kinds of linear
+    conditions: the tail at m = 0 equals the first coefficient, and the
+    interpolation condition ``sum_k beta(k) * c[j - k] = s[j]`` holds at the
+    extended samples ``j = -m`` whose B-spline footprint reaches into the
+    line (``s[j] = s[0]``, the root-1 amplitude, for 'nearest'; cval for
+    'grid-constant'). Further from the line the condition holds
+    automatically, because the poles are roots of the B-spline's symbol.
+    Solving gives the amplitudes as linear functions of ``d[0..J]``, with
+    ``J`` the number of poles::
+
+        d[-m] = sum_j E(m, j) * d[j],   E(m, j) = sum_r U[r][j] * r**m
+
+    The right edge is the mirror image (``d[n-1+m]`` from ``d[n-1-j]``).
+    For the cubic spline (pole z = sqrt(3) - 2) this reduces to::
+
+        grid-constant:  c[-m] = cval + z**m * (c[0] - cval)
+        nearest:        c[-m] = s0 + z**m * (c[0] - s0),
+                        s0 = ((4 + z) * c[0] + c[1]) / (5 + z)
+
+    where ``s0`` is the first sample, recovered from the coefficients.
+    The B-spline samples ``beta(k)`` are those tabulated by Unser et al.
+    (1991, Table II).
+
+    Returns (roots, U) with U a tuple of rows, one per root.
+    """
+    import numpy
+
+    poles = get_poles(order)
+    nt = len(poles)
+    J = nt
+    roots = ([1.0] if nearest else []) + list(poles)
+    nu = len(roots)
+    nvar = nu + J + 1
+    beta = _BSPLINE_SAMPLES[order]
+
+    def ck(k):
+        v = numpy.zeros(nvar)
+        if k <= 0:
+            v[:nu] = [r ** (-k) for r in roots]
+        else:
+            v[nu + k] = 1.0
+        return v
+
+    rows = [ck(0) - numpy.eye(nvar)[nu]]
+    for m in range(0, nt) if nearest else range(1, nt):
+        row = sum(b * ck(-m + j - nt) for j, b in enumerate(beta))
+        if nearest:
+            row[0] -= 1.0  # the extended samples equal the constant term
+        rows.append(row)
+    A = numpy.array(rows)
+    U = -numpy.linalg.solve(A[:, :nu], A[:, nu:])
+    return tuple(roots), tuple(tuple(float(u) for u in row) for row in U)
+
+
 def _get_spline_mode(mode):
     """spline boundary mode for interpolation with order >= 2."""
+    if _is_exact_constant_mode(mode):
+        return mode
     if mode in ["mirror", "reflect", "grid-wrap"]:
         # exact analytic boundary conditions exist for these modes.
         return mode
     elif mode == "grid-mirror":
         # grid-mirror is a synonym for 'reflect'
         return "reflect"
-    # No exact analytical spline boundary condition implemented. Reflect gives
-    # lower error than using mirror or wrap for mode 'nearest'. Otherwise, a
-    # mirror spline boundary condition is used.
+    # SciPy has no exact spline boundary condition for the remaining modes.
+    # Reflect gives lower error than using mirror or wrap for mode 'nearest'.
+    # Otherwise, a mirror spline boundary condition is used. (Interpolation
+    # functions use the exact '_exact_*' modes above for 'nearest' and
+    # 'grid-constant' when possible.)
     return "reflect" if mode == "nearest" else "mirror"
 
 
-def _get_spline1d_code(mode, poles, n_boundary):
+def _get_spline1d_code(mode, poles, n_boundary, cval=0.0):
     """Generates the code required for IIR filtering of a single 1d signal.
 
     Prefiltering is done by causal filtering followed by anti-causal filtering.
@@ -238,8 +492,11 @@ def _get_spline1d_code(mode, poles, n_boundary):
         P z_n;
         T c0;"""
         )
+    exact = _is_exact_constant_mode(mode)
+    if exact:
+        code.append(_exact_tail_decl(len(poles)))
 
-    for pole in poles:
+    for p, pole in enumerate(poles):
         code.append(
             f"""
         // select the current pole
@@ -247,7 +504,13 @@ def _get_spline1d_code(mode, poles, n_boundary):
         )
 
         # initialize and apply the causal filter
-        code.append(_causal_init_code(mode))
+        if exact:
+            # generated without braces, so safe for the final format() call
+            causal, anticausal = _init_codes(mode, poles, p, n_boundary, cval)
+        else:
+            causal = _causal_init_code(mode)
+            anticausal = _anticausal_init_code(mode)
+        code.append(causal)
         code.append(
             """
         // apply the causal filter for the current pole
@@ -257,7 +520,7 @@ def _get_spline1d_code(mode, poles, n_boundary):
         }}"""
         )
         # initialize and apply the anti-causal filter
-        code.append(_anticausal_init_code(mode))
+        code.append(anticausal)
         code.append(
             """
         // apply the anti-causal filter for the current pole
@@ -360,6 +623,7 @@ void {kernel_name}(T* __restrict__ y, idx_t n_lines, idx_t n, idx_t inner)
     P z_n, z_n_1;
     T c0;
     (void)z_n; (void)z_n_1; (void)c0;
+{exact_decl}
 
     // Each of the n_segments threads of a line filters a contiguous run of
     // samples. A run maps an incoming carry x to A * x + B; composing the
@@ -445,20 +709,25 @@ _SEGMENTED_SPLINE1D_POLE = """
 
 
 def _get_segmented_spline1d_code(
-    kernel_name, mode, poles, n_boundary, n_segments, types
+    kernel_name, mode, poles, n_boundary, n_segments, types, cval=0.0
 ):
     """Generate a block-parallel spline prefilter for strided lines."""
     mode = _get_spline_mode(mode)
+    exact_decl = (
+        _exact_tail_decl(len(poles)) if _is_exact_constant_mode(mode) else ""
+    )
     code = _SEGMENTED_SPLINE1D_HEADER.format(
         kernel_name=kernel_name,
         n_segments=n_segments,
         block_size=32 * n_segments,
         gain=get_gain(poles),
+        exact_decl=exact_decl,
         **types,
     )
     for pole_index, pole in enumerate(poles):
-        causal = _causal_init_code(mode).format(n_boundary=n_boundary)
-        anticausal = _anticausal_init_code(mode).format(n_boundary=n_boundary)
+        causal, anticausal = _init_codes(
+            mode, poles, pole_index, n_boundary, cval
+        )
         code += _SEGMENTED_SPLINE1D_POLE.format(
             pole_index=pole_index,
             pole=pole,
@@ -547,6 +816,7 @@ void {kernel_name}(T* __restrict__ y, idx_t n_signals, idx_t n)
     P z_n, z_n_1;
     T c0;
     (void)z_n; (void)z_n_1; (void)c0;
+{exact_decl}
 
     // Odd run lengths make seg_len * CH coprime to 32 for odd CH, avoiding
     // bank conflicts for float32 (float64 spans two 32-bit bank words).
@@ -659,6 +929,7 @@ def get_raw_spline1d_kernel(
     data_type="double",
     pole_type="double",
     block_size=128,
+    cval=0.0,
 ):
     """Generate a spline prefilter with runtime sizes passed as scalar arguments.
 
@@ -681,7 +952,7 @@ def get_raw_spline1d_kernel(
     )
 
     # generate source for a 1d function for a given boundary mode and poles
-    code += _get_spline1d_code(mode, poles, n_boundary)
+    code += _get_spline1d_code(mode, poles, n_boundary, cval)
 
     # generate code handling batch operation of the 1d filter
     mode_str = mode.replace("-", "_")  # cannot have '-' in kernel name
@@ -732,6 +1003,7 @@ def get_segmented_spline1d_kernel(
     index_type="int",
     data_type="float",
     pole_type="float",
+    cval=0.0,
 ):
     """Generate a block-parallel spline prefilter for strided lines."""
     if data_type not in ("float", "double"):
@@ -750,6 +1022,7 @@ def get_segmented_spline1d_kernel(
         n_boundary,
         n_segments,
         dict(data_type=data_type, pole_type=pole_type, index_type=index_type),
+        cval=cval,
     )
     return cupy.RawKernel(code, kernel_name)
 
@@ -854,6 +1127,7 @@ def get_warp_spline1d_kernel(
     pole_type="float",
     warps_per_block=4,
     channels=1,
+    cval=0.0,
 ):
     """Generate a warp-parallel spline prefilter for contiguous 1D lines.
 
@@ -885,10 +1159,16 @@ def get_warp_spline1d_kernel(
         kernel_name=kernel_name,
         gain=get_gain(poles),
         warps_per_block=warps_per_block,
+        exact_decl=(
+            _exact_tail_decl(len(poles), channels)
+            if _is_exact_constant_mode(mode)
+            else ""
+        ),
     )
     for pole_index, pole in enumerate(poles):
-        causal = _causal_init_code(mode).format(n_boundary=n_boundary)
-        anticausal = _anticausal_init_code(mode).format(n_boundary=n_boundary)
+        causal, anticausal = _init_codes(
+            mode, poles, pole_index, n_boundary, cval, ch="ch"
+        )
         code += _WARP_SPLINE1D_POLE.format(
             pole_index=pole_index,
             pole=pole,

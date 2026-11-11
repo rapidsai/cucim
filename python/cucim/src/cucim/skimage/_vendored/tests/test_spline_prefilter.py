@@ -11,6 +11,11 @@ from scipy import ndimage as scipy_ndi
 from cucim.skimage._vendored import _ndimage_interpolation as interpolation
 
 
+# Padding after which a mirror-initialized prefilter matches the infinite
+# constant extension to well below float64 rounding (|z|**(2 * 64) ~ 1e-47).
+_EXACT_REFERENCE_PAD = 64
+
+
 def _spline_reference(image, order, *, output, mode, axis=None):
     """Retain CuPy's short-reflect behavior when SciPy uses its newer formula.
 
@@ -183,7 +188,10 @@ def test_batch_prefilter_workspace(order, mode):
         np.random.default_rng(4).uniform(0, 1, (2, 7, 9, 3)).astype(np.float32)
     )
     image_gpu = cp.asarray(image)
-    padding = 12 if mode in ("nearest", "grid-constant") else 0
+    # 'nearest' and 'grid-constant' use exact boundaries without padding;
+    # compare them with a reference padded far enough to be exact.
+    exact = mode in ("nearest", "grid-constant")
+    padding = _EXACT_REFERENCE_PAD if exact else 0
     if padding:
         kwargs = (
             dict(mode="edge")
@@ -197,19 +205,22 @@ def test_batch_prefilter_workspace(order, mode):
         )
     else:
         padded = image
-    expected = np.empty_like(padded)
+    expected = np.empty(padded.shape, dtype=np.float64)
     for batch in range(image.shape[0]):
         for channel in range(image.shape[-1]):
             expected[batch, ..., channel] = _spline_reference(
-                padded[batch, ..., channel],
+                padded[batch, ..., channel].astype(np.float64),
                 order=order,
-                output=np.float32,
-                mode=mode,
+                output=np.float64,
+                mode="mirror" if exact else mode,
             )
-    actual, actual_padding = interpolation._filter_input(
+    if padding:
+        expected = expected[:, padding:-padding, padding:-padding]
+    actual, actual_padding, actual_exact = interpolation._filter_input(
         image_gpu, True, mode, 0.25, order, batch_axes=(0, 3)
     )
-    assert actual_padding == padding
+    assert actual_padding == 0
+    assert actual_exact == exact
     cp.testing.assert_allclose(actual, expected, rtol=5e-4, atol=5e-4)
     cp.testing.assert_array_equal(image_gpu, image)
 
@@ -289,20 +300,31 @@ def test_filter_input_workspace(order, mode, dtype):
     host = host.astype(dtype)
     image = cp.asarray(host)
     working_dtype = np.result_type(dtype, np.float32)
-    padding = 12 if mode in ("nearest", "grid-constant") else 0
+    exact = mode in ("nearest", "grid-constant")
+    padding = _EXACT_REFERENCE_PAD if exact else 0
     if mode == "nearest":
         padded = np.pad(host, padding, mode="edge")
     elif mode == "grid-constant":
-        padded = np.pad(host, padding, mode="constant", constant_values=0.5)
+        # pad in floating point so that cval = 0.5 is not truncated for uint8
+        padded = np.pad(
+            host.astype(np.float64),
+            padding,
+            mode="constant",
+            constant_values=0.5,
+        )
     else:
         padded = host
     expected = scipy_ndi.spline_filter(
-        padded, order=order, output=working_dtype, mode=mode
+        padded, order=order, output=np.float64, mode="mirror" if exact else mode
     )
-    actual, actual_padding = interpolation._filter_input(
+    if padding:
+        expected = expected[padding:-padding, padding:-padding]
+    expected = expected.astype(working_dtype)
+    actual, actual_padding, actual_exact = interpolation._filter_input(
         image, True, mode, 0.5, order
     )
-    assert actual_padding == padding
+    assert actual_padding == 0
+    assert actual_exact == exact
     assert actual.dtype == working_dtype
     assert actual.flags.c_contiguous
     tolerance = 1e-10 if working_dtype == np.dtype("float64") else 5e-4
