@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -11,8 +11,10 @@ from cucim.skimage.measure import label
 from cucim.skimage.morphology import convex_hull_image
 
 from ._regionprops_gpu_utils import (
+    _get_coord_dtype,
     _get_count_dtype,
     _get_min_integer_dtype,
+    _get_run_count_ctype,
     _includes,
     _unravel_loop_index,
     _unravel_loop_index_declarations,
@@ -133,7 +135,7 @@ def _get_num_pixels_code(pixels_per_thread, array_size):
 
         - counts : shape (max_label,)
     """
-    pixel_count_dtype = "int8_t" if pixels_per_thread < 256 else "int16_t"
+    pixel_count_dtype = _get_run_count_ctype(pixels_per_thread)
 
     source_pre = f"""
     // num_pixels variables
@@ -546,8 +548,7 @@ def regionprops_bbox_coords(
     if max_label is None:
         max_label = int(label_image.max())
 
-    int32_coords = max(label_image.shape) < 2**32
-    coord_dtype = cp.dtype(cp.uint32 if int32_coords else cp.uint64)
+    coord_dtype, int32_coords = _get_coord_dtype(label_image.size)
 
     bbox_kernel = get_bbox_coords_kernel(
         ndim=label_image.ndim,
@@ -933,6 +934,130 @@ def regionprops_num_boundary_pixels(labels, max_label=None, props_dict=None):
     return edge_counts
 
 
+def _fill_holes_by_label(labels, max_label, bbox=None):
+    """Fill the background holes of each labeled region.
+
+    A hole is a connected component of the background (with full
+    connectivity, as for ``binary_fill_holes`` with a ``3**ndim`` structuring
+    element) that is not connected to the area outside of the image. A hole
+    whose neighboring pixels all belong to a single region is filled with that
+    region's label. This matches scikit-image's per-region ``image_filled`` for
+    that region.
+
+    scikit-image fills each region's holes treating all other labels as
+    background, so a region's filled image also contains holes bordered by
+    several regions and any regions nested in its holes. For the labels where
+    this can happen, the returned ``label_filled`` is not exact and the labels
+    are returned in ``labels_inexact`` so that the caller can recompute them
+    on per-label crops. These are the labels that (a) border a hole that also
+    borders other labels, or (b) touch a connected component of another label
+    whose bounding box lies strictly inside their own (a component nested in
+    a hole of another region must lie strictly inside that region's bounding
+    box, but the other components of its label can lie anywhere, so the test
+    uses the bounding boxes of the components, not of the labels).
+
+    Returns
+    -------
+    label_filled : cupy.ndarray
+        The label image with each single-region hole filled with its label.
+    labels_inexact : numpy.ndarray
+        Labels whose filled region may differ from scikit-image's.
+    """
+    ndim = labels.ndim
+    footprint = ndi.generate_binary_structure(ndim, ndim)
+    # with the padding, all background outside of the regions is a single
+    # connected component
+    padded = cp.pad(labels, 1, mode="constant", constant_values=0)
+    work_dtype = cp.int32 if max_label < 2**31 - 1 else cp.int64
+    padded = padded.astype(work_dtype, copy=False)
+    background = padded == 0
+    bg_labels = label(background, connectivity=ndim)
+    num_bg = int(bg_labels.max())
+    outer = int(bg_labels[(0,) * ndim])
+
+    # largest and smallest label in the 3**ndim neighborhood of each pixel
+    # (the background is excluded from the minimum)
+    no_label = max_label + 1
+    nb_max = ndi.grey_dilation(padded, size=3, mode="constant", cval=0)
+    nb_min = ndi.grey_erosion(
+        cp.where(background, no_label, padded).astype(work_dtype, copy=False),
+        size=3,
+        mode="constant",
+        cval=no_label,
+    )
+
+    # labels bordering each background component
+    bg_ids = bg_labels[background]
+    hole_max = cp.zeros(num_bg + 1, dtype=work_dtype)
+    hole_min = cp.full(num_bg + 1, no_label, dtype=work_dtype)
+    cp.maximum.at(hole_max, bg_ids, nb_max[background])
+    cp.minimum.at(hole_min, bg_ids, nb_min[background])
+    component_ids = cp.arange(num_bg + 1)
+    is_hole = (component_ids != 0) & (component_ids != outer)
+    single = is_hole & (hole_min == hole_max)
+    multi = is_hole & (hole_min != hole_max)
+
+    fill_value = cp.where(single, hole_max, 0).astype(work_dtype, copy=False)
+    filled = cp.where(background, fill_value[bg_labels], padded)
+    core = (slice(1, -1),) * ndim
+    label_filled = cp.ascontiguousarray(filled[core].astype(labels.dtype))
+
+    # (a) labels bordering a hole that borders several labels
+    inexact = []
+    if bool(multi.any()):
+        near_multi = ndi.binary_dilation(multi[bg_labels], structure=footprint)
+        inexact.append(cp.unique(padded[near_multi & ~background]))
+
+    # (b) labels touching a connected component of another label whose
+    # bounding box lies strictly inside their own
+    touching = (~background) & ((nb_max != padded) | (nb_min != padded))
+    touching &= padded != 0
+    if bool(touching.any()):
+        if bbox is None:
+            bbox, _ = regionprops_bbox_coords(labels, max_label=max_label)
+        # connected components of each label (label separates neighboring
+        # pixels with different values)
+        components, num_components = label(
+            labels, connectivity=ndim, return_num=True
+        )
+        bbox_components, _ = regionprops_bbox_coords(
+            components, max_label=num_components
+        )
+        padded_components = cp.pad(
+            components, 1, mode="constant", constant_values=0
+        )
+        no_component = num_components + 1
+        pairs = []
+        center = padded[core]
+        for offset in np.ndindex((3,) * ndim):
+            if all(o == 1 for o in offset):
+                continue
+            neighbor_slices = tuple(
+                slice(o, o + s) for o, s in zip(offset, labels.shape)
+            )
+            neighbor = padded[neighbor_slices]
+            mask = touching[core] & (neighbor != 0) & (neighbor != center)
+            pairs.append(
+                center[mask].astype(cp.int64) * no_component
+                + padded_components[neighbor_slices][mask].astype(cp.int64)
+            )
+        pairs = cp.unique(cp.concatenate(pairs))
+        outer_label = pairs // no_component
+        inner_component = pairs % no_component
+        bbox_outer = bbox[outer_label - 1].astype(cp.int64)
+        bbox_inner = bbox_components[inner_component - 1].astype(cp.int64)
+        nested = cp.all(
+            bbox_inner[:, :ndim] > bbox_outer[:, :ndim], axis=1
+        ) & cp.all(bbox_inner[:, ndim:] < bbox_outer[:, ndim:], axis=1)
+        inexact.append(outer_label[nested])
+
+    if inexact:
+        labels_inexact = cp.asnumpy(cp.unique(cp.concatenate(inexact)))
+    else:
+        labels_inexact = np.zeros((0,), dtype=np.int64)
+    return label_filled, labels_inexact
+
+
 def regionprops_label_filled(
     labels,
     max_label=None,
@@ -941,6 +1066,12 @@ def regionprops_label_filled(
     """Fill holes in each labeled region.
 
     writes "label_filled" to props_dict
+
+    Each background hole (a connected component of the background that is
+    not connected to the area outside of the image) whose neighboring pixels
+    all belong to one region is filled with that region's label. Holes that
+    border several regions are left unfilled, and other labels are never
+    changed.
 
     Parameters
     ----------
@@ -958,30 +1089,61 @@ def regionprops_label_filled(
     """
     if max_label is None:
         max_label = int(labels.max())
-
-    # make sure all background pixels at the boundary have the same label
-    labels = cp.pad(labels, 1, mode="constant", constant_values=0)
-
-    binary_labels = labels > 0
-
-    # assign unique labels the background and holes
-    inverse_binary_mask = ~binary_labels
-    inverse_labels = label(inverse_binary_mask)
-
-    # After inversion, what was originally the background will now be the
-    # first foreground label encountered. This is ensured due to the
-    # single voxel padding done above and the fact that the `label`
-    # function scans linearly through the array.
-    background_index = 1
-    # set the background back to 0 in the inverse mask so we have a mask
-    # of just the holes
-    inverse_binary_mask[inverse_labels == background_index] = 0
-
-    # add binary holes to the original mask and relabel
-    binary_holes_filled = cp.logical_or(binary_labels, inverse_binary_mask)
-    label_filled = label(binary_holes_filled)
-
+    label_filled, _ = _fill_holes_by_label(labels, max_label)
     if props_dict is not None:
         props_dict["label_filled"] = label_filled
-    label_filled = label_filled[(slice(1, -1),) * label_filled.ndim]
-    return cp.ascontiguousarray(label_filled)
+    return label_filled
+
+
+def _regionprops_filled(
+    label_image,
+    label_filled,
+    labels_inexact,
+    max_label,
+    spacing=None,
+    compute_image=False,
+    props_dict=None,
+):
+    """Compute num_pixels_filled, area_filled and (optionally) image_filled.
+
+    The values come from `label_filled` (see `_fill_holes_by_label`), except
+    for the labels in `labels_inexact`, which are recomputed one by one with
+    ``binary_fill_holes`` on their bounding-box crop, as scikit-image does.
+
+    writes "num_pixels_filled" and "area_filled" to `props_dict`
+    writes "image_filled" to `props_dict` if `compute_image` is True
+    """
+    if props_dict is None:
+        props_dict = {}
+    num_pixels_filled = regionprops_num_pixels(
+        label_filled, max_label=max_label
+    )
+    images = None
+    if compute_image:
+        images, _, _ = regionprops_image(
+            label_filled,
+            max_label=max_label,
+            compute_image=True,
+            compute_convex=False,
+            props_dict=None,
+        )
+        images = list(images)
+    if labels_inexact.size > 0:
+        _, slices = regionprops_bbox_coords(
+            label_image, max_label=max_label, return_slices=True
+        )
+        structure = cp.ones((3,) * label_image.ndim, dtype=bool)
+        for lab in labels_inexact:
+            image = label_image[slices[lab - 1]] == lab
+            image_filled = ndi.binary_fill_holes(image, structure)
+            num_pixels_filled[lab - 1] = image_filled.sum()
+            if compute_image:
+                images[lab - 1] = image_filled
+    area_filled = num_pixels_filled.astype(cp.float32)
+    if spacing is not None:
+        area_filled *= math.prod(float(s) for s in spacing)
+    props_dict["num_pixels_filled"] = num_pixels_filled
+    props_dict["area_filled"] = area_filled
+    if compute_image:
+        props_dict["image_filled"] = tuple(images)
+    return props_dict
