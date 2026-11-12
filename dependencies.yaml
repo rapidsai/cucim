@@ -103,7 +103,7 @@ dependencies:
       #   python/cucim/src/cucim/clara/ before calling `pip install .`.
       - output_types: [conda, requirements, constraints]
         packages:
-          - cmake>=4.0
+          - cmake>=4.3
           - nanobind>=3.1.0,<3.2.0a0
           - ninja
       - output_types: conda
