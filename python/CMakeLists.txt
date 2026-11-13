@@ -5,7 +5,7 @@
 # cmake-format: on
 #
 
-cmake_minimum_required(VERSION 4.0 FATAL_ERROR)
+cmake_minimum_required(VERSION 4.3 FATAL_ERROR)
 
 ################################################################################
 # Prerequisite statements
