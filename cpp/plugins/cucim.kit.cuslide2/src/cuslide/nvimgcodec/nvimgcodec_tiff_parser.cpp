@@ -1329,7 +1329,9 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
         fmt::print(stderr,
                    "[cuslide2] No TIFF tags returned by nvImageCodec for '{}'. "
                    "OME/vendor metadata and pixel spacing will be unavailable. "
-                   "Tag retrieval requires a working decoder (CUDA device).\n",
+                   "Tag retrieval requires a working decoder (CUDA device) and the nvTIFF "
+                   "library. Check for a 'Failed to load nvtiff library' message from nvImageCodec; "
+                   "pip installs need the nvidia-nvimgcodec-cu* extras 'nvtiff' and 'nvjpeg2k'.\n",
                    file_path_);
     }
 
