@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 """Shared helpers for cuslide2 test scripts."""
@@ -37,12 +37,27 @@ def setup_environment(config_name: str = "cucim_test") -> str:
         Plugin library path as a string.
     """
     repo_root = Path(__file__).parent.parent
-    plugin_lib = (
-        repo_root / "cpp" / "plugins" / "cucim.kit.cuslide2" / "build-release" / "lib"
-    )
 
-    if not plugin_lib.exists():
-        plugin_lib = repo_root / "install" / "lib"
+    # Use the plugin of a source build of this repository if there is one.
+    # Otherwise (pip or conda install) use the directory of the installed
+    # package that provides the plugins.
+    plugin_lib = None
+    for candidate in (
+        repo_root / "cpp" / "plugins" / "cucim.kit.cuslide2" / "build-release" / "lib",
+        repo_root / "install" / "lib",
+    ):
+        if list(candidate.glob("cucim.kit.cuslide2@*.so")):
+            plugin_lib = candidate
+            break
+    if plugin_lib is None:
+        from cucim.clara import _get_plugin_root
+
+        plugin_lib = Path(_get_plugin_root())
+        if not list(plugin_lib.glob("cucim.kit.cuslide2@*.so")):
+            raise RuntimeError(
+                f"No cuslide2 plugin (cucim.kit.cuslide2@*.so) found in the "
+                f"installed cuCIM package ({plugin_lib}) or in a source build."
+            )
 
     dist_version = None
     for pkg_name in ["cucim-cu13", "cucim-cu12", "cucim"]:
@@ -97,7 +112,7 @@ def test_tile_level_caching(img, file_path, CuImage):
     NOTE: Tile-level caching requires that the cuslide2 plugin
     successfully extracts TileWidth/TileLength TIFF tags via
     nvImageCodec (>= 0.7.0). If tile sizes are (0,0), the
-    caching code path is not entered and the test is skipped.
+    caching code path is not entered and the test fails.
 
     Raises:
         RuntimeError: If caching assertions fail.
@@ -116,15 +131,14 @@ def test_tile_level_caching(img, file_path, CuImage):
     )
 
     if not has_tile_dims:
-        print(
-            "  ⚠️  Tile dimensions are (0,0) — tile-level caching path is "
-            "inactive.\n"
-            "     This occurs when nvImageCodec does not expose "
-            "TileWidth/TileLength TIFF tags.\n"
-            "     Skipping caching assertions (decode still works, "
-            "just without cache)."
+        # Tile sizes are read from the TIFF tags through nvImageCodec. They are
+        # (0, 0) when that fails, for example when the nvTIFF library is not
+        # installed, and then the pyramid and the decoded pixels are unreliable too.
+        raise RuntimeError(
+            f"Tile dimensions are {level_tile_sizes[0] if level_tile_sizes else 'N/A'} "
+            "(the TIFF tags could not be read through nvImageCodec). Check that "
+            "nvImageCodec, nvTIFF and nvJPEG2000 are installed and loaded."
         )
-        return
 
     # --- Baseline: non-cached direct decode (before enabling cache) ---
     region_direct = img.read_region((0, 0), (512, 512), level=0)

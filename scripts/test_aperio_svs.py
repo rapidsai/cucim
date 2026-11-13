@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 """
@@ -99,6 +99,13 @@ def test_batch_decode_correctness(img, level_dimensions):
                 f"    ❌ Tile {idx} at {locations[idx]}: pixel mismatch (max diff={max_diff})"
             )
             mismatch_count += 1
+
+    # GPU and CPU decoding both return zeros if a decoder (e.g. nvJPEG2000) is
+    # missing, so they would match. Check that the image is not blank.
+    if not any(np.asarray(t).any() for t in cpu_tiles):
+        raise RuntimeError(
+            "All decoded tiles are zero: a decoder for this file is probably missing"
+        )
 
     if mismatch_count == 0:
         print(f"  ✅ All {len(gpu_tiles)} tiles match (GPU == CPU)")
