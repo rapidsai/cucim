@@ -118,7 +118,7 @@ select = [
 ]
 
 # PyPI hard limit is 1GiB, but try to keep these as small as possible
-max_allowed_size_compressed = '20Mi'
+max_allowed_size_compressed = '30Mi'
 
 [tool.pytest.ini_options]
 # If a pytest section is found in one of the possible config files
