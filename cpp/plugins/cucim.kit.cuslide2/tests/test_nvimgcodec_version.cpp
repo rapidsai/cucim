@@ -26,30 +26,32 @@ using cuslide2::nvimgcodec::is_supported_nvimgcodec_version;
 // The range must stay in step with the pin in dependencies.yaml and with the
 // one cmake/deps/nvimgcodec.cmake enforces on headers. These tests do not read
 // those files; detecting packaging-pin drift requires a separate check.
-TEST_CASE("supported nvImageCodec runtime range is 0.9.x", "[test_nvimgcodec_version.cpp]")
+TEST_CASE("supported nvImageCodec runtime range is 0.10.x", "[test_nvimgcodec_version.cpp]")
 {
-    SECTION("versions below 0.9.0 are rejected")
+    SECTION("versions below 0.10.0 are rejected")
     {
-        // 0.8 is the case that prompted this check: it was still listed as a
-        // SONAME candidate after the pin had moved to 0.9, and the removal of
-        // limit_images in 0.9 means the two are not interchangeable.
-        REQUIRE_FALSE(is_supported_nvimgcodec_version(MAKE_SEMANTIC_VERSION(0, 8, 0)));
-        REQUIRE_FALSE(is_supported_nvimgcodec_version(MAKE_SEMANTIC_VERSION(0, 8, 99)));
-        REQUIRE_FALSE(is_supported_nvimgcodec_version(MAKE_SEMANTIC_VERSION(0, 7, 0)));
+        // 0.9 is not interchangeable with 0.10: nvimgcodecExecutionParams_t
+        // gained the plugin-selection fields in 0.10 and the library now
+        // rejects an execution-parameter struct_size that does not match its
+        // own header, so a 0.10 build cannot drive a 0.9 library or vice
+        // versa.
+        REQUIRE_FALSE(is_supported_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 9, 0)));
+        REQUIRE_FALSE(is_supported_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 9, 99)));
+        REQUIRE_FALSE(is_supported_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 8, 0)));
     }
 
-    SECTION("0.9.x is accepted")
+    SECTION("0.10.x is accepted")
     {
-        REQUIRE(is_supported_nvimgcodec_version(MAKE_SEMANTIC_VERSION(0, 9, 0)));
-        REQUIRE(is_supported_nvimgcodec_version(MAKE_SEMANTIC_VERSION(0, 9, 1)));
-        REQUIRE(is_supported_nvimgcodec_version(MAKE_SEMANTIC_VERSION(0, 9, 99)));
+        REQUIRE(is_supported_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 10, 0)));
+        REQUIRE(is_supported_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 10, 1)));
+        REQUIRE(is_supported_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 10, 99)));
     }
 
-    SECTION("0.10.0 and later are rejected")
+    SECTION("0.11.0 and later are rejected")
     {
-        REQUIRE_FALSE(is_supported_nvimgcodec_version(MAKE_SEMANTIC_VERSION(0, 10, 0)));
-        REQUIRE_FALSE(is_supported_nvimgcodec_version(MAKE_SEMANTIC_VERSION(1, 0, 0)));
-        REQUIRE_FALSE(is_supported_nvimgcodec_version(MAKE_SEMANTIC_VERSION(2, 3, 4)));
+        REQUIRE_FALSE(is_supported_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 11, 0)));
+        REQUIRE_FALSE(is_supported_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(1, 0, 0)));
+        REQUIRE_FALSE(is_supported_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(2, 3, 4)));
     }
 
     SECTION("the headers cuCIM is built against are themselves in range")
@@ -61,37 +63,58 @@ TEST_CASE("supported nvImageCodec runtime range is 0.9.x", "[test_nvimgcodec_ver
     }
 }
 
-// The packed encoding is major * 1000 + minor * 100 + patch, so the minor
-// component only has room for one digit. 0.10.0 and 1.0.0 collide at 1000.
-// That is worth pinning: it is why the range is compared as packed integers
-// rather than by unpacking major/minor, and why diagnostics report ambiguous
-// out-of-range values without assigning an exact semantic version.
-TEST_CASE("packed nvImageCodec versions preserve ordering", "[test_nvimgcodec_version.cpp]")
+// The version compared at run time is produced by the loaded library, not by
+// these headers, so a library older than 0.10 reports a value packed as
+// major * 1000 + minor * 100 + patch. 0.10 widened that to
+// major * 10000 + minor * 100 + patch to stop a two-digit minor overflowing
+// into the major. Every released 0.x packs identically under both, which is
+// what lets the check reject an old library by version rather than by
+// misreading it as something in range.
+TEST_CASE("packed nvImageCodec versions survive the 0.10 encoding change", "[test_nvimgcodec_version.cpp]")
 {
-    REQUIRE(MAKE_SEMANTIC_VERSION(0, 8, 0) < MAKE_SEMANTIC_VERSION(0, 9, 0));
-    REQUIRE(MAKE_SEMANTIC_VERSION(0, 9, 0) < MAKE_SEMANTIC_VERSION(0, 9, 1));
-    REQUIRE(MAKE_SEMANTIC_VERSION(0, 9, 99) < MAKE_SEMANTIC_VERSION(0, 10, 0));
+    constexpr auto narrow_packing = [](uint32_t major, uint32_t minor, uint32_t patch) {
+        return (major * 1000u) + (minor * 100u) + patch;
+    };
 
-    // Documents the collision rather than endorsing it; both are out of range,
-    // so the check stays correct either way.
-    REQUIRE(MAKE_SEMANTIC_VERSION(0, 10, 0) == MAKE_SEMANTIC_VERSION(1, 0, 0));
-}
-
-TEST_CASE("nvImageCodec version diagnostics preserve ambiguous packed values", "[test_nvimgcodec_version.cpp]")
-{
-    SECTION("unambiguous versions retain their readable form")
+    SECTION("released 0.x versions pack to the same value under both encodings")
     {
-        REQUIRE(format_nvimgcodec_version(MAKE_SEMANTIC_VERSION(0, 8, 0)) == "0.8.0");
-        REQUIRE(format_nvimgcodec_version(MAKE_SEMANTIC_VERSION(0, 9, 0)) == "0.9.0");
-        REQUIRE(format_nvimgcodec_version(MAKE_SEMANTIC_VERSION(0, 9, 99)) == "0.9.99");
+        REQUIRE(narrow_packing(0, 8, 0) == NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 8, 0));
+        REQUIRE(narrow_packing(0, 9, 0) == NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 9, 0));
+        REQUIRE(narrow_packing(0, 9, 99) == NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 9, 99));
     }
 
-    SECTION("ambiguous versions retain the raw value instead of a guessed version")
+    SECTION("the widened encoding orders versions and no longer collides")
     {
-        const uint32_t packed_version = GENERATE(1000, 1001, 2304, 10000);
-        const std::string expected =
-            "packed version " + std::to_string(packed_version) + " (semantic version is ambiguous with the 0.9 headers)";
-        REQUIRE(format_nvimgcodec_version(packed_version) == expected);
+        REQUIRE(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 9, 99) < NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 10, 0));
+        REQUIRE(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 10, 0) < NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 11, 0));
+        REQUIRE(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 11, 0) < NVIMGCODEC_MAKE_SEMANTIC_VERSION(1, 0, 0));
+
+        // The narrow encoding reported 0.10.0 as 1.0.0; the widened one does
+        // not, which is why diagnostics can now name an exact version.
+        REQUIRE(narrow_packing(0, 10, 0) == narrow_packing(1, 0, 0));
+        REQUIRE(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 10, 0) != NVIMGCODEC_MAKE_SEMANTIC_VERSION(1, 0, 0));
+    }
+}
+
+TEST_CASE("nvImageCodec version diagnostics name an exact version", "[test_nvimgcodec_version.cpp]")
+{
+    SECTION("versions inside the supported range")
+    {
+        REQUIRE(format_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 10, 0)) == "0.10.0");
+        REQUIRE(format_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 10, 99)) == "0.10.99");
+    }
+
+    SECTION("versions outside it, which are the ones a user has to act on")
+    {
+        REQUIRE(format_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 8, 0)) == "0.8.0");
+        REQUIRE(format_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 9, 0)) == "0.9.0");
+        REQUIRE(format_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(1, 0, 0)) == "1.0.0");
+        REQUIRE(format_nvimgcodec_version(NVIMGCODEC_MAKE_SEMANTIC_VERSION(2, 3, 4)) == "2.3.4");
+    }
+
+    SECTION("anything the diagnostic can name outside the range is still rejected")
+    {
+        const uint32_t packed_version = GENERATE(0u, 800u, 900u, 1100u, 10000u, 20304u);
         REQUIRE_FALSE(is_supported_nvimgcodec_version(packed_version));
     }
 }
