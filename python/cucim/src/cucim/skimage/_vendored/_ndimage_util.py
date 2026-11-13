@@ -20,6 +20,8 @@ except ImportError:
 import cupy
 
 _cache_array_streams = {}
+# ids of live cache arrays known to contain no zero entries
+_nonzero_cache_array_ids = set()
 _retired_cache_allocations = {}
 
 
@@ -49,8 +51,12 @@ def _retire_cache_allocation(array_id, device_id, memory, streams):
         _release_completed_cache_allocations(device_id)
 
 
-def _register_cache_array(array):
-    """Protect an initialized array's allocation from reuse after eviction."""
+def _register_cache_array(array, all_nonzero=False):
+    """Protect an initialized array's allocation from reuse after eviction.
+
+    If ``all_nonzero`` is True, the array (which must contain no zero entries)
+    is also recorded for :func:`_is_nonzero_cache_array`.
+    """
     device_id = array.device.id
     _release_completed_cache_allocations(device_id)
     streams = _cache_array_streams[id(array)] = {}
@@ -64,7 +70,23 @@ def _register_cache_array(array):
         streams,
     )
     finalizer.atexit = False
+    if all_nonzero:
+        _nonzero_cache_array_ids.add(id(array))
+        weakref.finalize(
+            array, _nonzero_cache_array_ids.discard, id(array)
+        ).atexit = False
     return _record_cache_array_use(array)
+
+
+def _is_nonzero_cache_array(array):
+    """Whether ``array`` is a cache array registered as having no zeros.
+
+    Filter kernels skip zero weights so that a non-finite input value under a
+    zero weight does not propagate (as in SciPy). For cached coefficients the
+    absence of zeros is checked once, when the cache entry is created, which
+    lets the kernels omit the per-tap test without a host synchronization.
+    """
+    return id(array) in _nonzero_cache_array_ids
 
 
 def _record_cache_array_use(array):
@@ -107,8 +129,10 @@ def _cached_filter_weights_for_device(device_id, weights, dtype, divisor):
             array = cupy.asarray(weights, dtype=dtype)
             if divisor != 1:
                 array /= divisor
+            # checked once per cache entry (synchronizes the cache stream)
+            all_nonzero = int(cupy.count_nonzero(array)) == array.size
         stream.synchronize()
-        return _register_cache_array(array)
+        return _register_cache_array(array, all_nonzero=all_nonzero)
 
 
 def _is_integer_output(output, input):

@@ -848,9 +848,12 @@ def _cached_gaussian_kernel1d_for_device(
         stream = _util._get_cache_init_stream()
         with stream:
             kernel = _gaussian_kernel1d(sigma, order, radius, cupy.dtype(dtype))
+            # checked once per cache entry (synchronizes the cache stream);
+            # e.g. odd derivative orders have a zero center weight
+            all_nonzero = int(cupy.count_nonzero(kernel)) == kernel.size
         # Publish fully initialized coefficients without draining the caller.
         stream.synchronize()
-        return _util._register_cache_array(kernel)
+        return _util._register_cache_array(kernel, all_nonzero=all_nonzero)
 
 
 def prewitt(
