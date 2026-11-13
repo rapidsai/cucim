@@ -9,6 +9,7 @@
 #include <nvimgcodec.h>
 #endif
 
+#include <mutex>
 #include <string>
 #include <vector>
 #include <memory>
@@ -377,6 +378,24 @@ public:
     nvimgcodecDecoder_t get_decoder() const { return decoder_; }
 
     /**
+     * @brief Get the decoder to use for an IFD with the given codec
+     *
+     * The default decoder allows all backends, including the CPU-only fallbacks
+     * of nvImageCodec (libtiff, OpenCV). They cannot decode JPEG 2000 in TIFF
+     * (compression 33003, 33005 and 34712), but they accept such a stream and
+     * report success after every tile failed, which gives an all-zero image.
+     * So for JPEG 2000, and when the compression is not known (no TIFF tags
+     * were returned, which means that nvTIFF is not loaded), use a decoder
+     * without the CPU-only backends. If the nvJPEG2000 or nvTIFF library is
+     * missing, decoding then fails with an error status.
+     *
+     * @param codec Codec of the IFD (IfdInfo::codec)
+     * @param compression_known true if the TIFF tags of the IFD were returned
+     * @return nvImageCodec decoder handle
+     */
+    nvimgcodecDecoder_t get_decoder_for(const std::string& codec, bool compression_known);
+
+    /**
      * @brief Check if nvImageCodec is available and initialized
      *
      * @return true if available
@@ -411,6 +430,10 @@ private:
 
     nvimgcodecInstance_t instance_;
     nvimgcodecDecoder_t decoder_;
+    nvimgcodecDecoder_t gpu_only_decoder_ = nullptr;  // created on first use
+    bool gpu_only_decoder_created_ = false;
+    bool cpu_only_mode_ = false;
+    std::mutex gpu_only_decoder_mutex_;
     bool initialized_;
     std::string status_message_;
 };

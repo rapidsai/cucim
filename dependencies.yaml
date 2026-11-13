@@ -326,7 +326,21 @@ dependencies:
           - libnvimgcodec>=0.9.0,<0.10.0
           - nvimgcodec>=0.9.0,<0.10.0
     specific:
-      - output_types: [requirements, constraints, pyproject]
+      # The nvJPEG, nvJPEG2000 and nvTIFF libraries are optional extras of the
+      # nvImageCodec wheel. Without nvJPEG2000 and nvTIFF the cuslide2 plugin
+      # cannot decode JPEG 2000 TIFFs and reads their pyramids incorrectly.
+      # (Constraints files cannot contain extras.)
+      - output_types: [requirements, pyproject]
+        matrices:
+          - matrix:
+              cuda: "12.*"
+            packages:
+              - nvidia-nvimgcodec-cu12[nvjpeg,nvjpeg2k,nvtiff]>=0.9.0,<0.10.0
+          # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
+          - matrix:
+            packages:
+              - nvidia-nvimgcodec-cu13[nvjpeg,nvjpeg2k,nvtiff]>=0.9.0,<0.10.0
+      - output_types: constraints
         matrices:
           - matrix:
               cuda: "12.*"

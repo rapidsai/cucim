@@ -115,7 +115,28 @@ To enable the cuslide2 plugin, set the `ENABLE_CUSLIDE2` environment variable:
 ENABLE_CUSLIDE2=1 python your_script.py
 ```
 
+### Requirements
+
+The plugin decodes with [nvImageCodec](https://developer.nvidia.com/nvimagecodec)
+(`>=0.9.0,<0.10.0`) and needs its nvJPEG2000 and nvTIFF libraries to read JPEG 2000
+and TIFF files, in addition to nvJPEG for JPEG.
+
+- **pip:** `pip install cucim-cu13` (or `cucim-cu12`) installs
+  `nvidia-nvimgcodec-cu13[nvjpeg,nvjpeg2k,nvtiff]` (`-cu12` for CUDA 12). The plugin
+  finds the nvImageCodec library in the `nvidia/nvimgcodec` directory of
+  `site-packages`, and `LD_LIBRARY_PATH` does not have to be set. If you
+  installed `nvidia-nvimgcodec-cu13` without these extras, install them with
+  `pip install "nvidia-nvimgcodec-cu13[nvjpeg,nvjpeg2k,nvtiff]"`. Without them,
+  nvImageCodec prints `Failed to load nvtiff library!` or
+  `Failed to load nvjpeg2k library!`, and cuslide2 reports the wrong number of
+  levels and tile sizes of `(0, 0)` or fails to read JPEG 2000 files.
+
 ### Test Scripts
+
+The test scripts are in the cuCIM repository (`scripts/`) and are not installed
+with the packages. They use the cuslide2 plugin of a source build in the checkout
+if there is one, and the plugin of the installed package otherwise.
+They fail if the tile sizes of the image are `(0, 0)` or if all decoded tiles are zero.
 
 cuCIM provides test scripts to verify cuslide2 functionality with different TIFF formats:
 

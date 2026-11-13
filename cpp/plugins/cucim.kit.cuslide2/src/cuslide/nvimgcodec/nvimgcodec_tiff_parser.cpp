@@ -505,6 +505,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
                 return;
             }
             status_message_ = "nvImageCodec TIFF parser initialized in CPU-only mode";
+            cpu_only_mode_ = true;
         }
 
         initialized_ = true;
@@ -535,6 +536,56 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         #endif // DEBUG
         initialized_ = false;
     }
+}
+
+nvimgcodecDecoder_t NvImageCodecTiffParserManager::get_decoder_for(const std::string& codec,
+                                                                   bool compression_known)
+{
+    const bool needs_gpu_decoder = (codec == "jpeg2000") || (codec == "tiff" && !compression_known);
+    if (!needs_gpu_decoder || !initialized_ || cpu_only_mode_)
+    {
+        return decoder_;
+    }
+
+    std::lock_guard<std::mutex> lock(gpu_only_decoder_mutex_);
+    if (!gpu_only_decoder_created_)
+    {
+        gpu_only_decoder_created_ = true;
+
+        nvimgcodecBackend_t backends[3]{};
+        const nvimgcodecBackendKind_t kinds[3] = {NVIMGCODEC_BACKEND_KIND_GPU_ONLY,
+                                                  NVIMGCODEC_BACKEND_KIND_HYBRID_CPU_GPU,
+                                                  NVIMGCODEC_BACKEND_KIND_HW_GPU_ONLY};
+        for (int i = 0; i < 3; ++i)
+        {
+            backends[i].struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND;
+            backends[i].struct_size = sizeof(nvimgcodecBackend_t);
+            backends[i].struct_next = nullptr;
+            backends[i].kind = kinds[i];
+            backends[i].params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND_PARAMS;
+            backends[i].params.struct_size = sizeof(nvimgcodecBackendParams_t);
+            backends[i].params.struct_next = nullptr;
+            backends[i].params.load_hint = 1.0f;
+            backends[i].params.load_hint_policy = NVIMGCODEC_LOAD_HINT_POLICY_FIXED;
+        }
+
+        nvimgcodecExecutionParams_t exec_params{};
+        exec_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_EXECUTION_PARAMS;
+        exec_params.struct_size = sizeof(nvimgcodecExecutionParams_t);
+        exec_params.struct_next = nullptr;
+        exec_params.max_num_cpu_threads = compute_max_decoder_threads();
+        exec_params.device_id = NVIMGCODEC_DEVICE_CURRENT;
+        exec_params.num_backends = 3;
+        exec_params.backends = backends;
+
+        if (nvimgcodecDecoderCreate(instance_, &gpu_only_decoder_, &exec_params, nullptr) !=
+            NVIMGCODEC_STATUS_SUCCESS)
+        {
+            gpu_only_decoder_ = nullptr;
+        }
+    }
+    // If the decoder could not be created, use the default one.
+    return gpu_only_decoder_ ? gpu_only_decoder_ : decoder_;
 }
 
 void NvImageCodecTiffParserManager::shutdown()
@@ -1329,7 +1380,9 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
         fmt::print(stderr,
                    "[cuslide2] No TIFF tags returned by nvImageCodec for '{}'. "
                    "OME/vendor metadata and pixel spacing will be unavailable. "
-                   "Tag retrieval requires a working decoder (CUDA device).\n",
+                   "Tag retrieval requires a working decoder (CUDA device) and the nvTIFF "
+                   "library. Check for a 'Failed to load nvtiff library' message from nvImageCodec; "
+                   "pip installs need the nvidia-nvimgcodec-cu* extras 'nvtiff' and 'nvjpeg2k'.\n",
                    file_path_);
     }
 
