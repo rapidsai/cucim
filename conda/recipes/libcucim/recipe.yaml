@@ -100,6 +100,7 @@ requirements:
       then: yasm
   host:
     - cuda-version =${{ cuda_version }}
+    - cuda-cccl
     - cuda-cudart-dev
     - libcufile-dev
     - libnvimgcodec-dev ${{ nvimgcodec_version }}  # nvImageCodec development headers and libraries
@@ -107,6 +108,9 @@ requirements:
     - nvtx-c >=3.1.0
     - openslide
   run:
+    # The installed cucim/memory/device_resources.h includes <cuda/memory_resource>,
+    # so anything compiling against libcucim needs CCCL's headers present.
+    - cuda-cccl
     - libcufile
     - libnvjpeg
     - libnvimgcodec ${{ nvimgcodec_version }}   # nvImageCodec metapackage (includes libnvimgcodec0 + run_exports)

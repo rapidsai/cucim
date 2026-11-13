@@ -8,6 +8,7 @@ dependencies:
 - c-compiler
 - click
 - cmake>=4.0
+- cuda-cccl
 - cuda-cudart-dev
 - cuda-nvcc
 - cuda-version=12.9
