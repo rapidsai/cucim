@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 schema_version: 1
@@ -47,6 +47,8 @@ build:
       ./run build_local cucim "${CUCIM_BUILD_TYPE}"
 
       cp -P python/install/lib/* python/cucim/src/cucim/clara/
+      # The compiled cucim.skimage helpers belong to the cucim.skimage package
+      mv python/cucim/src/cucim/clara/_cucim_skimage_cpp_ext*.so python/cucim/src/cucim/skimage/
 
       pushd python/cucim
 
@@ -116,6 +118,7 @@ tests:
   - python:
       imports:
         - cucim
+        - cucim.skimage._cucim_skimage_cpp_ext
       python_version: ${{ py_runtime_latest }}.*
       pip_check: False
 

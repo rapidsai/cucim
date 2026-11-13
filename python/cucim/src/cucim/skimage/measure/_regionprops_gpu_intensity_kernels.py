@@ -1,10 +1,16 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
 
 import cupy as cp
 
+try:
+    from cucim.skimage import _cucim_skimage_cpp_ext as _skimage_cpp_ext
+except ImportError:
+    _skimage_cpp_ext = None
+
+from ._regionprops_gpu_basic_kernels import regionprops_num_pixels
 from ._regionprops_gpu_utils import (
     _check_intensity_image_shape,
     _get_count_dtype,
@@ -13,6 +19,7 @@ from ._regionprops_gpu_utils import (
 
 __all__ = [
     "regionprops_intensity_mean",
+    "regionprops_intensity_median",
     "regionprops_intensity_min_max",
     "regionprops_intensity_std",
 ]
@@ -25,7 +32,21 @@ intensity_deps = dict()
 intensity_deps["intensity_min"] = []
 intensity_deps["intensity_max"] = []
 intensity_deps["intensity_mean"] = ["num_pixels"]
+intensity_deps["intensity_median"] = ["num_pixels"]
 intensity_deps["intensity_std"] = ["num_pixels"]
+
+
+# Region size threshold for the CUB segmented sort path in the hybrid
+# implementation. Users can monkeypatch this value to tune dispatch.
+hybrid_size_threshold = 128000
+
+# The median implementation uses cub::DeviceSegmentedSort::SortKeys over
+# packed per-label intensity values for regions up to hybrid_size_threshold.
+# Larger regions are handled by a follow-up cp.median call.
+# DeviceSegmentedSort (rather than DeviceSegmentedRadixSort) is used because
+# it groups segments by size and picks a suitable algorithm for each group,
+# which suits the wide range of region sizes typical of label images; CUB
+# recommends DeviceSegmentedRadixSort only for uniformly large segments.
 
 
 def _get_img_sums_code(
@@ -446,7 +467,286 @@ def regionprops_intensity_mean(
     return props_dict
 
 
+def regionprops_intensity_median(
+    label_image,
+    intensity_image,
+    max_label=None,
+    props_dict=None,
+    *,
+    disable_nan_check=False,
+):
+    """Compute the median intensity of each region.
+
+    This implementation compresses foreground intensity values into label
+    order, uses segmented sort for eligible region sizes, and falls back to
+    ``cp.median`` for the remaining regions.
+
+    reuses "num_pixels" from `props_dict` if it exists
+
+    writes "intensity_median" to `props_dict`
+    writes "num_pixels" to `props_dict` if it was not already present
+    """
+    if props_dict is None:
+        props_dict = {}
+    if max_label is None:
+        max_label = int(label_image.max())
+
+    num_channels = _check_intensity_image_shape(label_image, intensity_image)
+
+    if "num_pixels" in props_dict:
+        counts = props_dict["num_pixels"]
+    else:
+        counts = regionprops_num_pixels(
+            label_image, max_label=max_label, props_dict=props_dict
+        )
+
+    median_dtype = cp.promote_types(intensity_image.dtype, cp.float32)
+    sort_dtype = (
+        intensity_image.dtype
+        if intensity_image.dtype in (cp.dtype(cp.uint8), cp.dtype(cp.uint16))
+        else median_dtype
+    )
+    out_shape = (max_label,) if num_channels == 1 else (max_label, num_channels)
+    counts_cpu = cp.asnumpy(counts)
+    medians = cp.full(out_shape, cp.nan, dtype=median_dtype)
+
+    offsets = cp.empty(max_label + 1, dtype=cp.uint64)
+    offsets[0] = 0
+    if max_label:
+        cp.cumsum(counts, dtype=cp.uint64, out=offsets[1:])
+
+    img1d, nan_labels = _pack_intensities_by_label(
+        label_image,
+        intensity_image,
+        offsets,
+        num_foreground=int(counts_cpu.sum()),
+        num_channels=num_channels,
+        output_dtype=sort_dtype,
+        check_nans=(
+            not disable_nan_check and intensity_image.dtype.kind == "f"
+        ),
+    )
+
+    segmented_filled = _fill_intensity_median_segmented_sort(
+        img1d,
+        counts,
+        offsets,
+        medians,
+        num_channels=num_channels,
+        min_region_size=0,
+        max_region_size=int(hybrid_size_threshold),
+    )
+    segmented_filled_cpu = (
+        cp.asnumpy(segmented_filled) if segmented_filled is not None else None
+    )
+    slice_start = 0
+    for label_index, count in enumerate(counts_cpu):
+        slice_stop = slice_start + count
+        if count and (
+            segmented_filled_cpu is None
+            or not segmented_filled_cpu[label_index]
+        ):
+            values = img1d[slice_start:slice_stop].astype(
+                median_dtype, copy=False
+            )
+            medians[label_index] = cp.median(values, axis=0)
+        slice_start = slice_stop
+
+    if nan_labels is not None and segmented_filled is not None:
+        segmented_mask = segmented_filled
+        if num_channels > 1:
+            segmented_mask = segmented_mask[:, cp.newaxis]
+        medians[(nan_labels != 0) & segmented_mask] = cp.nan
+
+    props_dict["intensity_median"] = medians
+    return props_dict
+
+
 @cp.memoize(for_each_device=True)
+def _get_intensity_packing_kernel(num_channels, check_nans):
+    nan_output = ", raw uint32 nan_labels" if check_nans else ""
+    nan_operation = ""
+    if check_nans:
+        nan_operations = []
+        for channel in range(num_channels):
+            nan_operations.append(
+                f"""
+            if (isnan(static_cast<double>(
+                    intensities[{num_channels} * i + {channel}]))) {{
+                atomicExch(
+                    &nan_labels[{num_channels} * label_index + {channel}],
+                    1U);
+            }}"""
+            )
+        nan_operation = "".join(nan_operations)
+
+    copy_operations = "".join(
+        f"""
+        packed[{num_channels} * output_index + {channel}] =
+            static_cast<Z>(intensities[{num_channels} * i + {channel}]);"""
+        for channel in range(num_channels)
+    )
+    return cp.ElementwiseKernel(
+        "raw X labels, raw Y intensities",
+        f"raw uint64 write_offsets, raw Z packed{nan_output}",
+        f"""
+        const X label = labels[i];
+        if (label != 0) {{
+            const size_t label_index = label - 1;
+            const unsigned long long output_index = atomicAdd(
+                &write_offsets[label_index], 1ULL);
+            {copy_operations}
+            {nan_operation}
+        }}
+        """,
+        name=(
+            f"cucim_regionprops_pack_intensity_c{num_channels}"
+            f"_nan{int(check_nans)}"
+        ),
+    )
+
+
+def _pack_intensities_by_label(
+    label_image,
+    intensity_image,
+    offsets,
+    *,
+    num_foreground,
+    num_channels,
+    output_dtype,
+    check_nans,
+):
+    """Pack intensities into contiguous, unordered segments for each label.
+
+    ``offsets`` gives each segment's initial write position. One atomic cursor
+    per label assigns foreground pixels to that segment; the subsequent
+    segmented sort does not require the values within a segment to retain
+    image order.
+    """
+    label_image = cp.ascontiguousarray(label_image)
+    intensity_image = cp.ascontiguousarray(intensity_image)
+    packed_shape = (
+        (num_foreground,)
+        if num_channels == 1
+        else (num_foreground, num_channels)
+    )
+    packed = cp.empty(packed_shape, dtype=output_dtype)
+    write_offsets = offsets[:-1].copy()
+
+    nan_labels = None
+    outputs = [packed]
+    if check_nans:
+        nan_shape = (
+            (offsets.size - 1,)
+            if num_channels == 1
+            else (offsets.size - 1, num_channels)
+        )
+        nan_labels = cp.zeros(nan_shape, dtype=cp.uint32)
+        outputs.append(nan_labels)
+
+    if label_image.size:
+        _get_intensity_packing_kernel(num_channels, check_nans)(
+            label_image,
+            intensity_image,
+            write_offsets,
+            *outputs,
+            size=label_image.size,
+        )
+    return packed, nan_labels
+
+
+def _get_segmented_median_params(
+    counts, offsets, *, min_region_size, max_region_size
+):
+    eligible = (counts > min_region_size) & (counts <= max_region_size)
+    if not bool(eligible.any()):
+        return eligible, None
+
+    label_indices = cp.nonzero(eligible)[0]
+    begin_offsets = cp.ascontiguousarray(offsets[:-1][eligible])
+    end_offsets = cp.ascontiguousarray(offsets[1:][eligible])
+    counts_selected = counts[eligible].astype(cp.uint64, copy=False)
+    hi = begin_offsets + counts_selected // 2
+    even = counts_selected % 2 == 0
+    return eligible, (label_indices, begin_offsets, end_offsets, hi, even)
+
+
+def _extract_segmented_medians(sorted_keys, hi, even, output_dtype):
+    values = sorted_keys[hi].astype(output_dtype, copy=False)
+    if bool(even.any()):
+        lo = hi[even] - cp.uint64(1)
+        lo_values = sorted_keys[lo].astype(output_dtype, copy=False)
+        values[even] = (lo_values + values[even]) / output_dtype.type(2)
+    return values
+
+
+def _fill_intensity_median_segmented_sort(
+    img1d,
+    counts,
+    offsets,
+    medians,
+    num_channels,
+    min_region_size,
+    max_region_size,
+):
+    if _skimage_cpp_ext is None or max_region_size <= min_region_size:
+        return None
+    dtype_name = img1d.dtype.name
+    sort_func = getattr(
+        _skimage_cpp_ext, f"segmented_sort_keys_ranges_{dtype_name}", None
+    )
+    temp_storage_bytes_func = getattr(
+        _skimage_cpp_ext,
+        f"segmented_sort_keys_temp_storage_bytes_{dtype_name}",
+        None,
+    )
+    if sort_func is None or temp_storage_bytes_func is None:
+        return None
+
+    eligible, params = _get_segmented_median_params(
+        counts,
+        offsets,
+        min_region_size=min_region_size,
+        max_region_size=max_region_size,
+    )
+    if params is None:
+        return eligible
+
+    label_indices, begin_offsets, end_offsets, hi, even = params
+
+    # Allocate CUB's temporary storage from CuPy's memory pool (shared by all
+    # channels) so that repeated calls reuse pooled memory rather than paying
+    # for cudaMalloc/cudaFree and a stream synchronization on every sort.
+    num_items = img1d.shape[0]
+    num_segments = label_indices.size
+    temp_storage_bytes = temp_storage_bytes_func(num_items, num_segments)
+    temp_storage = cp.empty(max(temp_storage_bytes, 1), dtype=cp.uint8)
+
+    def sort_channel(keys):
+        sorted_keys = cp.empty_like(keys)
+        stream_ptr = cp.cuda.get_current_stream().ptr
+        sort_func(
+            keys.data.ptr,
+            sorted_keys.data.ptr,
+            begin_offsets.data.ptr,
+            end_offsets.data.ptr,
+            num_items,
+            num_segments,
+            temp_storage.data.ptr,
+            temp_storage.nbytes,
+            stream_ptr,
+        )
+        return _extract_segmented_medians(sorted_keys, hi, even, medians.dtype)
+
+    if num_channels == 1:
+        medians[label_indices] = sort_channel(img1d)
+    else:
+        for channel in range(num_channels):
+            keys = cp.ascontiguousarray(img1d[:, channel])
+            medians[label_indices, channel] = sort_channel(keys)
+    return eligible
+
+
 def get_mean_var_kernel(dtype, sample_std=False):
     dtype = cp.dtype(dtype)
 

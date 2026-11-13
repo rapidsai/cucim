@@ -172,6 +172,7 @@ repos:
             ^python/cucim/src/cucim/skimage/measure/__init__[.]pyi$|
             ^python/cucim/src/cucim/skimage/measure/_blur_effect[.]py$|
             ^python/cucim/src/cucim/skimage/measure/_colocalization[.]py$|
+            ^python/cucim/src/cucim/skimage/measure/_find_contours[.]py$|
             ^python/cucim/src/cucim/skimage/measure/_label_kernels[.]py$|
             ^python/cucim/src/cucim/skimage/measure/_label[.]py$|
             ^python/cucim/src/cucim/skimage/measure/_moments_analytical[.]py$|
@@ -461,6 +462,7 @@ repos:
             python/cucim/src/cucim/skimage/measure/__init__[.]pyi$|
             python/cucim/src/cucim/skimage/measure/_blur_effect[.]py$|
             python/cucim/src/cucim/skimage/measure/_colocalization[.]py$|
+            python/cucim/src/cucim/skimage/measure/_find_contours[.]py$|
             python/cucim/src/cucim/skimage/measure/_label_kernels[.]py$|
             python/cucim/src/cucim/skimage/measure/_label[.]py$|
             python/cucim/src/cucim/skimage/measure/_moments_analytical[.]py$|
