@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -100,12 +100,16 @@ def test_structural_similarity_grad(seed, dtype):
 )
 def test_structural_similarity_dtype(dtype):
     N = 30
-    X = np.random.rand(N, N)
-    Y = np.random.rand(N, N)
+    # A local, seeded generator: the global NumPy state depends on which tests
+    # ran before this one, and for independent random images the similarity is
+    # at or above the threshold below in about 0.3% of the draws.
+    rng = np.random.default_rng(1234)
+    X = rng.random((N, N))
+    Y = rng.random((N, N))
     if np.dtype(dtype).kind in "iub":
         data_range = 255.0
         X = (X * 255).astype(dtype)
-        Y = (X * 255).astype(dtype)
+        Y = (Y * 255).astype(dtype)
     else:
         data_range = 1.0
         X = X.astype(dtype, copy=False)
