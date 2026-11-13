@@ -706,7 +706,7 @@ def _get_code_stage1_shared_memory_load(ndim, axis, mode, cval):
         return _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval)
 
 
-def _get_code_stage2_convolve_2d(ndim, axis, flip_kernel):
+def _get_code_stage2_convolve_2d(ndim, axis, flip_kernel, skip_zero_weights):
     code = """
     #pragma unroll
     for (int j = 0; j < PATCH_PER_BLOCK; ++j)
@@ -737,14 +737,18 @@ def _get_code_stage2_convolve_2d(ndim, axis, flip_kernel):
         inner = f"""
                 sum = sum + static_cast<W>(smem[threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X - anchor + k]) * kernel[{kernel_idx}];
         """  # noqa
+    if skip_zero_weights:
+        # skip zero weights so that NaN/Inf under them do not propagate
+        inner = f"""
+               if (nonzero(kernel[{kernel_idx}])) {{
+                   {inner}
+               }}"""
     code += f"""
             W sum = static_cast<W>(0);
 
             #pragma unroll
             for (int k = 0; k < KSIZE; ++k) {{
-               if (nonzero(kernel[{kernel_idx}])) {{
-                   {inner}
-               }}
+               {inner}
             }}
             dst[y * row_stride + x] = cast<D>(sum);
         }}
@@ -753,7 +757,7 @@ def _get_code_stage2_convolve_2d(ndim, axis, flip_kernel):
     return code
 
 
-def _get_code_stage2_convolve_3d(ndim, axis, flip_kernel):
+def _get_code_stage2_convolve_3d(ndim, axis, flip_kernel, skip_zero_weights):
     code = """
     #pragma unroll
     for (int j = 0; j < PATCH_PER_BLOCK; ++j)
@@ -794,14 +798,18 @@ def _get_code_stage2_convolve_3d(ndim, axis, flip_kernel):
         inner = f"""
                 sum = sum + static_cast<W>(smem[threadIdx.z][threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X - anchor + k]) * kernel[{kernel_idx}];
         """  # noqa
+    if skip_zero_weights:
+        # skip zero weights so that NaN/Inf under them do not propagate
+        inner = f"""
+               if (nonzero(kernel[{kernel_idx}])) {{
+                   {inner}
+               }}"""
     code += f"""
             W sum = static_cast<W>(0);
 
             #pragma unroll
             for (int k = 0; k < KSIZE; ++k) {{
-               if (nonzero(kernel[{kernel_idx}])) {{
-                   {inner}
-               }}
+               {inner}
             }}
             dst[z * stride_0 + y * stride_1 + x] = cast<D>(sum);
         }}
@@ -811,11 +819,15 @@ def _get_code_stage2_convolve_3d(ndim, axis, flip_kernel):
 
 
 @cp.memoize(for_each_device=False)
-def _get_code_stage2_convolve(ndim, axis, flip_kernel):
+def _get_code_stage2_convolve(ndim, axis, flip_kernel, skip_zero_weights=True):
     if ndim == 2:
-        return _get_code_stage2_convolve_2d(ndim, axis, flip_kernel)
+        return _get_code_stage2_convolve_2d(
+            ndim, axis, flip_kernel, skip_zero_weights
+        )
     elif ndim == 3:
-        return _get_code_stage2_convolve_3d(ndim, axis, flip_kernel)
+        return _get_code_stage2_convolve_3d(
+            ndim, axis, flip_kernel, skip_zero_weights
+        )
 
 
 @cp.memoize(for_each_device=True)
@@ -831,6 +843,7 @@ def _get_separable_conv_kernel_src(
     cval,
     patch_per_block=None,
     flip_kernel=False,
+    skip_zero_weights=True,
 ):
     blocks, patch_per_block, halo_size = _get_constants(
         ndim, axis, kernel_size, anchor, patch_per_block
@@ -854,6 +867,8 @@ def _get_separable_conv_kernel_src(
         .replace("unsigned ", "u")
     )  # noqa
     func_name += f"_patch{patch_per_block}_halo{halo_size}"
+    if not skip_zero_weights:
+        func_name += "_nonzero_weights"
     # func_name += f"_bx{block_x}_by{block_y}" // these are fixed per axis
 
     code = """
@@ -890,7 +905,9 @@ def _get_separable_conv_kernel_src(
         {{
         """  # noqa
     code += _get_code_stage1_shared_memory_load(ndim, axis, mode, cval)
-    code += _get_code_stage2_convolve(ndim, axis, flip_kernel)
+    code += _get_code_stage2_convolve(
+        ndim, axis, flip_kernel, skip_zero_weights
+    )
     code += """
     }  // end of function
     }  // extern "C"
@@ -911,6 +928,7 @@ def _get_separable_conv_kernel(
     cval=0,
     patch_per_block=None,
     flip_kernel=False,
+    skip_zero_weights=True,
 ):
     func_name, block, patch_per_block, code = _get_separable_conv_kernel_src(
         kernel_size=kernel_size,
@@ -924,6 +942,7 @@ def _get_separable_conv_kernel(
         cval=cval,
         patch_per_block=patch_per_block,
         flip_kernel=flip_kernel,
+        skip_zero_weights=skip_zero_weights,
     )
     m = cp.RawModule(code=code)
     return m.get_function(func_name), block, patch_per_block
@@ -940,6 +959,7 @@ def _get_packed_row_kernel(
     mode,
     cval,
     flip_kernel,
+    skip_zero_weights=True,
 ):
     """Tile interleaved rows, keeping neighboring trailing elements together.
 
@@ -988,6 +1008,8 @@ def _get_packed_row_kernel(
             T value = src[row_base + mapped];
         """
     weight_index = f"{kernel_size} - 1 - k" if flip_kernel else "k"
+    # skip zero weights so that NaN/Inf under them do not propagate
+    weight_test = "if (nonzero(weight))" if skip_zero_weights else ""
     code = '#include "cupy/float16.cuh"\n#include "cupy/complex.cuh"\n'
     code += (
         _ndimage_includes
@@ -1019,7 +1041,7 @@ def _get_packed_row_kernel(
                 #pragma unroll
                 for (int k = 0; k < {kernel_size}; ++k) {{
                     W weight = weights[{weight_index}];
-                    if (nonzero(weight))
+                    {weight_test}
                         sum += static_cast<W>(smem[threadIdx.y][threadIdx.x +
                             (j + {halo}) * {block[0]} + (k - {anchor}) * {trailing_size}]) * weight;
                 }}
@@ -1138,6 +1160,10 @@ def _shmem_convolve1d(
     )
     if not weights.flags.c_contiguous or weights.dtype != weights_dtype:
         weights = cp.ascontiguousarray(weights, weights_dtype)
+    # The per-tap zero-weight test costs up to 2x for float64 2D filters. It
+    # can be omitted for cached coefficients known (on the host) to have no
+    # zeros, e.g. Gaussian kernels; other weights keep it.
+    skip_zero_weights = not util._is_nonzero_cache_array(weights)
 
     # promote output to nearest complex dtype if necessary
     complex_output = complex_output or weights.dtype.kind == "c"
@@ -1164,6 +1190,7 @@ def _shmem_convolve1d(
             mode,
             cval,
             convolution,
+            skip_zero_weights,
         )
         rows, length, trailing_size = image.shape
         row_blocks = math.ceil(rows / block[1])
@@ -1190,6 +1217,7 @@ def _shmem_convolve1d(
         cval=cval,
         patch_per_block=None,
         flip_kernel=convolution,
+        skip_zero_weights=skip_zero_weights,
     )
     grid = _get_grid(image.shape, block, axis, patch_per_block)
     args = (image, output, weights, anchor) + image.shape[:ndim]

@@ -195,3 +195,33 @@ def test_filter_axis_view_fallback(layout, monkeypatch):
     result = filters.correlate1d(image, weights, axis=1, output=output)
     assert result is output
     cp.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "shape,axis",
+    [
+        ((9, 11), 0),
+        ((9, 11), 1),
+        ((5, 9, 7), 0),  # 2D view
+        ((5, 9, 7), 1),  # packed rows
+        ((5, 9, 7), 2),  # packed rows (trailing size 1)
+        ((4, 9, 20), 1),  # 3D kernel
+    ],
+)
+@pytest.mark.parametrize("order", [0, 1])
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+def test_cached_gaussian_weights_shared_memory(shape, axis, order, dtype):
+    """Cached Gaussian weights without zeros use kernels without the per-tap
+    zero-weight test; derivative weights (zero center) keep it. Both match
+    the elementwise implementation, including the propagation of NaN."""
+    image = cp.asarray(np.random.default_rng(5).random(shape), dtype=dtype)
+    image[(1,) * len(shape)] = cp.nan
+    expected = filters.gaussian_filter1d(
+        image, 1.2, axis=axis, order=order, algorithm="elementwise"
+    )
+    result = filters.gaussian_filter1d(
+        image, 1.2, axis=axis, order=order, algorithm="shared_memory"
+    )
+    cp.testing.assert_array_equal(cp.isnan(result), cp.isnan(expected))
+    tol = 1e-5 if dtype == cp.float32 else 1e-12
+    cp.testing.assert_allclose(result, expected, rtol=tol, atol=tol)

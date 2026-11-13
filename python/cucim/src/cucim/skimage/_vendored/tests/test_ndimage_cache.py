@@ -165,3 +165,18 @@ def test_filter_weight_normalization_does_not_modify_other_entries(dtype):
     other = util._cached_filter_weights(coefficients, other_dtype)
     assert other.dtype == cp.dtype(other_dtype)
     assert other is not unscaled
+
+
+def test_nonzero_cache_arrays():
+    """Cached coefficients record whether they contain zeros (used to omit
+    the per-tap zero-weight test in the shared-memory filter kernels)."""
+    gauss = filters._cached_gaussian_kernel1d(1.5, 0, 6, "<f8")
+    assert util._is_nonzero_cache_array(gauss)
+    assert not util._is_nonzero_cache_array(gauss.copy())
+    # odd derivative orders have a zero center weight
+    gauss_deriv = filters._cached_gaussian_kernel1d(1.5, 1, 6, "<f8")
+    assert not util._is_nonzero_cache_array(gauss_deriv)
+    smooth = util._cached_filter_weights((1, 2, 1), cp.float32)
+    assert util._is_nonzero_cache_array(smooth)
+    diff = util._cached_filter_weights((-1, 0, 1), cp.float32)
+    assert not util._is_nonzero_cache_array(diff)
