@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -873,3 +873,283 @@ def test_multiotsu_hist_parameter():
             thresh_img = threshold_multiotsu(img, classes)
             thresh_sk_hist = threshold_multiotsu(classes=classes, hist=sk_hist)
             assert cp.allclose(thresh_img, thresh_sk_hist)
+
+
+@pytest.mark.parametrize("dtype", [np.uint8, np.uint16])
+@pytest.mark.parametrize(
+    "name", ["otsu", "yen", "isodata", "triangle", "mean", "li"]
+)
+def test_global_thresholds_many_bins_match_cpu(name, dtype):
+    # 8-bit images have 256 bins, 16-bit images up to 65536. The kernels
+    # accumulate in float64, scikit-image in float32, so for many bins the
+    # thresholds can differ where the criterion is flat near its maximum (by a
+    # relative 1e-8 in the value of the criterion for the case below).
+    from skimage import filters as sk_filters
+
+    from cucim.skimage import filters as cu_filters
+
+    scale = np.iinfo(dtype).max
+    rng = np.random.default_rng(0)
+    image = np.clip(
+        data.camera().astype(np.float64) / 255 * scale
+        + rng.normal(0, 0.01 * scale, data.camera().shape),
+        0,
+        scale,
+    ).astype(dtype)
+    expected = getattr(sk_filters, f"threshold_{name}")(image)
+    result = getattr(cu_filters, f"threshold_{name}")(cp.asarray(image))
+    atol = 0 if dtype == np.uint8 else 1e-3 * scale
+    assert_allclose(result, expected, rtol=1e-6, atol=atol)
+
+
+@pytest.mark.parametrize("classes, nbins", [(2, 40), (3, 40), (4, 30), (5, 20)])
+def test_multiotsu_matches_exhaustive_search(classes, nbins):
+    import itertools
+
+    rng = np.random.default_rng(classes)
+    for _ in range(10):
+        counts = rng.integers(0, 1000, nbins)
+        counts[0] += 1
+        counts[-1] += 1
+        c = counts.astype(np.float64)
+        P = np.concatenate(([0.0], np.cumsum(c)))
+        S = np.concatenate(([0.0], np.cumsum(c * np.arange(nbins))))
+
+        def term(u, v):
+            w = P[v] - P[u]
+            return np.where(
+                w > 0, (S[v] - S[u]) ** 2 / np.where(w > 0, w, 1), 0
+            )
+
+        cand = np.array(
+            list(itertools.combinations(range(nbins - 1), classes - 1))
+        )
+        edges = np.concatenate(
+            [
+                np.zeros((len(cand), 1), int),
+                cand + 1,
+                np.full((len(cand), 1), nbins),
+            ],
+            axis=1,
+        )
+        value = sum(term(edges[:, k], edges[:, k + 1]) for k in range(classes))
+        expected = cand[int(np.argmax(value))]  # first maximum
+        result = threshold_multiotsu(
+            classes=classes, hist=(cp.asarray(counts), cp.arange(nbins))
+        )
+        assert_array_equal(result, expected)
+
+
+def _multiotsu_plain_dp(counts, classes):
+    """Thresholds from the dynamic programming that searches every pair of
+    thresholds in each stage (smallest end bin among equal maxima)."""
+    n = counts.size
+    c = counts.astype(np.float32).astype(np.float64)
+    P = np.concatenate(([0.0], np.cumsum(c)))
+    S = np.concatenate(([0.0], np.cumsum(c * np.arange(n))))
+
+    def term(u, v):
+        w = P[v] - P[u]
+        return np.where(w > 0, (S[v] - S[u]) ** 2 / np.where(w > 0, w, 1), 0)
+
+    G = term(np.arange(n), n)  # the last class starts at bin u
+    backs = []
+    for k in range(classes - 1, 1, -1):
+        remaining = classes - k
+        u_end = n - remaining
+        G_out = np.zeros(n + 1)
+        back = np.zeros(n + 1, dtype=int)
+        for u in range(k - 1, u_end):
+            v = np.arange(u + 1, u_end + 1)
+            value = term(u, v) + G[v]
+            i = int(np.argmax(value))
+            G_out[u], back[u] = value[i], v[i]
+        G = G_out
+        backs.append((k, back))
+    v = np.arange(1, n - (classes - 1) + 1)
+    chain = {1: {0: int(v[int(np.argmax(term(0, v) + G[v]))])}}
+    chain.update({k: b for k, b in backs})
+    u, thresholds = 0, []
+    for k in range(1, classes):
+        v = int(chain[k][u])
+        thresholds.append(v - 1)
+        u = v
+    return np.array(thresholds)
+
+
+@pytest.mark.parametrize("classes", [3, 4, 6])
+@pytest.mark.parametrize("kind", ["random", "ties", "sparse", "palindrome"])
+def test_multiotsu_divide_and_conquer_matches_plain_dp(classes, kind):
+    # Every stage is searched by divide and conquer, which relies on the best
+    # previous threshold not decreasing with the end bin. Check that the result
+    # is the one of the search over all pairs, also for exact ties.
+    rng = np.random.default_rng(classes)
+    nbins = 701  # not a power of two: several levels with unequal bounds
+    for _ in range(3):
+        if kind == "random":
+            counts = rng.integers(0, 1000, nbins)
+        elif kind == "ties":
+            counts = rng.integers(0, 3, nbins)
+        elif kind == "sparse":
+            counts = (rng.random(nbins) < 0.1) * rng.integers(1, 50, nbins)
+        else:
+            half = rng.integers(0, 100, nbins // 2)
+            counts = np.concatenate([half, [5], half[::-1]])
+        counts[0] += 1
+        counts[-1] += 1
+        expected = _multiotsu_plain_dp(counts, classes)
+        result = threshold_multiotsu(
+            classes=classes,
+            hist=(cp.asarray(counts), cp.arange(nbins)),
+        )
+        assert_array_equal(result, expected)
+
+
+def test_multiotsu_many_bins():
+    # 16-bit image: 65536 bins; two classes give Otsu's threshold
+    rng = np.random.default_rng(0)
+    image = np.concatenate(
+        [rng.normal(15000, 2000, 6000), rng.normal(40000, 3000, 4000)]
+    )
+    image = cp.asarray(np.clip(image, 0, 65535).astype(np.uint16)).reshape(
+        100, 100
+    )
+    assert threshold_multiotsu(image, 2) == threshold_otsu(image)
+    thresholds = threshold_multiotsu(image, 3)
+    assert thresholds.shape == (2,)
+    assert thresholds[0] < thresholds[1]
+    assert thresholds.dtype == image.dtype or thresholds.dtype.kind in "iuf"
+
+
+@pytest.mark.parametrize("dtype", [np.uint8, np.uint16, np.float32, np.float64])
+@pytest.mark.parametrize("name", ["otsu", "triangle"])
+def test_constant_image_returns_the_pixel_value(name, dtype):
+    from cucim.skimage import filters
+
+    image = cp.full((20, 30), 7, dtype=dtype)
+    result = getattr(filters, f"threshold_{name}")(image)
+    assert result == 7
+    assert result.dtype == dtype
+
+    # almost constant: one pixel is different
+    image[3, 4] = 9
+    assert 7 <= getattr(filters, f"threshold_{name}")(image) <= 9
+
+
+@pytest.mark.parametrize("nbins", [16, 100, 256, 1000, 4200])
+def test_threshold_minimum_matches_skimage_on_synthetic_histograms(nbins):
+    # the GPU smoothing loop gives the same threshold, or the same error, as
+    # scikit-image (4200 bins use the scikit-image function itself)
+    from skimage.filters import threshold_minimum as sk_threshold_minimum
+
+    rng = np.random.default_rng(nbins)
+    x = np.arange(nbins)
+    # (the scikit-image function is slow for many bins and iterations)
+    for kind in range(1 if nbins > 4096 else 4):
+        if kind in (1, 2) and nbins > 256:
+            continue  # (many iterations: slow for scikit-image)
+        if kind == 0:  # bimodal
+            counts = np.exp(-0.5 * ((x - nbins * 0.25) / (nbins * 0.07)) ** 2)
+            counts = counts * 1000 + 600 * np.exp(
+                -0.5 * ((x - nbins * 0.7) / (nbins * 0.1)) ** 2
+            )
+        elif kind == 1:  # noisy: many maxima
+            counts = rng.integers(0, 1000, nbins).astype(float)
+        elif kind == 2:  # unimodal: no second maximum
+            counts = 1000 * np.exp(
+                -0.5 * ((x - nbins * 0.5) / (nbins * 0.1)) ** 2
+            )
+        else:  # three modes
+            counts = sum(
+                a * np.exp(-0.5 * ((x - nbins * m) / (nbins * 0.05)) ** 2)
+                for a, m in ((900, 0.2), (700, 0.5), (800, 0.8))
+            )
+        counts = np.round(counts + rng.integers(0, 3, nbins)).astype(np.float32)
+        counts[0] += 1
+        counts[-1] += 1
+        centers = x * 1.5 + 2
+        try:
+            expected = sk_threshold_minimum(hist=(counts, centers))
+        except RuntimeError as e:
+            with pytest.raises(RuntimeError, match=str(e)[:20]):
+                threshold_minimum(
+                    hist=(cp.asarray(counts), cp.asarray(centers))
+                )
+        else:
+            result = threshold_minimum(
+                hist=(cp.asarray(counts), cp.asarray(centers))
+            )
+            assert float(result) == float(expected)
+
+
+@pytest.mark.parametrize("dtype", [np.uint8, np.uint16, np.int16, np.int8])
+@pytest.mark.parametrize("kind", ["camera", "bimodal", "uniform"])
+def test_threshold_li_integer_images(dtype, kind):
+    from skimage.filters import threshold_li as sk_threshold_li
+
+    rng = np.random.default_rng(0)
+    shape = data.camera().shape
+    if kind == "camera":
+        values = data.camera().astype(np.float64)
+    elif kind == "bimodal":
+        values = np.where(
+            rng.random(shape) < 0.4,
+            rng.normal(60, 10, shape),
+            rng.normal(180, 15, shape),
+        )
+    else:
+        values = rng.integers(0, 256, shape).astype(np.float64)
+    info = np.iinfo(dtype)
+    if np.dtype(dtype).itemsize == 2:
+        values = values * 100
+    if info.min < 0:  # center the values around zero
+        values = values - (values.max() + values.min()) / 2
+    image = np.clip(values, info.min, info.max).astype(dtype)
+    assert image.min() < image.max()
+
+    calls = []
+    result = threshold_li(cp.asarray(image), iter_callback=calls.append)
+    # scikit-image subtracts the minimum in the image dtype, which overflows
+    # for signed types when the range is larger than the maximum of the type
+    # (it returns nan or a wrong value): use a float copy there (with the
+    # tolerance of the integer algorithm)
+    if (
+        np.dtype(dtype).kind == "i"
+        and int(image.max()) - int(image.min()) > info.max
+    ):
+        expected = sk_threshold_li(image.astype(np.float64), tolerance=0.5)
+    else:
+        expected = sk_threshold_li(image)
+    assert_allclose(result, expected, rtol=1e-9)
+    assert len(calls) >= 2
+    assert_allclose(calls[-1], result)
+
+
+def test_threshold_li_integer_constant_image():
+    image = cp.full((10, 12), 5, dtype=cp.uint8)
+    assert threshold_li(image) == 5
+
+
+@pytest.mark.parametrize("window_size", [3, 15, (5, 11)])
+def test_niblack_sauvola_local_statistics(window_size):
+    # The local mean and standard deviation are computed in float64 before they
+    # are cast: scikit-image casts the mean to float32 first, which loses the
+    # standard deviation of images with a large offset. Reference: box filters
+    # of the image shifted by the offset, in float64 on the host.
+    import scipy.ndimage as scipy_ndi
+
+    from cucim.skimage.filters.thresholding import _mean_std
+
+    image = (data.camera().astype(np.float32) / 255 + 1000).astype(np.float32)
+    shifted = image.astype(np.float64) - 1000.0
+    mean0 = scipy_ndi.uniform_filter(shifted, window_size, mode="mirror")
+    mean_sq0 = scipy_ndi.uniform_filter(
+        shifted * shifted, window_size, mode="mirror"
+    )
+    expected_std = np.sqrt(np.maximum(mean_sq0 - mean0 * mean0, 0))
+
+    m, s = _mean_std(cp.asarray(image), window_size)
+    assert m.dtype == s.dtype == np.float32
+    assert_allclose(m, mean0 + 1000.0, rtol=1e-6)
+    # (the variance is a difference of values of about 1e6, in float64)
+    assert_allclose(s, expected_std, rtol=1e-4, atol=1e-4 * expected_std.max())

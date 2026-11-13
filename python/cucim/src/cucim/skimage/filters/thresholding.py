@@ -2,11 +2,10 @@
 # SPDX-FileCopyrightText: 2009 Zachary Pincus
 # SPDX-FileCopyrightText: 2009 Almar Klein
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause
 
 import inspect
-import itertools
 import math
 from collections import OrderedDict
 from collections.abc import Iterable
@@ -16,9 +15,6 @@ import numpy as np
 from skimage.filters import (
     threshold_isodata as _threshold_isodata_cpu,
     threshold_minimum as _threshold_minimum_cpu,
-    threshold_multiotsu as _threshold_multiotsu_cpu,
-    threshold_otsu as _threshold_otsu_cpu,
-    threshold_yen as _threshold_yen_cpu,
 )
 
 import cucim.skimage._vendored.ndimage as ndi
@@ -26,11 +22,19 @@ import cucim.skimage._vendored.ndimage as ndi
 from .._shared.filters import gaussian
 from .._shared.utils import _supported_float_type, warn
 from .._shared.version_requirements import require
-from .._vendored import pad
 from ..exposure import histogram
-from ..transform import integral_image
 from ..util import dtype_limits
-from ._sparse import _correlate_sparse, _validate_window_size
+from ._sparse import _validate_window_size
+from ._thresholding_kernels import (
+    _MINIMUM_MAX_BINS,
+    _mean_std_kernel,
+    _multiotsu_threshold_indices,
+    _threshold_isodata_gpu,
+    _threshold_minimum_gpu,
+    _threshold_otsu_gpu,
+    _threshold_triangle_gpu,
+    _threshold_yen_gpu,
+)
 
 __all__ = [
     "try_all_threshold",
@@ -352,6 +356,22 @@ def _validate_image_histogram(image, hist, nbins=None, normalize=False):
     return counts.astype(cp.float32, copy=False), bin_centers
 
 
+def _first_pixel_if_constant(image, counts):
+    """Return the first pixel if the histogram shows a constant image.
+
+    This avoids a pass over the image to compare it with its first pixel. The
+    range of the histogram is the one of the image, so the first and the last
+    bin are not empty unless the image has a single value: for an integer image
+    the histogram then has a single bin, and for a floating point image a
+    single non-empty bin.
+    """
+    if counts.size == 1 or (
+        image.dtype.kind == "f" and int(cp.count_nonzero(counts)) == 1
+    ):
+        return image.ravel()[0]
+    return None
+
+
 def threshold_otsu(image=None, nbins=256, *, hist=None):
     """Return threshold value based on Otsu's method.
 
@@ -380,6 +400,9 @@ def threshold_otsu(image=None, nbins=256, *, hist=None):
     References
     ----------
     .. [1] Wikipedia, https://en.wikipedia.org/wiki/Otsu's_Method
+    .. [2] Otsu, N., "A threshold selection method from gray-level
+           histograms", IEEE Transactions on Systems, Man, and Cybernetics
+           9(1): 62-66, 1979. :DOI:`10.1109/TSMC.1979.4310076`
 
     Examples
     --------
@@ -400,20 +423,22 @@ def threshold_otsu(image=None, nbins=256, *, hist=None):
             f"that of an RGB image."
         )
 
-    # Check if the image has more than one intensity value; if not, return that
-    # value
-    if image is not None:
+    if image is not None and hist is not None:
+        # (the histogram is not the one of the image)
         first_pixel = image.ravel()[0]
         if cp.all(image == first_pixel):  # device synchronization!
             return first_pixel
 
     counts, bin_centers = _validate_image_histogram(image, hist, nbins)
-    # small size counts, bin_centers -> faster on the host
-    counts = cp.asnumpy(counts)
-    bin_centers = cp.asnumpy(bin_centers)
-    return cp.asarray(
-        _threshold_otsu_cpu(nbins=nbins, hist=(counts, bin_centers))
-    )
+
+    # Check if the image has more than one intensity value; if not, return that
+    # value
+    if image is not None and hist is None:
+        first_pixel = _first_pixel_if_constant(image, counts)
+        if first_pixel is not None:
+            return first_pixel
+
+    return _threshold_otsu_gpu(counts, bin_centers)
 
 
 def threshold_yen(image=None, nbins=256, *, hist=None):
@@ -465,13 +490,7 @@ def threshold_yen(image=None, nbins=256, *, hist=None):
     if bin_centers.size == 1:
         return bin_centers[0]
 
-    # Calculate probability mass function
-    # (small size counts -> faster on the host)
-    counts = cp.asnumpy(counts)
-    bin_centers = cp.asnumpy(bin_centers)
-    return cp.asarray(
-        _threshold_yen_cpu(nbins=nbins, hist=(counts, bin_centers))
-    )
+    return _threshold_yen_gpu(counts, bin_centers)
 
 
 def threshold_isodata(image=None, nbins=256, return_all=False, *, hist=None):
@@ -544,6 +563,9 @@ def threshold_isodata(image=None, nbins=256, return_all=False, *, hist=None):
         else:
             return bin_centers[0]
 
+    if not return_all:
+        return _threshold_isodata_gpu(counts, bin_centers)
+
     # small size counts, bin_centers -> faster on the host
     counts = cp.asnumpy(counts)
     bin_centers = cp.asnumpy(bin_centers)
@@ -611,6 +633,65 @@ def _cross_entropy(image, threshold, bins=_DEFAULT_ENTROPY_BINS):
     return nu
 
 
+def _threshold_li_integer(image, tolerance, iter_callback):
+    """Li's iterative method for an image of integers, from its histogram.
+
+    The same iteration as in `threshold_li`, with the histogram of the image
+    (one pass, then one small transfer to the host) instead of passes over the
+    image to remove nan and non-finite values (there are none in integer
+    images), to look for a constant image, to subtract the minimum and to
+    compute the mean.
+    """
+    hist, bin_centers = histogram(image.reshape(-1), source_range="image")
+    if hist.size == 1:
+        # constant image: return that value
+        return image.ravel()[0]
+
+    counts = cp.asnumpy(hist)  # synchronize
+    centers = cp.asnumpy(bin_centers).astype(np.int64)
+    image_min = bin_centers[0].astype(image.dtype)
+    centers = centers - centers[0]  # the image minus its minimum
+    weights = counts.astype(np.float32)  # as in the iteration of threshold_li
+
+    tolerance = tolerance or 0.5
+    # initial estimate: the mean of the image (minus its minimum)
+    t_next = float((centers * counts).sum()) / int(counts.sum())
+    t_curr = -2 * tolerance
+    if iter_callback is not None:
+        iter_callback(t_next + image_min)
+
+    eps = 100 * np.finfo(float).eps
+    while abs(t_next - t_curr) > tolerance:
+        t_curr = t_next
+        foreground = centers > t_curr
+        background = ~foreground
+        with np.errstate(invalid="ignore", divide="ignore"):
+            mean_fore = float(
+                np.multiply(
+                    centers[foreground], weights[foreground], dtype=np.float64
+                ).sum()
+                / weights[foreground].sum(dtype=np.float64)
+            )
+            mean_back = float(
+                np.multiply(
+                    centers[background], weights[background], dtype=np.float64
+                ).sum()
+                / weights[background].sum(dtype=np.float64)
+            )
+
+        if mean_back == 0:
+            break
+
+        t_next = (mean_back - mean_fore) / (
+            math.log(mean_back + eps) - math.log(mean_fore + eps)
+        )
+
+        if iter_callback is not None:
+            iter_callback(t_next + image_min)
+
+    return t_next + image_min
+
+
 def threshold_li(
     image, *, tolerance=None, initial_guess=None, iter_callback=None
 ):
@@ -668,6 +749,10 @@ def threshold_li(
     >>> thresh = threshold_li(image)
     >>> binary = image > thresh
     """  # noqa
+    if image.dtype.kind in "iu" and initial_guess is None and image.size > 0:
+        # integer images: everything is computed from the histogram
+        return _threshold_li_integer(image, tolerance, iter_callback)
+
     # Remove nan:
     image = image[~cp.isnan(image)]
     if image.size == 0:
@@ -836,13 +921,19 @@ def threshold_minimum(image=None, nbins=256, max_num_iter=10000, *, hist=None):
     """
 
     counts, bin_centers = _validate_image_histogram(image, hist, nbins)
-    counts = cp.asnumpy(counts).astype(np.float32, copy=False)
-    bin_centers = cp.asnumpy(bin_centers)
-    return cp.asarray(
-        _threshold_minimum_cpu(
-            nbins=nbins, max_num_iter=max_num_iter, hist=(counts, bin_centers)
+    if counts.size > _MINIMUM_MAX_BINS:
+        # too large for the shared memory of the kernel
+        return cp.asarray(
+            _threshold_minimum_cpu(
+                nbins=nbins,
+                max_num_iter=max_num_iter,
+                hist=(
+                    cp.asnumpy(counts).astype(np.float32, copy=False),
+                    cp.asnumpy(bin_centers),
+                ),
+            )
         )
-    )
+    return _threshold_minimum_gpu(counts, bin_centers, max_num_iter)
 
 
 def threshold_mean(image):
@@ -914,74 +1005,21 @@ def threshold_triangle(image, nbins=256):
     # nbins is ignored for integer arrays
     # so, we recalculate the effective nbins.
     hist, bin_centers = histogram(image.ravel(), nbins, source_range="image")
-    if hist.size == 1:
-        # integer-valued image with constant intensity will have just 1 bin
-        return image.ravel()[0]
+    # constant intensity: a single bin (integer-valued image) or a single
+    # non-empty bin (floating point image)
+    first_pixel = _first_pixel_if_constant(image, hist)
+    if first_pixel is not None:
+        return first_pixel
 
-    # In most cases, nbins is small so it is better to process hist on the CPU
-    if nbins > 100000:
-        xp = cp
-    else:
-        xp = np
-        hist = cp.asnumpy(hist)
-
-    nbins = len(hist)
-    # Find peak, lowest and highest gray levels.
-    arg_peak_height = xp.argmax(hist)
-    arg_low_level, arg_high_level = xp.flatnonzero(hist)[[0, -1]]
-    if arg_low_level == arg_high_level:
-        # Image has constant intensity.
-        return image.ravel()[0]
-    peak_height = hist[arg_peak_height]
-
-    # Flip is True if left tail is shorter.
-    flip = arg_peak_height - arg_low_level < arg_high_level - arg_peak_height
-    if flip:
-        hist = hist[::-1]
-        arg_low_level = nbins - arg_high_level - 1
-        arg_peak_height = nbins - arg_peak_height - 1
-
-    # If flip == True, arg_high_level becomes incorrect
-    # but we don't need it anymore.
-    del arg_high_level
-
-    # Set up the coordinate system.
-    width = arg_peak_height - arg_low_level
-    x1 = xp.arange(width)
-    y1 = hist[x1 + arg_low_level]
-
-    # Normalize.
-    norm = xp.sqrt(peak_height**2 + width**2)
-    try:
-        peak_height /= norm
-        width /= norm
-    except TypeError:
-        # TODO: CuPy bug?
-        # workaround for:
-        #    TypeError: output (typecode 'd') could not be coerced to provided
-        #    output parameter (typecode 'l') according to the casting rule
-        #    "same_kind"
-        peak_height = peak_height / norm
-        width = width / norm
-
-    # Maximize the length.
-    # The ImageJ implementation includes an additional constant when calculating
-    # the length, but here we omit it as it does not affect the location of the
-    # minimum.
-    length = peak_height * x1 - width * y1
-    arg_level = xp.argmax(length) + arg_low_level
-
-    if flip:
-        arg_level = nbins - arg_level - 1
-
-    return bin_centers[arg_level]
+    return _threshold_triangle_gpu(hist, bin_centers)
 
 
 def _mean_std(image, w):
     """Return local mean and standard deviation of each pixel using a
     neighborhood defined by a rectangular window size ``w``.
-    The algorithm uses integral images to speedup computation. This is
-    used by :func:`threshold_niblack` and :func:`threshold_sauvola`.
+    The mean and the mean of the squares are computed with box filters in
+    float64. This is used by :func:`threshold_niblack` and
+    :func:`threshold_sauvola`.
 
     Parameters
     ----------
@@ -1012,39 +1050,32 @@ def _mean_std(image, w):
     _validate_window_size(w)
 
     float_dtype = _supported_float_type(image.dtype)
-    pad_width = tuple((k // 2 + 1, k // 2) for k in w)
-    padded = pad(
-        image.astype(float_dtype, copy=False), pad_width, mode="reflect"
-    )
+    # Box sums of the image and of its square in float64, divided by the number
+    # of elements of the window once at the end. The sums of integer-valued
+    # images are exact, and the variance (a difference of two nearly equal
+    # values) is computed in float64 before it is cast. The mode "mirror" is the
+    # "reflect" mode of numpy.pad (the edge value is not repeated).
+    values = image.astype(cp.float64)
+    sums = _box_sum(values, w)
+    values *= values
+    sums_sq = _box_sum(values, w)
+    del values
+    mean = cp.empty(sums.shape, dtype=float_dtype)
+    std = cp.empty(sums.shape, dtype=float_dtype)
+    # Note: g2 is not guaranteed to be greater than m*m when floating point
+    # error is considered, so the variance is clipped at 0
+    _mean_std_kernel(sums, sums_sq, float(math.prod(w)), mean, std)
+    return mean, std
 
-    # Note: keep float64 integral images for accuracy. Outputs of
-    # _correlate_sparse can later be safely cast to float_dtype
-    integral = integral_image(padded, dtype=np.float64)
-    padded *= padded
-    integral_sq = integral_image(padded, dtype=np.float64)
 
-    # Create lists of non-zero kernel indices and values
-    kernel_indices = list(itertools.product(*tuple([(0, _w) for _w in w])))
-    kernel_values = [
-        (-1) ** (image.ndim % 2 != np.sum(indices) % 2)
-        for indices in kernel_indices
-    ]
-
-    total_window_size = math.prod(w)
-    kernel_shape = tuple(_w + 1 for _w in w)
-    m = _correlate_sparse(integral, kernel_shape, kernel_indices, kernel_values)
-    m = m.astype(float_dtype, copy=False)
-    m /= total_window_size
-    g2 = _correlate_sparse(
-        integral_sq, kernel_shape, kernel_indices, kernel_values
-    )
-    g2 = g2.astype(float_dtype, copy=False)
-    g2 /= total_window_size
-    # Note: we use np.clip because g2 is not guaranteed to be greater than
-    # m*m when floating point error is considered
-    s = cp.clip(g2 - m * m, 0, None)
-    cp.sqrt(s, out=s)
-    return m, s
+def _box_sum(values, w):
+    """Sums over the windows of sizes ``w`` (separable, mode "mirror")."""
+    for axis, size in enumerate(w):
+        if size > 1:
+            values = ndi.correlate1d(
+                values, cp.ones(size), axis=axis, mode="mirror"
+            )
+    return values
 
 
 def threshold_niblack(image, window_size=15, k=0.2):
@@ -1230,7 +1261,7 @@ def threshold_multiotsu(image=None, classes=3, nbins=256, *, hist=None):
     following Otsu's method for multiple classes.
 
     The threshold values are chosen to maximize the total sum of pairwise
-    variances between the thresholded graylevel classes. See Notes and [1]_
+    variances between the thresholded graylevel classes [3]_. See Notes and [1]_
     for more details.
 
     Either image or hist must be provided. If hist is provided, the actual
@@ -1264,10 +1295,36 @@ def threshold_multiotsu(image=None, classes=3, nbins=256, *, hist=None):
 
     Notes
     -----
-    This implementation relies on a Cython function whose complexity
-    is :math:`O\left(\frac{Ch^{C-1}}{(C-1)!}\right)`, where :math:`h`
-    is the number of histogram bins and :math:`C` is the number of
-    classes desired.
+    This implementation finds the thresholds with an exact search by dynamic
+    programming on the GPU, whose complexity is :math:`O(C h \log h)`, where
+    :math:`h` is the number of histogram bins and :math:`C` is the number of
+    classes desired (the exhaustive search of scikit-image is
+    :math:`O\left(\frac{Ch^{C-1}}{(C-1)!}\right)`, and the plain dynamic
+    programming is :math:`O(C h^2)`). The criterion is the sum
+    over the classes of :math:`S^2/P`, the squared sum of the gray levels
+    weighted by the histogram divided by the number of pixels of the class [1]_
+    (the "modified between-class variance"). It is a sum of terms that each
+    depend only on the two thresholds that bound a class, so the best
+    thresholds for :math:`k` classes up to each bin follow from those for
+    :math:`k - 1` classes by maximizing over the previous threshold, and the
+    thresholds are recovered by following back pointers [4]_. The best
+    previous threshold does not decrease with the end bin of the class (the
+    matrix of each stage is totally monotone [4]_), so each stage is
+    searched by divide and conquer instead of over all pairs of thresholds,
+    which gives the :math:`h \log h` factor. The search
+    goes from the last class to the first, which gives the smallest
+    thresholds in lexicographic order among thresholds with exactly the same
+    value of the criterion, as in scikit-image. The arithmetic is in float64.
+
+    The thresholds are the same as those of scikit-image for typical images
+    (for the sample images of ``skimage.data`` tried, 54 of the 57 results with
+    2 to 4 classes are identical and the other 3 differ by one bin). The search
+    of scikit-image accumulates in float32 and gives the first bin a weight of
+    one instead of zero in the class that contains it, so for some histograms
+    (mostly those with several nearly equal maxima) it does not return the
+    thresholds that maximize the variance between classes, while this
+    implementation does. Thresholds with exactly equal values of the criterion
+    can still be chosen differently from scikit-image because of rounding.
 
     If no hist is given, this function will make use of
     `skimage.exposure.histogram`, which behaves differently than
@@ -1286,6 +1343,13 @@ def threshold_multiotsu(image=None, classes=3, nbins=256, *, hist=None):
     .. [2] Tosa, Y., "Multi-Otsu Threshold", a java plugin for ImageJ.
            Available at:
            <http://imagej.net/plugins/download/Multi_OtsuThreshold.java>
+    .. [3] Otsu, N., "A threshold selection method from gray-level
+           histograms", IEEE Transactions on Systems, Man, and Cybernetics
+           9(1): 62-66, 1979. :DOI:`10.1109/TSMC.1979.4310076`
+    .. [4] Luessi, M., Eichmann, M., Schuster, G. M. and Katsaggelos, A. K.,
+           "New results on efficient optimal multilevel image thresholding",
+           IEEE International Conference on Image Processing (ICIP) 2006,
+           pp. 773-776. :DOI:`10.1109/ICIP.2006.312426`
 
     Examples
     --------
@@ -1306,16 +1370,23 @@ def threshold_multiotsu(image=None, classes=3, nbins=256, *, hist=None):
             f"that of an RGB image."
         )
 
-    # calculating the histogram and the probability of each gray level.
-    prob, bin_centers = _validate_image_histogram(
-        image, hist, nbins, normalize=True
-    )
-    prob = cp.asnumpy(prob).astype(cp.float32, copy=False)
-    bin_centers = cp.asnumpy(bin_centers)
-    return cp.asarray(
-        _threshold_multiotsu_cpu(
-            classes=classes,
-            nbins=nbins,
-            hist=(prob, bin_centers),
+    # the histogram of the gray levels
+    counts, bin_centers = _validate_image_histogram(image, hist, nbins)
+
+    if counts.size >= classes:
+        thresh_idx, n_nonzero = _multiotsu_threshold_indices(counts, classes)
+        nvalues = int(n_nonzero[0])  # device synchronization!
+    else:
+        nvalues = int(cp.count_nonzero(counts))
+    if nvalues < classes:
+        msg = (
+            f"After discretization into bins, the input image has "
+            f"only {nvalues} different values. It cannot be thresholded "
+            f"in {classes} classes. If there are more unique values "
+            f"before discretization, try increasing the number of bins "
+            f"(`nbins`)."
         )
-    )
+        raise ValueError(msg)
+    elif nvalues == classes:
+        thresh_idx = cp.flatnonzero(counts)[:-1]
+    return bin_centers[thresh_idx]
