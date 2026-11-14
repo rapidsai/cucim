@@ -1,12 +1,14 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
 import numpy as np
 
 from .._shared import utils
+from .._shared._reduction_kernels import _get_minmax
 from ..util.dtype import dtype_limits, dtype_range
+from ._histogram_kernels import _bincount_rows
 
 __all__ = [
     "histogram",
@@ -48,27 +50,34 @@ def _offset_array(arr, low_boundary, high_boundary):
     return arr
 
 
-def _bincount_histogram_centers(image, source_range):
-    """Compute bin centers for bincount-based histogram."""
+def _bincount_histogram_centers(image, source_range, *, return_range=False):
+    """Compute integer bin centers, optionally retaining their host bounds."""
     if source_range not in ["image", "dtype"]:
         raise ValueError(
             f"Incorrect value for `source_range` argument: {source_range}"
         )
     if source_range == "image":
-        image_min = int(image.min().astype(np.int64))  # synchronize
-        image_max = int(image.max().astype(np.int64))  # synchronize
+        image_min, image_max = (
+            _get_minmax(image).get().astype(np.int64, copy=False).tolist()
+        )
     elif source_range == "dtype":
         image_min, image_max = dtype_limits(image, clip_negative=False)
     bin_centers = cp.arange(image_min, image_max + 1)
+    if return_range:
+        return bin_centers, (image_min, image_max)
     return bin_centers
 
 
-def _bincount_histogram(image, source_range, bin_centers=None):
+def _bincount_histogram(
+    image, source_range, bin_centers=None, *, bin_range=None
+):
     """
     Efficient histogram calculation for an image of integers.
 
     This function is significantly more efficient than cupy.histogram but
-    works only on images of integers. It is based on cupy.bincount.
+    works only on images of integers. Known compact ranges use shared-memory
+    counting; wider ranges retain cupy.bincount. Pass `bin_range` with supplied
+    centers to reuse their host bounds.
 
     Parameters
     ----------
@@ -87,9 +96,23 @@ def _bincount_histogram(image, source_range, bin_centers=None):
         The values at the center of the bins.
     """
     if bin_centers is None:
-        bin_centers = _bincount_histogram_centers(image, source_range)
-    image_min, image_max = bin_centers[0].item(), bin_centers[-1].item()
-    image = _offset_array(image, image_min, image_max)  # synchronize  # noqa
+        bin_centers, bin_range = _bincount_histogram_centers(
+            image, source_range, return_range=True
+        )
+    if bin_range is None:
+        image_min, image_max = bin_centers[0].item(), bin_centers[-1].item()
+    else:
+        # The caller already determined these bounds before making GPU bins.
+        image_min, image_max = bin_range
+    nbins = image_max - image_min + 1
+    if (
+        bin_range is not None
+        and 0 < nbins <= 4096
+        and -(1 << 63) <= image_min < (1 << 63)
+    ):
+        hist = _bincount_rows(image.reshape(1, -1), nbins, image_min)[0]
+        return hist, bin_centers
+    image = _offset_array(image, image_min, image_max)
 
     # Casting back to unsigned dtype seems necessary to avoid incorrect
     # results for larger integer ranges with CUDA 12.x.
@@ -142,10 +165,7 @@ def _get_outer_edges(image, hist_range):
         # handle empty arrays. Can't determine hist_range, so use 0-1.
         first_edge, last_edge = 0, 1
     else:
-        first_edge, last_edge = (
-            float(image.min()),
-            float(image.max()),
-        )  # synchronize  # noqa
+        first_edge, last_edge = map(float, _get_minmax(image).get().tolist())
         if not (np.isfinite(first_edge) and np.isfinite(last_edge)):
             raise ValueError(
                 f"autodetected hist_range of [{first_edge}, {last_edge}] is "
@@ -283,18 +303,27 @@ def histogram(
     if channel_axis is not None:
         channels = sh[-1]
         hist = []
+        bin_range = None
 
         # compute bins based on the raveled array
         if cp.issubdtype(image.dtype, cp.integer):
             # here bins corresponds to the bin centers
-            bins = _bincount_histogram_centers(image, source_range)
+            bins, bin_range = _bincount_histogram_centers(
+                image, source_range, return_range=True
+            )
         else:
             # determine the bin edges for np.histogram
             hist_range = _get_numpy_hist_range(image, source_range)
             bins = _get_bin_edges(image, nbins, hist_range)
 
         for chan in range(channels):
-            h, bc = _histogram(image[..., chan], bins, source_range, normalize)
+            h, bc = _histogram(
+                image[..., chan],
+                bins,
+                source_range,
+                normalize,
+                bin_range=bin_range,
+            )
             hist.append(h)
         # Convert to numpy arrays
         bin_centers = cp.asarray(bc)
@@ -305,7 +334,7 @@ def histogram(
     return hist, bin_centers
 
 
-def _histogram(image, bins, source_range, normalize):
+def _histogram(image, bins, source_range, normalize, *, bin_range=None):
     """
 
     Parameters
@@ -325,15 +354,50 @@ def _histogram(image, bins, source_range, normalize):
         If True, normalize the histogram by the sum of its values.
     """
 
-    image = image.flatten()
+    image = image.ravel()
     # For integer types, histogramming with bincount is more efficient.
     if np.issubdtype(image.dtype, cp.integer):
         bin_centers = bins if isinstance(bins, cp.ndarray) else None
         hist, bin_centers = _bincount_histogram(
-            image, source_range, bin_centers
+            image, source_range, bin_centers, bin_range=bin_range
         )
     else:
         hist_range = _get_numpy_hist_range(image, source_range)
+        if (
+            isinstance(bins, (int, np.integer))
+            and bins > 0
+            and hist_range is None
+        ):
+            hist_range = _get_outer_edges(image, None)
+            # Dyadic bins over [0, 1] are exact in the input dtype, so the
+            # host-scalar fast path also preserves their rounding.
+            exact_unit_bins = image.dtype.kind == "f" and (
+                hist_range == (0.0, 1.0)
+                and bins & (bins - 1) == 0
+                and bins <= 1 << np.finfo(image.dtype).nmant
+            )
+            if image.size and image.dtype.kind == "f" and not exact_unit_bins:
+                # Typed endpoints retain the arithmetic used by CuPy's
+                # device-scalar linspace. Python float endpoints instead use
+                # its double-precision fast path, which can move bin edges.
+                first, last = map(image.dtype.type, hist_range)
+                delta = float(last) - float(first)
+                tiny = np.finfo(np.float32).tiny
+                exceptional = not np.isfinite(delta) or (
+                    image.dtype == np.float32
+                    and (
+                        abs(delta) > np.finfo(np.float32).max
+                        or any(
+                            0 < abs(v) < tiny
+                            for v in (first, last, delta, delta / bins)
+                        )
+                    )
+                )
+                if exceptional:
+                    # Retain CuPy's overflow and float32 flush-to-zero rules.
+                    hist_range = None
+                else:
+                    bins = np.linspace(first, last, bins + 1, dtype=image.dtype)
         hist, bin_edges = cp.histogram(image, bins=bins, range=hist_range)
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
 
@@ -464,8 +528,8 @@ def intensity_range(image, range_values="image", clip_negative=False):
         range_values = image.dtype.type
 
     if range_values == "image":
-        i_min = image.min().item()
-        i_max = image.max().item()
+        # Preserve host scalar results while transferring both extrema together.
+        i_min, i_max = _get_minmax(image).get().tolist()
     elif range_values in DTYPE_RANGE:
         i_min, i_max = DTYPE_RANGE[range_values]
         if clip_negative:
@@ -520,6 +584,40 @@ def _output_dtype(dtype_or_range, image_dtype):
             "Incorrect value for out_range, should be a valid image data "
             f"type or a pair of values, got {dtype_or_range}."
         )
+
+
+@cp.memoize(for_each_device=True)
+def _get_rescale_intensity_kernel(dtype):
+    """Fuse clipping and rescaling with separately rounded arithmetic stages."""
+    ctype = "float" if dtype == "float32" else "double"
+    return cp.ElementwiseKernel(
+        f"T image, {dtype} imin, {dtype} imax, {dtype} omin, {dtype} omax, "
+        f"{dtype} input_scale, {dtype} output_scale, bool constant",
+        "U output",
+        f"typedef {ctype} S;"
+        + """
+        S value = S(image);
+        value = value < imin ? imin : value;
+        value = value > imax ? imax : value;
+        if (imin > imax) value = imax;
+        if (isnan(imin) || isnan(imax)) value = imin + imax;
+        if (constant) {
+            value = value < omin ? omin : value;
+            value = value > omax ? omax : value;
+            if (omin > omax) value = omax;
+            if (isnan(omin) || isnan(omax)) value = omin + omax;
+        } else {
+            value = value - imin;
+            value = value / input_scale;
+            value = value * output_scale;
+            value = value + omin;
+        }
+        output = U(value);
+        """,
+        "cucim_rescale_intensity",
+        # Preserve the rounding of the separate multiply and add operations.
+        options=("-fmad=false",),
+    )
 
 
 def rescale_intensity(image, in_range="image", out_range="dtype"):
@@ -619,10 +717,16 @@ def rescale_intensity(image, in_range="image", out_range="dtype"):
     else:
         out_dtype = _output_dtype(out_range, image.dtype)
 
-    imin, imax = map(float, intensity_range(image, in_range))
-    omin, omax = map(
-        float, intensity_range(image, out_range, clip_negative=(imin >= 0))
-    )
+    input_range = intensity_range(image, in_range)
+    imin, imax = map(float, input_range)
+    # Both requests describe the original image, so reuse its extrema.
+    if in_range == "image" and out_range == "image":
+        output_range = input_range
+    else:
+        output_range = intensity_range(
+            image, out_range, clip_negative=(imin >= 0)
+        )
+    omin, omax = map(float, output_range)
 
     if np.any(np.isnan([imin, imax, omin, omax])):
         utils.warn(
@@ -630,6 +734,23 @@ def rescale_intensity(image, in_range="image", out_range="dtype"):
             "NaN to the full image. Provide intensity levels yourself to "
             "avoid this. E.g. with np.nanmin(image), np.nanmax(image).",
             stacklevel=2,
+        )
+
+    if image.dtype.kind in "biu" or image.dtype in (cp.float32, cp.float64):
+        # Python float bounds promote integer clipping to float64. Floating
+        # images retain their dtype at each arithmetic step.
+        computation_type = (
+            image.dtype.type if image.dtype.kind == "f" else np.float64
+        )
+        output = cp.empty(image.shape, dtype=out_dtype)
+        return _get_rescale_intensity_kernel(np.dtype(computation_type).name)(
+            image,
+            *map(
+                computation_type,
+                (imin, imax, omin, omax, imax - imin, omax - omin),
+            ),
+            imin == imax,
+            output,
         )
 
     image = cp.clip(image, imin, imax)

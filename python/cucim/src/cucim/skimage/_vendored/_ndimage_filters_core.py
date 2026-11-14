@@ -214,7 +214,7 @@ def _call_kernel(
     args.append(output)
     kernel(*args)
     if needs_temp:
-        output[:] = temp
+        temp[:] = output
         output = temp
     return output
 

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """A vendored subset of cupyx.scipy.ndimage._filters"""
@@ -8,6 +8,7 @@
 import math
 import platform
 import warnings
+from functools import lru_cache
 
 import cupy
 import numpy
@@ -30,6 +31,8 @@ except ImportError:
     compile_errors = (ResourceLimitError,)
 
 _is_not_windows = platform.system() != "Windows"
+_MAX_CACHED_GAUSSIAN_KERNELS = 64
+_MAX_CACHED_GAUSSIAN_KERNEL_BYTES = 1 << 20
 
 
 def correlate(
@@ -281,15 +284,74 @@ def _correlate_or_convolve1d(
 ):
     # Calls fast shared-memory convolution when possible, otherwise falls back
     # to the vendored elementwise _correlate_or_convolve
+    # Flatten only unfiltered trailing dimensions: axis-0 boundaries and sample
+    # order are identical in this view, including for channel-last images.
+    use_2d_view = (
+        input.ndim > 2
+        and axis in (0, -input.ndim)
+        and input.flags.c_contiguous
+        and input.size > 0
+        and (
+            not isinstance(output, cupy.ndarray)
+            or (
+                output.shape == input.shape
+                and output.flags.c_contiguous
+                and not cupy.shares_memory(input, output, "MAY_SHARE_BOUNDS")
+            )
+        )
+    )
+    # Any interior/last axis of a C-contiguous nD array can be viewed as
+    # (independent leading rows, filtered length, independent trailing values).
+    # Packed tiles handle small trailing sizes; the 3D kernel covers larger
+    # ones without creating a strided copy of the image.
+    view_axis = axis % input.ndim if -input.ndim <= axis < input.ndim else 0
+    use_row_view = (
+        input.ndim > 2
+        and view_axis > 0
+        and input.flags.c_contiguous
+        and 0 < input.size < (1 << 30)
+        and (
+            not isinstance(output, cupy.ndarray)
+            or (
+                output.shape == input.shape
+                and output.flags.c_contiguous
+                and not cupy.shares_memory(input, output, "MAY_SHARE_BOUNDS")
+            )
+        )
+    )
+    if use_row_view:
+        row_view_shape = (
+            math.prod(input.shape[:view_axis]),
+            input.shape[view_axis],
+            math.prod(input.shape[view_axis + 1 :]),
+        )
     default_algorithm = False
     if algorithm is None:
         default_algorithm = True
+        # Avoid mostly empty tiles on short filtered axes/rows. Large stacks
+        # need fuller tiles; tiny inputs favor lower setup cost.
+        if use_row_view:
+            use_row_view = (
+                row_view_shape[1] >= 8
+                and row_view_shape[1] * row_view_shape[2]
+                >= (32 if input.size <= 65536 else 64)
+                # The packed kernel splits rows across grid.y/grid.z. The
+                # existing wide-stride kernel tiles length/rows into y/z.
+                and (
+                    row_view_shape[2] <= 16
+                    or (
+                        row_view_shape[0] <= 4 * 65535
+                        and row_view_shape[1] <= 16 * 65535
+                    )
+                )
+            )
         if (
             _is_not_windows
-            and input.ndim == 2
+            and (input.ndim == 2 or use_2d_view or use_row_view)
             and weights.size <= 256
             and not (
-                cval < 0 and mode == "constant" and input.dtype.kind == "u"
+                mode in ("constant", "grid-constant")
+                and _unsupported_shmem_cval(cval, input.dtype)
             )
         ):
             algorithm = "shared_memory"
@@ -310,11 +372,54 @@ def _correlate_or_convolve1d(
     if mode == "wrap":
         mode = "grid-wrap"
     if algorithm == "shared_memory":
-        if input.ndim not in [2, 3]:
+        if input.ndim not in [2, 3] and not (use_2d_view or use_row_view):
             raise NotImplementedError(
                 f"shared_memory not implemented for ndim={input.ndim}"
             )
         try:
+            if use_row_view:
+                output_view = (
+                    output.reshape(row_view_shape)
+                    if isinstance(output, cupy.ndarray)
+                    else output
+                )
+                out = _shmem_convolve1d(
+                    input.reshape(row_view_shape),
+                    weights,
+                    axis=1,
+                    output=output_view,
+                    mode=mode,
+                    cval=cval,
+                    origin=origin,
+                    convolution=convolution,
+                )
+                return (
+                    output
+                    if isinstance(output, cupy.ndarray)
+                    else out.reshape(input.shape)
+                )
+            if use_2d_view:
+                shape_2d = (input.shape[0], input.size // input.shape[0])
+                output_view = (
+                    output.reshape(shape_2d)
+                    if isinstance(output, cupy.ndarray)
+                    else output
+                )
+                out = _shmem_convolve1d(
+                    input.reshape(shape_2d),
+                    weights,
+                    axis=0,
+                    output=output_view,
+                    mode=mode,
+                    cval=cval,
+                    origin=origin,
+                    convolution=convolution,
+                )
+                return (
+                    output
+                    if isinstance(output, cupy.ndarray)
+                    else out.reshape(input.shape)
+                )
             out = _shmem_convolve1d(
                 input,
                 weights,
@@ -571,7 +676,9 @@ def gaussian_filter1d(
     """
     radius = int(float(truncate) * float(sigma) + 0.5)
     weights_dtype = cupy.promote_types(input.dtype, cupy.float32)
-    weights = _gaussian_kernel1d(sigma, int(order), radius, weights_dtype)
+    weights = _cached_gaussian_kernel1d(
+        float(sigma), int(order), radius, cupy.dtype(weights_dtype).str
+    )
     return correlate1d(
         input, weights, axis, output, mode, cval, algorithm=algorithm
     )
@@ -671,7 +778,9 @@ def gaussian_filter(
             radius = int(truncate * float(sigma) + 0.5)
         if radius <= 0:
             return None
-        return _gaussian_kernel1d(sigma, order, radius, dtype=weights_dtype)
+        return _cached_gaussian_kernel1d(
+            float(sigma), int(order), int(radius), cupy.dtype(weights_dtype).str
+        )
 
     return _run_1d_correlates(
         input,
@@ -698,7 +807,7 @@ def _gaussian_kernel1d(sigma, order, radius, dtype=cupy.float64):
     phi_x /= phi_x.sum()
 
     if order == 0:
-        return cupy.asarray(phi_x)
+        return cupy.asarray(phi_x, dtype=dtype)
 
     # f(x) = q(x) * phi(x) = q(x) * exp(p(x))
     # f'(x) = (q'(x) + q(x) * p'(x)) * phi(x)
@@ -715,6 +824,33 @@ def _gaussian_kernel1d(sigma, order, radius, dtype=cupy.float64):
         q = Q_deriv.dot(q)
     q = (x[:, None] ** exponent_range).dot(q)
     return cupy.asarray((q * phi_x)[::-1], order="C", dtype=dtype)
+
+
+def _cached_gaussian_kernel1d(sigma, order, radius, dtype):
+    # Avoid retaining unusually large kernels. Together with the entry count
+    # limit, this bounds the cached kernel data to roughly 64 MiB per process.
+    kernel_nbytes = (2 * radius + 1) * cupy.dtype(dtype).itemsize
+    if kernel_nbytes > _MAX_CACHED_GAUSSIAN_KERNEL_BYTES:
+        return _gaussian_kernel1d(sigma, order, radius, cupy.dtype(dtype))
+
+    device_id = cupy.cuda.runtime.getDevice()
+    kernel = _cached_gaussian_kernel1d_for_device(
+        device_id, sigma, order, radius, dtype
+    )
+    return _util._record_cache_array_use(kernel)
+
+
+@lru_cache(maxsize=_MAX_CACHED_GAUSSIAN_KERNELS)
+def _cached_gaussian_kernel1d_for_device(
+    device_id, sigma, order, radius, dtype
+):
+    with cupy.cuda.Device(device_id):
+        stream = _util._get_cache_init_stream()
+        with stream:
+            kernel = _gaussian_kernel1d(sigma, order, radius, cupy.dtype(dtype))
+        # Publish fully initialized coefficients without draining the caller.
+        stream.synchronize()
+        return _util._register_cache_array(kernel)
 
 
 def prewitt(
@@ -744,7 +880,7 @@ def prewitt(
         from SciPy due to floating-point rounding of intermediate results.
     """
     weights_dtype = cupy.promote_types(input.dtype, cupy.float32)
-    smooth = cupy.ones(3, dtype=weights_dtype)
+    smooth = _util._cached_filter_weights((1, 1, 1), weights_dtype)
     return _prewitt_or_sobel(input, axis, output, mode, cval, smooth, algorithm)
 
 
@@ -775,7 +911,7 @@ def sobel(
         from SciPy due to floating-point rounding of intermediate results.
     """
     weights_dtype = cupy.promote_types(input.dtype, cupy.float32)
-    smooth = cupy.array([1, 2, 1], dtype=weights_dtype)
+    smooth = _util._cached_filter_weights((1, 2, 1), weights_dtype)
     return _prewitt_or_sobel(input, axis, output, mode, cval, smooth, algorithm)
 
 
@@ -786,7 +922,9 @@ def _prewitt_or_sobel(input, axis, output, mode, cval, weights, algorithm):
 
     def get(is_diff):
         return (
-            cupy.array([-1, 0, 1], dtype=weights_dtype) if is_diff else weights
+            _util._cached_filter_weights((-1, 0, 1), weights_dtype)
+            if is_diff
+            else weights
         )  # noqa
 
     axes = tuple(range(input.ndim))
@@ -920,7 +1058,7 @@ def laplace(
         from SciPy due to floating-point rounding of intermediate results.
     """
     weights_dtype = cupy.promote_types(input.dtype, cupy.float32)
-    weights = cupy.array([1, -2, 1], dtype=weights_dtype)
+    weights = _util._cached_filter_weights((1, -2, 1), weights_dtype)
 
     def derivative2(input, axis, output, mode, cval):
         return correlate1d(
