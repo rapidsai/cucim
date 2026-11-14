@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
+
+import functools
 
 import cupy as cp
 import scipy.ndimage as cpu_ndi
@@ -14,6 +16,7 @@ def _label_dtype_for_size(size):
     return cp.int64 if size >= _INT32_LABEL_SIZE_LIMIT else cp.int32
 
 
+@functools.cache
 def _get_structure(ndim, connectivity):
     if connectivity is None:
         # use the full connectivity by default
@@ -78,11 +81,68 @@ def label(label_image, background=None, return_num=False, connectivity=None):
            component labeling algorithms", Paper LBNL-56864, 2005,
            Lawrence Berkeley National Laboratory (University of California),
            http://repositories.cdlib.org/lbnl/LBNL-56864
+    .. [3] J. Jaiganesh and M. Burtscher, "A high-performance
+           connected components implementation for GPUs", Proceedings of the
+           27th International Symposium on High-Performance Parallel and
+           Distributed Computing (HPDC '18), 2018, pp. 92-104.
+           https://doi.org/10.1145/3208040.3208041
+    .. [4] Y. Komura, "A generalized GPU-based connected component
+           labeling algorithm", 2016. :arxiv:`1603.08357`
+    .. [5] S. Allegretti, F. Bolelli and C. Grana,
+           "Optimized block-based algorithms to label connected components on
+           GPUs", IEEE Transactions on Parallel and Distributed Systems 31(2),
+           2020, pp. 423-438. https://doi.org/10.1109/TPDS.2019.2934683
+    .. [6] F. Bolelli, S. Allegretti, L. Lumetti and C. Grana, "A
+           state-of-the-art review with code about connected components
+           labeling on GPUs", IEEE Transactions on Parallel and Distributed
+           Systems 37(4), 2026 (published online 2024), pp. 885-904.
+           https://doi.org/10.1109/TPDS.2024.3434357
 
     Notes
     -----
     The cucim implementation of this function uses 32-bit integers for the
     label array unless the input size requires 64-bit labels.
+
+    This implementation started from the one in CuPy
+    (``cupyx.scipy.ndimage.label``), for which no literature reference was
+    specified. The general type of approach (a union-find on the GPU) was
+    determined by inspecting that implementation. The references [3]_, [4]_
+    and [5]_ describe this type of approach and the later changes listed here.
+
+    The regions are found with a concurrent union-find on the GPU in which
+    the root of each tree is the first pixel of its region (see [3]_ for the
+    compare-and-swap union of roots and the path halving, and [4]_ and [5]_
+    for linking each pixel to a preceding neighbor before the unions). The
+    blocks described below are the approach of the block-based union-find
+    (BUF) of [5]_. See [6]_ for a review and comparison of GPU connected
+    component labeling algorithms.
+
+    For the best performance, pass a boolean image and use full connectivity
+    (the default, ``connectivity=None``, or ``connectivity=label_image.ndim``)
+    in 2D or 3D. In that case each 2 x 2 (or 2 x 2 x 2) block of pixels is
+    handled as a single node, which is typically 2 to 6 times faster than the
+    general implementation (the gain is largest for dense images and in 3D).
+    The general implementation is used for integer images (also if they only
+    contain 0 and 1, so convert those with ``label_image.astype(bool)``), for a
+    ``connectivity`` below ``label_image.ndim``, for 1D and for 4D or higher
+    dimensional images, and when ``background`` is neither 0 nor, for a boolean
+    image, 1 (``True``). The labels are the
+    same for both implementations.
+
+    Known differences from scikit-image:
+
+    - The label array is ``int32`` (``int64`` for very large images), not
+      ``intp``.
+    - For ``background`` other than 0, the background value is subtracted from
+      the image before a floating point image is converted to integers, while
+      scikit-image converts first. For example, ``background=1`` on
+      ``[0.9, 1.1, 1.9]`` gives ``[0, 0, 0]`` here and ``[1, 0, 0]`` in
+      scikit-image.
+    - For a boolean image and a ``background`` that is neither 0 nor 1, the
+      background value is subtracted, which labels both ``False`` and
+      ``True`` pixels, while scikit-image labels only the ``True`` pixels.
+    - Images with 4 or more dimensions are supported (scikit-image raises
+      ``NotImplementedError`` for them).
 
     Examples
     --------
@@ -116,13 +176,18 @@ def label(label_image, background=None, return_num=False, connectivity=None):
     structure = _get_structure(ndim, connectivity)
     if background is None:
         background = 0
+    elif label_image.dtype == cp.bool_ and background == 1:
+        # the foreground of a boolean image is the False pixels (this keeps
+        # the boolean image, which is labeled faster than an integer image)
+        label_image = ~label_image
     elif background != 0:
         # offset so that background becomes 0 as expected by _label below
         label_image = label_image - background
 
     if label_image.dtype.kind not in "bui":
         # skimage always copies the input into a np.intp dtype array so do the
-        # same here for non-integer dtypes.
+        # same here for non-integer dtypes (but after the background was
+        # subtracted, which skimage does after the conversion).
         label_image = label_image.astype(cp.intp)
 
     labels = cp.empty(
