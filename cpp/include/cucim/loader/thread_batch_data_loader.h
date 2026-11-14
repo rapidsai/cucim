@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_LOADER_THREAD_BATCH_DATA_LOADER_H
-#define CUCIM_LOADER_THREAD_BATCH_DATA_LOADER_H
+#pragma once
 
 #include "cucim/macros/api_header.h"
 
@@ -99,5 +98,3 @@ private:
 };
 
 } // namespace cucim::loader
-
-#endif // CUCIM_LOADER_THREAD_BATCH_DATA_LOADER_H

@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef CUSLIDE_RAW_H
-#define CUSLIDE_RAW_H
+#pragma once
 
 #include <cucim/io/device.h>
 
@@ -18,4 +17,3 @@ bool decode_raw(int fd,
                 uint64_t dest_nbytes,
                 const cucim::io::Device& out_device);
 }
-#endif // CUSLIDE_RAW_H

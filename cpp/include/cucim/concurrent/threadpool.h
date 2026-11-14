@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_CONCURRENT_THREADPOOL_H
-#define CUCIM_CONCURRENT_THREADPOOL_H
+#pragma once
 
 #include "cucim/macros/api_header.h"
 
@@ -37,5 +36,3 @@ private:
 };
 
 } // namespace cucim::concurrent
-
-#endif // CUCIM_CONCURRENT_THREADPOOL_H

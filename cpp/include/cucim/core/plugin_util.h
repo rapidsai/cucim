@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_PLUGIN_UTIL_H
-#define CUCIM_PLUGIN_UTIL_H
+#pragma once
 
 #include "plugin.h"
 
@@ -183,6 +182,3 @@ constexpr const char* const kCuCIMOnGetPluginDepsFnName = "cucim_on_get_plugin_d
 #define CUCIM_PLUGIN_IMPL_MINIMAL(impl, ...)                                                                         \
     CUCIM_FRAMEWORK_GLOBALS(kPluginImpl.name)                                                                        \
     CUCIM_PLUGIN_IMPL_WITH_INIT(impl, __VA_ARGS__)
-
-
-#endif // CUCIM_PLUGIN_UTIL_H

@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef PYCUCIM_CUIMAGE_PY_H
-#define PYCUCIM_CUIMAGE_PY_H
+#pragma once
 
 #include <filesystem>
 #include <memory>
@@ -63,5 +62,3 @@ nb::object py_cuimage_iterator_next(CuImageIterator<CuImage>& it);
 
 void _set_array_interface(nb::handle cuimg_obj);
 } // namespace cucim
-
-#endif // PYCUCIM_CUIMAGE_PY_H

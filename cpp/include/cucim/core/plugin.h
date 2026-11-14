@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_PLUGIN_H
-#define CUCIM_PLUGIN_H
+#pragma once
 
 
 #include "cucim/macros/api_header.h"
@@ -67,4 +66,3 @@ typedef void(CUCIM_ABI* OnGetPluginDepsFn)(InterfaceDesc** interface_desc, size_
 
 
 } // namespace cucim
-#endif // CUCIM_PLUGIN_H

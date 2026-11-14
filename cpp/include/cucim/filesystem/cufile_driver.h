@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef CUCIM_CUFILE_DRIVER_H
-#define CUCIM_CUFILE_DRIVER_H
+#pragma once
 
 #include "file_handle.h"
 #include "file_path.h"
@@ -186,5 +185,3 @@ private:
 };
 
 } // namespace cucim::filesystem
-
-#endif // CUCIM_CUFILE_DRIVER_H

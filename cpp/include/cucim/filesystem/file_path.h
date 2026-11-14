@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_FILE_PATH_H
-#define CUCIM_FILE_PATH_H
+#pragma once
 
 #include <string>
 namespace cucim::filesystem
@@ -13,5 +12,3 @@ namespace cucim::filesystem
 using Path = std::string;
 
 } // namespace cucim::filesystem
-
-#endif // CUCIM_FILE_PATH_H

@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUSLIDE_TIFF_H
-#define CUSLIDE_TIFF_H
+#pragma once
 
 #include <cucim/filesystem/file_path.h>
 #include <cucim/filesystem/file_handle.h>
@@ -113,5 +112,3 @@ private:
     mutable std::once_flag slow_path_warning_flag_;
 };
 } // namespace cuslide::tiff
-
-#endif // CUSLIDE_TIFF_H

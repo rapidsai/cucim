@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef PYCUCIM_CUCIM_PYDOC_H
-#define PYCUCIM_CUCIM_PYDOC_H
+#pragma once
 
 #include <string>
 
@@ -286,5 +285,3 @@ Constructor of CuImageIterator.
 } // namespace CuImageIterator
 
 } // namespace cucim::doc
-
-#endif // PYCUCIM_CUCIM_PYDOC_H

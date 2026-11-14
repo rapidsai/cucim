@@ -2,8 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef PYCUCIM_FILESYSTEM_PYDOC_H
-#define PYCUCIM_FILESYSTEM_PYDOC_H
+#pragma once
 
 #include "../macros.h"
 
@@ -104,4 +103,3 @@ Returns:
     True if succeed, False otherwise.
 )doc")
 } // namespace cucim::filesystem::doc
-#endif // PYCUCIM_FILESYSTEM_PYDOC_H

@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_IMAGE_FORMAT_H
-#define CUCIM_IMAGE_FORMAT_H
+#pragma once
 
 #include "cucim/core/interface.h"
 #include "cucim/filesystem/file_handle.h"
@@ -258,5 +257,3 @@ struct IImageFormat
 };
 
 } // namespace cucim::io::format
-
-#endif // CUCIM_IMAGE_FORMAT_H

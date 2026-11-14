@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 //
-#ifndef CUCIM_UTIL_CUDA_H
-#define CUCIM_UTIL_CUDA_H
+#pragma once
 
 
 #if CUCIM_SUPPORT_CUDA
@@ -57,5 +56,3 @@ namespace cucim::util
 {
 
 } // namespace cucim::util
-
-#endif // CUCIM_UTIL_CUDA_H

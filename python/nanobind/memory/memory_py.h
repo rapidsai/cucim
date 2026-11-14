@@ -2,8 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef PYCUCIM_MEMORY_INIT_H
-#define PYCUCIM_MEMORY_INIT_H
+#pragma once
 
 #include <nanobind/nanobind.h>
 
@@ -21,6 +20,3 @@ void get_memory_info(nb::handle buf_obj,
                      bool* out_readonly = nullptr);
 
 } // namespace cucim::memory
-
-
-#endif // PYCUCIM_MEMORY_INIT_H
