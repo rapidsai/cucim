@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import itertools
@@ -113,6 +113,36 @@ def test_bg_and_color_cycle():
     assert_array_almost_equal(rgb[0, 0], bg_color)
     for pixel, color in zip(rgb[0, 1:], itertools.cycle(colors)):
         assert_array_almost_equal(pixel, color)
+
+
+@pytest.mark.parametrize("with_image", [False, True])
+def test_bg_color_none(with_image):
+    # With bg_color=None the background is not painted by any color: it is
+    # left as zeros or, if an image was provided, shows the image.
+    label = cp.array([[0, 1], [2, 0]])
+    colors = [(1.0, 0.0, 0.0), (0.0, 0.0, 1.0)]
+    if with_image:
+        image = cp.array([[0.2, 0.4], [0.6, 0.8]])
+        alpha = 0.5
+        expected = cp.stack((image,) * 3, axis=-1)
+        expected[0, 1] = alpha * cp.array(colors[0]) + (1 - alpha) * 0.4
+        expected[1, 0] = alpha * cp.array(colors[1]) + (1 - alpha) * 0.6
+    else:
+        image = None
+        alpha = 1
+        expected = cp.zeros((2, 2, 3))
+        expected[0, 1] = cp.array(colors[0])
+        expected[1, 0] = cp.array(colors[1])
+    rgb = label2rgb(
+        label,
+        image=image,
+        colors=colors,
+        alpha=alpha,
+        bg_label=0,
+        bg_color=None,
+        image_alpha=1,
+    )
+    assert_array_almost_equal(rgb, expected)
 
 
 def test_negative_labels():
