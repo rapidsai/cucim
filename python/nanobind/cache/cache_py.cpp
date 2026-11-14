@@ -6,7 +6,7 @@
 #include "cache_py.h"
 #include "cache_pydoc.h"
 
-#include <fmt/format.h>
+#include <format>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/vector.h>
 
@@ -70,7 +70,7 @@ bool py_record(ImageCache& cache, nb::handle value)
     }
     else
     {
-        throw std::invalid_argument(fmt::format("Only 'NoneType' or 'bool' is available for the argument"));
+        throw std::invalid_argument(std::format("Only 'NoneType' or 'bool' is available for the argument"));
     }
 }
 
@@ -154,7 +154,7 @@ uint32_t py_preferred_memory_capacity(nb::handle img,
         if (!image_size || image_size->size() != 2)
         {
             throw std::invalid_argument(
-                fmt::format("Please specify 'image_size' parameter (e.g., 'image_size=(100000, 100000)')!"));
+                std::format("Please specify 'image_size' parameter (e.g., 'image_size=(100000, 100000)')!"));
         }
         if (!tile_size || tile_size->size() != 2)
         {

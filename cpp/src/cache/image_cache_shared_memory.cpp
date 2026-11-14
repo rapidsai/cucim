@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include "cucim/memory/memory_manager.h"
 
 #include <boost/make_shared.hpp>
+#include <format>
 #include <fmt/format.h>
 
 
@@ -184,7 +185,7 @@ SharedMemoryImageCache::SharedMemoryImageCache(const ImageCacheConfig& config, c
     if (device_type != cucim::io::DeviceType::kCPU)
     {
         throw std::runtime_error(
-            fmt::format("[Error] SharedMemoryImageCache doesn't support other memory type other than CPU memory!\n"));
+            std::format("[Error] SharedMemoryImageCache doesn't support other memory type other than CPU memory!\n"));
     }
 
     try
@@ -239,7 +240,7 @@ SharedMemoryImageCache::SharedMemoryImageCache(const ImageCacheConfig& config, c
     }
     catch (const boost::interprocess::bad_alloc& e)
     {
-        throw std::runtime_error(fmt::format(
+        throw std::runtime_error(std::format(
             "[Error] Couldn't allocate shared memory (size: {}). Please increase the cache memory capacity.\n",
             memory_capacity));
     }
@@ -309,7 +310,7 @@ void* SharedMemoryImageCache::allocate(std::size_t n)
     }
     catch (const std::exception& e)
     {
-        throw std::runtime_error(fmt::format(
+        throw std::runtime_error(std::format(
             "[Error] Couldn't allocate shared memory (size: {}). Please increase the cache memory capacity.\n", n));
     }
 

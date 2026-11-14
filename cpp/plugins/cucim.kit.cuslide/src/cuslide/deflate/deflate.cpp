@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,10 +10,10 @@
 
 #include "deflate.h"
 
+#include <format>
 #include <stdexcept>
 #include <unistd.h>
 
-#include <fmt/format.h>
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
 
@@ -69,7 +69,7 @@ bool decode_deflate(int fd,
         {
             cucim_free(deflate_buf);
             throw std::runtime_error(
-                fmt::format("Short read for deflate data: expected {} bytes, got {}", size, bytes_read));
+                std::format("Short read for deflate data: expected {} bytes, got {}", size, bytes_read));
         }
     }
     else
@@ -114,7 +114,7 @@ bool decode_deflate(int fd,
             break;
         }
         throw std::runtime_error(
-            fmt::format("Deflate decompression failed: {}", reason));
+            std::format("Deflate decompression failed: {}", reason));
     }
 
     return true;

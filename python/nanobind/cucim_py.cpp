@@ -7,10 +7,9 @@
 #include "cucim_pydoc.h"
 
 #include <cstring>
+#include <format>
 #include <memory>
 
-#include <fmt/format.h>
-#include <fmt/ranges.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
 #include <nanobind/stl/array.h>
@@ -90,7 +89,7 @@ NB_MODULE(_cucim, m)
         .def(nb::self != nb::self) //
         .def("__repr__",
              [](const DLDataType& dtype) {
-                 return fmt::format("<cucim.clara.DLDataType code:{}({}) bits:{} lanes:{}>",
+                 return std::format("<cucim.clara.DLDataType code:{}({}) bits:{} lanes:{}>",
                                     g_dldata_typecode.at(dtype.code), dtype.code, dtype.bits, dtype.lanes);
              })
         // nanobind, unlike pybind11, keeps the inherited __hash__ when __eq__ is bound.
@@ -113,7 +112,7 @@ NB_MODULE(_cucim, m)
         .def("__next__", &py_cuimage_iterator_next)
         .def(
             "__repr__", //
-            [](CuImageIterator<CuImage>& it) { return fmt::format("<cucim.CuImageIterator index:{}>", it.index()); },
+            [](CuImageIterator<CuImage>& it) { return std::format("<cucim.CuImageIterator index:{}>", it.index()); },
             nb::call_guard<nb::gil_scoped_release>());
 
     nb::class_<CuImage>(m, "CuImage", nb::dynamic_attr(), nb::is_weak_referenceable()) //
@@ -205,7 +204,7 @@ NB_MODULE(_cucim, m)
         .def(
             "__repr__", //
             [](const CuImage& cuimg) { //
-                return fmt::format("<cucim.CuImage path:{}>", cuimg.path());
+                return std::format("<cucim.CuImage path:{}>", cuimg.path());
             },
             nb::call_guard<nb::gil_scoped_release>());
 }
@@ -284,7 +283,7 @@ std::shared_ptr<cucim::cache::ImageCache> py_cache(nb::handle type, nb::kwargs k
     }
 
     throw std::invalid_argument(
-        fmt::format("The first argument should be one of ['nocache', 'per_process', 'shared_memory']."));
+        std::format("The first argument should be one of ['nocache', 'per_process', 'shared_memory']."));
 }
 
 std::shared_ptr<cucim::profiler::Profiler> py_profiler(nb::kwargs kwargs)
@@ -343,7 +342,7 @@ static nb::object json2py(const json& j)
         return dict;
     }
     default:
-        throw std::runtime_error(fmt::format("Unsupported JSON value type '{}' in metadata", j.type_name()));
+        throw std::runtime_error(std::format("Unsupported JSON value type '{}' in metadata", j.type_name()));
     }
 }
 
@@ -520,13 +519,13 @@ nb::object py_read_region(const CuImage& cuimg,
             if (key.size() != 1)
             {
                 throw std::invalid_argument(
-                    fmt::format("Argument name for Dimension should be a single character but '{}' is used.", key));
+                    std::format("Argument name for Dimension should be a single character but '{}' is used.", key));
             }
             char key_char = key[0] & ~32;
             if (key_char < 'A' || key_char > 'Z')
             {
                 throw std::invalid_argument(
-                    fmt::format("Dimension character should be an alphabet but '{}' is used.", key));
+                    std::format("Dimension character should be an alphabet but '{}' is used.", key));
             }
 
             indices_args.emplace_back(std::make_pair(key_char, value));

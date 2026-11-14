@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -11,10 +11,10 @@
 #include "raw.h"
 
 #include <cstring>
+#include <format>
 #include <stdexcept>
 #include <unistd.h>
 
-#include <fmt/format.h>
 #include <cucim/memory/memory_manager.h>
 #include <cucim/profiler/nvtx3.h>
 
@@ -58,7 +58,7 @@ bool decode_raw(int fd,
         {
             cucim_free(raw_buf);
             throw std::runtime_error(
-                fmt::format("Short read for raw data: expected {} bytes, got {}", size, bytes_read));
+                std::format("Short read for raw data: expected {} bytes, got {}", size, bytes_read));
         }
     }
     else
@@ -74,7 +74,7 @@ bool decode_raw(int fd,
             cucim_free(raw_buf);
         }
         throw std::runtime_error(
-            fmt::format("Raw tile data size ({}) is smaller than expected destination buffer ({})", size, dest_nbytes));
+            std::format("Raw tile data size ({}) is smaller than expected destination buffer ({})", size, dest_nbytes));
     }
 
     memcpy(*dest, raw_buf, dest_nbytes);

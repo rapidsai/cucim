@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -8,7 +8,7 @@
 #include "cucim/plugin/image_format.h"
 #include "cucim/profiler/nvtx3.h"
 
-#include <fmt/format.h>
+#include <format>
 
 
 namespace cucim::plugin
@@ -41,7 +41,7 @@ cucim::io::format::ImageFormatDesc* ImageFormat::detect_image_format(const cucim
             return format;
         }
     }
-    throw std::invalid_argument(fmt::format("Cannot find a plugin to handle '{}'!", path));
+    throw std::invalid_argument(std::format("Cannot find a plugin to handle '{}'!", path));
 }
 
 } // namespace cucim::plugin

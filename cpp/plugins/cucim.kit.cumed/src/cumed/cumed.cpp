@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #define CUCIM_EXPORTS
@@ -8,8 +8,7 @@
 
 #include <fcntl.h>
 #include <filesystem>
-
-#include <fmt/format.h>
+#include <format>
 
 #include <cucim/core/framework.h>
 #include <cucim/core/plugin_util.h>
@@ -81,7 +80,7 @@ static CuCIMFileHandle_share CUCIM_ABI parser_open(const char* file_path_)
     if (fd == -1)
     {
         cucim_free(file_path_cstr);
-        throw std::invalid_argument(fmt::format("Cannot open {}!", file_path));
+        throw std::invalid_argument(std::format("Cannot open {}!", file_path));
     }
 
     auto file_handle = std::make_shared<CuCIMFileHandle>(fd, nullptr, FileHandleType::kPosix, file_path_cstr, nullptr);
@@ -226,7 +225,7 @@ static bool CUCIM_ABI reader_read(const CuCIMFileHandle_ptr handle_ptr,
     std::string device_name(request->device);
     if (request->shm_name)
     {
-        device_name = device_name + fmt::format("[{}]", request->shm_name); // TODO: check performance
+        device_name = device_name + std::format("[{}]", request->shm_name); // TODO: check performance
     }
     cucim::io::Device out_device(device_name);
 

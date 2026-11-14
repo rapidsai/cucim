@@ -1,15 +1,14 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "cucim/io/device.h"
 
+#include <format>
 #include <regex>
 #include <string>
 #include <string_view>
-
-#include <fmt/format.h>
 
 #include "cucim/macros/defines.h"
 
@@ -80,15 +79,15 @@ Device::operator std::string() const
 
     if (index_ == -1 && shm_name_.empty())
     {
-        return fmt::format("{}", device_type_str);
+        return std::format("{}", device_type_str);
     }
     else if (index_ != -1 && shm_name_.empty())
     {
-        return fmt::format("{}:{}", device_type_str, index_);
+        return std::format("{}:{}", device_type_str, index_);
     }
     else
     {
-        return fmt::format("{}:{}[{}]", device_type_str, index_, shm_name_);
+        return std::format("{}:{}[{}]", device_type_str, index_, shm_name_);
     }
 }
 

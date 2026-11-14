@@ -23,6 +23,7 @@
 #include <cstddef>    // for size_t
 #include <cstdlib>    // for std::atexit, std::getenv, std::strtol
 #include <cstring>    // for strlen
+#include <format>
 #include <thread>     // for std::thread::hardware_concurrency
 #include <type_traits>
 
@@ -94,9 +95,9 @@ std::string format_nvimgcodec_version(uint32_t version)
 {
     if (version >= kFirstUnsupportedNvimgcodecVersion)
     {
-        return fmt::format("packed version {} (semantic version is ambiguous with the 0.9 headers)", version);
+        return std::format("packed version {} (semantic version is ambiguous with the 0.9 headers)", version);
     }
-    return fmt::format("{}.{}.{}", NVIMGCODEC_MAJOR_FROM_SEMVER(version), NVIMGCODEC_MINOR_FROM_SEMVER(version),
+    return std::format("{}.{}.{}", NVIMGCODEC_MAJOR_FROM_SEMVER(version), NVIMGCODEC_MINOR_FROM_SEMVER(version),
                        NVIMGCODEC_PATCH_FROM_SEMVER(version));
 }
 
@@ -132,7 +133,7 @@ static std::string check_nvimgcodec_runtime_version()
     const nvimgcodecStatus_t status = nvimgcodecGetProperties(&properties);
     if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
-        return fmt::format("could not query the version of the loaded nvImageCodec library "
+        return std::format("could not query the version of the loaded nvImageCodec library "
                            "(nvimgcodecGetProperties status: {}), so it cannot be confirmed as supported. "
                            "cuCIM requires nvImageCodec {}.",
                            static_cast<int>(status), kSupportedNvimgcodecRange);
@@ -140,7 +141,7 @@ static std::string check_nvimgcodec_runtime_version()
 
     if (!is_supported_nvimgcodec_version(properties.version))
     {
-        return fmt::format("loaded nvImageCodec {}, which is outside the supported range {}. cuCIM was built "
+        return std::format("loaded nvImageCodec {}, which is outside the supported range {}. cuCIM was built "
                            "against {} and the API is not compatible across these versions. The library was "
                            "resolved at run time, so a different build may be earlier on the loader path; check "
                            "LD_LIBRARY_PATH and any libnvimgcodec.so symlinks.",
@@ -323,7 +324,7 @@ static std::string tiff_tag_value_to_string(const TiffTagValue& value)
         {
             // Byte arrays often contain binary data (JPEG tables, raw tag data, etc.)
             // where individual byte values aren't meaningful. Just show the size.
-            return fmt::format("[{} bytes]", v.size());
+            return std::format("[{} bytes]", v.size());
         }
         else if constexpr (std::is_same_v<T, std::vector<int16_t>> ||
                            std::is_same_v<T, std::vector<uint16_t>> ||
@@ -345,7 +346,7 @@ static std::string tiff_tag_value_to_string(const TiffTagValue& value)
         else
         {
             // All remaining scalar types (int8_t, uint8_t, int16_t, ..., float, double)
-            return fmt::format("{}", v);
+            return std::format("{}", v);
         }
     }, value);
 }
@@ -457,7 +458,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
 
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
-            status_message_ = fmt::format("Failed to create nvImageCodec instance for TIFF parsing (status: {})",
+            status_message_ = std::format("Failed to create nvImageCodec instance for TIFF parsing (status: {})",
                                          static_cast<int>(status));
             #ifdef DEBUG
             fmt::print("⚠️  {}\n", status_message_);
@@ -497,7 +498,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
             {
                 nvimgcodecInstanceDestroy(instance_);
                 instance_ = nullptr;
-                status_message_ = fmt::format("Failed to create decoder for metadata extraction (status: {})",
+                status_message_ = std::format("Failed to create decoder for metadata extraction (status: {})",
                                              static_cast<int>(status));
                 #ifdef DEBUG
                 fmt::print("⚠️  {}\n", status_message_);
@@ -529,7 +530,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
     }
     catch (const std::exception& e)
     {
-        status_message_ = fmt::format("nvImageCodec TIFF parser initialization exception: {}", e.what());
+        status_message_ = std::format("nvImageCodec TIFF parser initialization exception: {}", e.what());
         #ifdef DEBUG
         fmt::print("❌ {}\n", status_message_);
         #endif // DEBUG
@@ -588,7 +589,7 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
 
     if (!manager.is_available())
     {
-        throw std::runtime_error(fmt::format("nvImageCodec not available: {}",
+        throw std::runtime_error(std::format("nvImageCodec not available: {}",
                                             manager.get_status()));
     }
 
@@ -609,7 +610,7 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
             nvimgcodecCodeStreamDestroy(main_code_stream_);
             main_code_stream_ = nullptr;
         }
-        throw std::runtime_error(fmt::format("Failed to create code stream from file: {} (status: {})",
+        throw std::runtime_error(std::format("Failed to create code stream from file: {} (status: {})",
                                             file_path, static_cast<int>(status)));
     }
 
@@ -670,7 +671,7 @@ bool TiffFileParser::parse_tiff_structure()
 
     if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
-        parse_error_ = fmt::format("Failed to get code stream info (status: {})",
+        parse_error_ = std::format("Failed to get code stream info (status: {})",
                                    static_cast<int>(status));
         return false;
     }
@@ -911,7 +912,7 @@ bool TiffFileParser::parse_tiff_structure()
 
     if (ifd_infos_.empty())
     {
-        parse_error_ = fmt::format(
+        parse_error_ = std::format(
             "Failed to parse TIFF IFDs via nvImageCodec: num_images={}, "
             "substream_failures={} (first_status={}), image_info_failures={} (first_status={})",
             num_ifds,
@@ -1136,7 +1137,7 @@ const IfdInfo& TiffFileParser::get_ifd(uint32_t index) const
 {
     if (index >= ifd_infos_.size())
     {
-        throw std::out_of_range(fmt::format("IFD index {} out of range (have {} IFDs)",
+        throw std::out_of_range(std::format("IFD index {} out of range (have {} IFDs)",
                                            index, ifd_infos_.size()));
     }
     return ifd_infos_[index];
@@ -1433,7 +1434,7 @@ std::string TiffFileParser::get_detected_format() const
     // Fallback: Generic TIFF with detected codec
     if (!ifd_infos_.empty() && !ifd_infos_[0].codec.empty())
     {
-        return fmt::format("Generic TIFF ({})", ifd_infos_[0].codec);
+        return std::format("Generic TIFF ({})", ifd_infos_[0].codec);
     }
 
     return "Generic TIFF";
