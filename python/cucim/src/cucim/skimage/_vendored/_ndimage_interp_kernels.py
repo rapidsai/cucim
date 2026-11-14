@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 from __future__ import annotations
 
@@ -485,10 +485,13 @@ def _get_coord_affine(
     ncol = ndim + 1
     # When loop_batch_axis is True, skip the last axis (it's the batch axis)
     axes_to_process = range(ndim - 1) if loop_batch_axis else range(ndim)
-    # When loop_batch_axis is True, skip multiplying by in_coord for batch axis
-    # since it's not initialized yet (it's set in the batch loop)
-    # For batch axes, the matrix column should be 0 for non-batch rows anyway
-    coord_axes = range(ndim - 1) if loop_batch_axis else range(ndim)
+    # Batch-axis detection guarantees that non-batch rows do not depend on
+    # batch coordinate columns, so skip those known-zero matrix terms.
+    coord_axes = [
+        k
+        for k in range(ndim)
+        if k not in batch_axes and not (loop_batch_axis and k == ndim - 1)
+    ]
 
     for j in axes_to_process:
         if j in batch_axes:
@@ -562,6 +565,107 @@ def _join_index_terms(terms):
     return " + ".join(terms) if terms else "0"
 
 
+def _exact_boundary_fold_ops(j, order, mode, int_t, float_type):
+    """Fold exterior coefficients into the weights of axis ``j``.
+
+    Used with the exact constant-extension prefilter (no padding). A
+    coefficient at distance ``m`` outside the line equals
+    ``sum_jj E(m, jj) * d[jj]`` over the first (or last) ``J + 1`` in-domain
+    coefficients (see ``exterior_coefficient_terms``), where ``d = c`` for
+    'nearest' and ``d = c - cval`` for 'grid-constant'. Footprints that cross
+    an edge are moved to the window ``[b, b + order]`` inside the line and
+    the exterior weights are added to the window's first or last ``J + 1``
+    weights. All array indices are compile-time constants after unrolling,
+    so the weights stay in registers. Requires at least ``order + 1``
+    samples along the axis.
+
+    The relation between exterior and in-domain coefficients was derived for
+    cuCIM; see ``exterior_coefficient_terms`` and the notes above
+    ``EXACT_CONSTANT_MODES`` in ``_ndimage_spline_prefilter_core``. For
+    'grid-constant' the extended coefficients are ``cval + E (c - cval)``
+    per axis, so the folded sum is completed by
+    ``cval * (1 - prod_j sum(weights_j))`` (``_exact_cval_term``).
+    """
+    roots, U = _spline_prefilter_core.exterior_coefficient_terms(
+        order, mode == "nearest"
+    )
+    J = len(U[0]) - 1
+    F = float_type
+    pows = []
+    for ri, r in enumerate(roots):
+        if r == 1.0:
+            pows.append(None)
+        else:
+            pows.append(f"pr_{ri}")
+    pow_code = "\n".join(
+        f"                    {F} pr_{ri} = pow(({F}){r!r}, m);"
+        for ri, r in enumerate(roots)
+        if r != 1.0
+    )
+
+    def e_expr(jj):
+        terms = []
+        for ri, row in enumerate(U):
+            if pows[ri] is None:
+                terms.append(f"({F}){row[jj]!r}")
+            else:
+                terms.append(f"({F}){row[jj]!r} * {pows[ri]}")
+        return " + ".join(terms)
+
+    left = "\n".join(
+        f"                    nw[{jj}] += w * ({e_expr(jj)});"
+        for jj in range(J + 1)
+    )
+    right = "\n".join(
+        f"                    nw[{order - jj}] += w * ({e_expr(jj)});"
+        for jj in range(J + 1)
+    )
+    inside = "\n".join(
+        f"                    if (k + shift == {t}) nw[{t}] += w;"
+        for t in range(order + 1)
+    )
+    sfw = ""
+    if mode == "grid-constant":
+        sfw = f"""
+                sfw_{j} = {" + ".join(f"nw[{t}]" for t in range(order + 1))};"""
+    return f"""
+            W sfw_{j} = (W)1.0;
+            (void)sfw_{j};
+            if (start < 0 || start > xsize_{j} - {order + 1}) {{
+                // exact constant extension: fold exterior coefficients
+                {int_t} b = start < 0 ? 0 : xsize_{j} - {order + 1};
+                {int_t} shift = start - b;
+                W nw[{order + 1}];
+                #pragma unroll
+                for (int t = 0; t <= {order}; t++) {{ nw[t] = 0; }}
+                #pragma unroll
+                for (int k = 0; k <= {order}; k++) {{
+                    {int_t} idx = start + k;
+                    W w = weights_{j}[k];
+                    if (idx < 0 || idx >= xsize_{j}) {{
+                    {F} m = ({F})(idx < 0 ? -idx : idx - (xsize_{j} - 1));
+{pow_code}
+                    if (idx < 0) {{
+{left}
+                    }} else {{
+{right}
+                    }}
+                    }} else {{
+{inside}
+                    }}
+                }}
+                #pragma unroll
+                for (int t = 0; t <= {order}; t++) {{ weights_{j}[t] = nw[t]; }}{sfw}
+                start = b;
+            }}"""
+
+
+def _exact_cval_term(spatial_axes, cval, internal_dtype):
+    """cval * (1 - prod_j sum(weights_j)) for exact 'grid-constant'."""
+    prod = " * ".join(f"sfw_{j}" for j in spatial_axes) or "(W)1.0"
+    return f"{cval} * ({internal_dtype})((W)1.0 - {prod})"
+
+
 def _generate_interp_custom(
     coord_func,
     ndim,
@@ -577,6 +681,7 @@ def _generate_interp_custom(
     omit_in_coord=False,
     batch_axes=None,
     loop_batch_axis=False,
+    exact_boundary=False,
 ):
     """
     Args:
@@ -605,6 +710,11 @@ def _generate_interp_custom(
         loop_batch_axis (bool): If True, the last axis is a contiguous batch
             axis and the kernel will loop over it internally. This requires
             using raw output and reduces kernel launch overhead.
+        exact_boundary (bool): If True (orders > 1 with mode 'nearest' or
+            'grid-constant'), ``x`` holds unpadded coefficients from the exact
+            constant-extension prefilter. Coefficients outside ``x`` are
+            then evaluated as fixed combinations of the first or last
+            in-domain coefficients and folded into each axis's weights.
 
     Returns:
         operation (str): code body for the ElementwiseKernel
@@ -655,6 +765,17 @@ def _generate_interp_custom(
         # Only unravel to ndim-1 dimensions (spatial only)
         if not omit_in_coord:
             ops.append(_unravel_loop_index(reduced_yshape, uint_t, ndim))
+        if outer_batch_axes:
+            ops.append(
+                f"const {int_t} batch_base = "
+                + _join_index_terms(
+                    [
+                        f"(({int_t})in_coord[{j}]) * sx_{j}"
+                        for j in outer_batch_axes
+                    ]
+                )
+                + ";"
+            )
         # Don't start batch loop here - it will be the innermost loop
     else:
         if not omit_in_coord:
@@ -768,7 +889,7 @@ def _generate_interp_custom(
 
         # Compute base index from spatial coords and any non-looped batch axes.
         _base_coord_idx = _join_index_terms(
-            [f"(({int_t})in_coord[{j}]) * sx_{j}" for j in outer_batch_axes]
+            (["batch_base"] if outer_batch_axes else [])
             + [f"ic_{j}" for j in spatial_axes]
         )
 
@@ -925,7 +1046,7 @@ def _generate_interp_custom(
             # Compute spatial weight and base index
             _spatial_weight = " * ".join([f"w_{j}" for j in spatial_axes])
             _base_coord_idx = _join_index_terms(
-                [f"(({int_t})in_coord[{j}]) * sx_{j}" for j in outer_batch_axes]
+                (["batch_base"] if outer_batch_axes else [])
                 + [f"ic_{j}" for j in spatial_axes]
             )
 
@@ -1012,7 +1133,10 @@ def _generate_interp_custom(
                     }}"""
                     )
     elif order > 1:
-        if mode == "grid-constant":
+        exact = exact_boundary and mode in ("nearest", "grid-constant")
+        if exact:
+            spline_mode = None
+        elif mode == "grid-constant":
             spline_mode = "constant"
         elif mode == "nearest":
             spline_mode = "nearest"
@@ -1068,6 +1192,10 @@ def _generate_interp_custom(
                     order_2=order // 2,
                 )
             )
+            if exact:
+                ops.append(
+                    _exact_boundary_fold_ops(j, order, mode, int_t, float_type)
+                )
 
             # set of coordinate values within spline footprint along axis j
             ops.append(f"""{int_t} ci_{j}[{order + 1}];""")
@@ -1077,11 +1205,12 @@ def _generate_interp_custom(
                     f"""
                 {ixvar} = start + {k};"""
                 )
-                ops.append(
-                    _util._generate_boundary_condition_ops(
-                        spline_mode, ixvar, f"xsize_{j}", int_t
+                if not exact:
+                    ops.append(
+                        _util._generate_boundary_condition_ops(
+                            spline_mode, ixvar, f"xsize_{j}", int_t
+                        )
                     )
-                )
 
         if loop_batch_axis:
             # Optimized path: spatial interpolation loops outside, batch loop innermost
@@ -1108,13 +1237,13 @@ def _generate_interp_custom(
             # Compute spatial weight and base index
             _spatial_weight = " * ".join([f"w_{j}" for j in spatial_axes])
             _base_coord_idx = _join_index_terms(
-                [f"(({int_t})in_coord[{j}]) * sx_{j}" for j in outer_batch_axes]
+                (["batch_base"] if outer_batch_axes else [])
                 + [f"ic_{j}" for j in spatial_axes]
             )
 
             # Innermost batch loop
             # For order > 1, we need bounds check for both constant and grid-constant modes
-            if mode == "grid-constant" or mode == "constant":
+            if (mode == "grid-constant" and not exact) or mode == "constant":
                 _spatial_cond = " || ".join(
                     [f"(ic_{j} < 0)" for j in spatial_axes]
                 )
@@ -1149,6 +1278,12 @@ def _generate_interp_custom(
 
             # Close spatial interpolation loops
             ops.append("}" * len(spatial_axes))
+            if exact and mode == "grid-constant":
+                _cterm = _exact_cval_term(spatial_axes, cval, internal_dtype)
+                ops.append(
+                    f"""
+            for ({uint_t} b = 0; b < batch_size; b++) {{ out_batch[b] += {_cterm}; }}"""
+                )
 
             # Write results for all batch elements
             if integer_output:
@@ -1194,7 +1329,14 @@ def _generate_interp_custom(
     if order > 0 and not (loop_batch_axis and order >= 1):
         _weight = " * ".join([f"w_{j}" for j in range(ndim)])
         _coord_idx = " + ".join([f"ic_{j}" for j in range(ndim)])
-        if mode == "grid-constant" or (order > 1 and mode == "constant"):
+        exact = (
+            exact_boundary
+            and order > 1
+            and mode in ("nearest", "grid-constant")
+        )
+        if (mode == "grid-constant" and not exact) or (
+            order > 1 and mode == "constant"
+        ):
             _cond = " || ".join([f"(ic_{j} < 0)" for j in range(ndim)])
             ops.append(
                 f"""
@@ -1213,6 +1355,10 @@ def _generate_interp_custom(
             )
 
         ops.append("}" * ndim)
+        if exact and mode == "grid-constant":
+            spatial_axes = [j for j in range(ndim) if j not in batch_axes]
+            _cterm = _exact_cval_term(spatial_axes, cval, internal_dtype)
+            ops.append(f"out += {_cterm};")
 
     if mode == "constant":
         ops.append("}")
@@ -1239,6 +1385,8 @@ def _generate_interp_custom(
         name += "_batch_" + "_".join([str(j) for j in sorted(batch_axes)])
     if loop_batch_axis:
         name += "_looped"
+    if exact_boundary and order > 1 and mode in ("nearest", "grid-constant"):
+        name += "_exact"
     return operation, name
 
 
@@ -1276,6 +1424,7 @@ def _get_map_kernel(
     float_dtype=cupy.double,
     batch_axes=None,
     output_c_contiguous=True,
+    exact_boundary=False,
 ):
     in_params = "raw X x, raw W coords"
 
@@ -1309,6 +1458,7 @@ def _get_map_kernel(
         omit_in_coord=omit_in_coord,
         batch_axes=batch_axes,
         loop_batch_axis=loop_batch_axis,
+        exact_boundary=exact_boundary,
     )
     kernel = cupy.ElementwiseKernel(
         in_params, out_params, operation, name, preamble=math_constants_preamble
@@ -1329,6 +1479,7 @@ def _get_shift_kernel(
     float_dtype=cupy.double,
     batch_axes=None,
     output_c_contiguous=True,
+    exact_boundary=False,
 ):
     in_params = "raw X x, raw W shift"
 
@@ -1358,6 +1509,7 @@ def _get_shift_kernel(
         float_dtype=float_dtype,
         batch_axes=batch_axes,
         loop_batch_axis=loop_batch_axis,
+        exact_boundary=exact_boundary,
     )
     kernel = cupy.ElementwiseKernel(
         in_params, out_params, operation, name, preamble=math_constants_preamble
@@ -1379,6 +1531,7 @@ def _get_zoom_shift_kernel(
     float_dtype=cupy.double,
     batch_axes=None,
     output_c_contiguous=True,
+    exact_boundary=False,
 ):
     in_params = "raw X x, raw W shift, raw W zoom"
 
@@ -1412,6 +1565,7 @@ def _get_zoom_shift_kernel(
         float_dtype=float_dtype,
         batch_axes=batch_axes,
         loop_batch_axis=loop_batch_axis,
+        exact_boundary=exact_boundary,
     )
     kernel = cupy.ElementwiseKernel(
         in_params, out_params, operation, name, preamble=math_constants_preamble
@@ -1433,6 +1587,7 @@ def _get_zoom_kernel(
     float_dtype=cupy.double,
     batch_axes=None,
     output_c_contiguous=True,
+    exact_boundary=False,
 ):
     in_params = "raw X x, raw W zoom"
 
@@ -1462,6 +1617,7 @@ def _get_zoom_kernel(
         float_dtype=float_dtype,
         batch_axes=batch_axes,
         loop_batch_axis=loop_batch_axis,
+        exact_boundary=exact_boundary,
     )
     kernel = cupy.ElementwiseKernel(
         in_params, out_params, operation, name, preamble=math_constants_preamble
@@ -1482,6 +1638,7 @@ def _get_affine_kernel(
     float_dtype=cupy.double,
     batch_axes=None,
     output_c_contiguous=True,
+    exact_boundary=False,
 ):
     in_params = "raw X x, raw W mat"
 
@@ -1511,6 +1668,7 @@ def _get_affine_kernel(
         float_dtype=float_dtype,
         batch_axes=batch_axes,
         loop_batch_axis=loop_batch_axis,
+        exact_boundary=exact_boundary,
     )
     kernel = cupy.ElementwiseKernel(
         in_params, out_params, operation, name, preamble=math_constants_preamble
