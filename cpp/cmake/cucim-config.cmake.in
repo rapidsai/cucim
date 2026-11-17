@@ -19,7 +19,7 @@ find_dependency(CUDAToolkit)
 # to Thrust::Thrust and CUB::CUB, and they ship together in any case - but it
 # does skip configuring a default CCCL::Thrust target, which cuCIM has no use
 # for.
-find_dependency(CCCL COMPONENTS libcudacxx)
+find_dependency(CCCL 3.4.2 CONFIG COMPONENTS libcudacxx)
 
 if(NOT TARGET cucim::cucim)
     include(${CMAKE_CURRENT_LIST_DIR}/cucim-targets.cmake)
