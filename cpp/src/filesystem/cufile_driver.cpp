@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -570,7 +570,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
 
                 // Read the remaining block (size of PAGE_SIZE)
                 ssize_t read_cnt;
-                read_cnt = ::pread(handle_->fd, buf_pos, PAGE_SIZE, block_read_size);
+                read_cnt = ::pread(handle_->fd, buf_pos, PAGE_SIZE, file_offset + block_read_size);
                 if (read_cnt < 0)
                 {
                     fmt::print(stderr, "Cannot read the remaining file content block! ({})\n", std::strerror(errno));
@@ -881,7 +881,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
 
                 // Read the remaining block (size of PAGE_SIZE)
                 ssize_t read_cnt;
-                read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, block_write_size);
+                read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, file_offset + block_write_size);
                 if (read_cnt < 0)
                 {
                     fmt::print(stderr, "Cannot read the remaining file content block! ({})\n", std::strerror(errno));
@@ -904,7 +904,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                     }
                 }
                 // Write the constructed block
-                write_cnt = ::pwrite(handle_->fd, internal_buf_pos, PAGE_SIZE, block_write_size);
+                write_cnt = ::pwrite(handle_->fd, internal_buf_pos, PAGE_SIZE, file_offset + block_write_size);
                 if (write_cnt < 0)
                 {
                     fmt::print(stderr, "Cannot write the remaining file content! ({})\n", std::strerror(errno));
