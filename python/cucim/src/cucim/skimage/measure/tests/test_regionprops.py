@@ -1871,3 +1871,85 @@ def test_deprecated_properties(old_name):
         regex = f"'RegionProperties' object has no attribute {old_name!r}"
         with pytest.raises(AttributeError, match=regex):
             getattr(regions[0], old_name)
+
+
+def _spacing_label_image(ndim):
+    labels = np.zeros((9,) * ndim, dtype=np.int32)
+    labels[(slice(1, 4),) * ndim] = 1
+    labels[(slice(4, 8),) + (slice(2, 7),) * (ndim - 1)] = 2
+    return labels
+
+
+@pytest.mark.parametrize("batch_processing", [True, False])
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("spacing", [2, 0.5, (2, 3, 4), np.asarray(1.5)])
+@pytest.mark.parametrize(
+    "properties",
+    [
+        ("label",),
+        ("label", "area", "centroid", "bbox", "area_bbox"),
+        ("label", "area_convex", "inertia_tensor", "centroid_local"),
+    ],
+)
+def test_regionprops_table_spacing_forms(
+    batch_processing, ndim, spacing, properties
+):
+    """A scalar spacing means the same spacing along every axis, as in
+    scikit-image, for requests with and without spacing restrictions."""
+    if isinstance(spacing, tuple):
+        spacing = spacing[:ndim]
+    labels = _spacing_label_image(ndim)
+    expected = regionprops_table_cpu(
+        labels, properties=properties, spacing=spacing
+    )
+    actual = regionprops_table(
+        cp.asarray(labels),
+        properties=properties,
+        spacing=spacing,
+        batch_processing=batch_processing,
+    )
+    assert set(actual) == set(expected)
+    for key, value in expected.items():
+        assert_allclose(actual[key], value, rtol=1e-5, atol=1e-5)
+
+
+@pytest.mark.parametrize("batch_processing", [True, False])
+@pytest.mark.parametrize(
+    "spacing, error",
+    [
+        ((1, 2, 3), ValueError),  # wrong length for 2D
+        ([[1, 2]], ValueError),
+        ((1, np.inf), ValueError),
+        ((1, np.nan), ValueError),
+        (("a", 1), TypeError),
+    ],
+)
+def test_regionprops_table_invalid_spacing(batch_processing, spacing, error):
+    """Invalid spacing raises as in scikit-image, also when only the label
+    is requested."""
+    labels = _spacing_label_image(2)
+    with pytest.raises(error):
+        regionprops_table_cpu(labels, properties=("label",), spacing=spacing)
+    with pytest.raises(error):
+        regionprops_table(
+            cp.asarray(labels),
+            properties=("label",),
+            spacing=spacing,
+            batch_processing=batch_processing,
+        )
+
+
+@pytest.mark.parametrize("batch_processing", [True, False])
+def test_regionprops_table_cupy_spacing(batch_processing):
+    labels = _spacing_label_image(2)
+    expected = regionprops_table_cpu(
+        labels, properties=("area", "centroid"), spacing=(2.0, 3.0)
+    )
+    actual = regionprops_table(
+        cp.asarray(labels),
+        properties=("area", "centroid"),
+        spacing=cp.asarray([2.0, 3.0]),
+        batch_processing=batch_processing,
+    )
+    for key, value in expected.items():
+        assert_allclose(actual[key], value, rtol=1e-6)
