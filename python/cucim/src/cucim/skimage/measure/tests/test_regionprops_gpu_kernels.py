@@ -2513,3 +2513,45 @@ def test_regionprops_bbox_coords_positional_props_dict():
     assert_array_equal(props["num_pixels"], expected)
     with pytest.raises(TypeError):
         regionprops_bbox_coords(labels, max_label, True, 16, True, props)
+
+
+def _concentric_shells(n, dtype=cp.int16):
+    """Each pixel labeled 1 + its distance to the nearest face: nested square
+    shells that touch, whose filled areas are n**2, (n - 2)**2, ..."""
+    r = cp.arange(n)
+    d = cp.minimum(r, n - 1 - r)
+    return (1 + cp.minimum(d[:, cp.newaxis], d[cp.newaxis, :])).astype(dtype)
+
+
+@pytest.mark.parametrize("repeat", range(3))
+def test_regionprops_dict_filled_shells_many_blocks(repeat):
+    """Concentric touching shells: every pixel of every label reads and may
+    set its label's flag, from many blocks (the flags are atomic)."""
+    n = 256
+    labels = _concentric_shells(n)
+    out = regionprops_dict(
+        labels, properties=["num_pixels_filled", "area_filled"]
+    )
+    expected = cp.asarray([(n - 2 * i) ** 2 for i in range(n // 2)])
+    assert_array_equal(out["num_pixels_filled"], expected)
+    assert_allclose(out["area_filled"], expected)
+
+
+@pytest.mark.parametrize("repeat", range(3))
+def test_regionprops_dict_filled_touching_tiles(repeat):
+    """Two touching labels tiled over a large image, with holes in label 1's
+    tiles: the touch flag is set from many blocks."""
+    tiles = (cp.add.outer(cp.arange(64), cp.arange(64)) % 2 + 1).astype(
+        cp.uint8
+    )
+    labels = cp.kron(tiles, cp.ones((8, 8), dtype=cp.uint8))
+    # a hole in each tile of label 1 (bordered by label 1 only)
+    hole = (labels == 1) & (
+        (cp.arange(512)[:, None] % 8 == 3) & (cp.arange(512)[None, :] % 8 == 4)
+    )
+    labels[hole] = 0
+    out = regionprops_dict(labels, properties=["area_filled", "num_pixels"])
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels), properties=["area_filled"]
+    )["area_filled"]
+    assert_allclose(out["area_filled"], expected)

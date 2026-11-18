@@ -1040,7 +1040,14 @@ def _get_labels_touch_kernel(ndim):
         bool other = false;
         {neighbors}
         if (other) {{
-          touching[0] = 1;
+          // many threads may set the flag: device-scope atomics, and a load
+          // first so that only the first few threads store (stores to one
+          // address from many threads serialize)
+          cuda::atomic_ref<unsigned char, cuda::thread_scope_device> flag(
+              touching[0]);
+          if (flag.load(cuda::memory_order_relaxed) == 0) {{
+            flag.store(1, cuda::memory_order_relaxed);
+          }}
         }}
       }}\n"""
     return cp.ElementwiseKernel(
@@ -1048,6 +1055,7 @@ def _get_labels_touch_kernel(ndim):
         "raw uint8 touching",
         source,
         name=f"cucim_labels_touch_{ndim}d",
+        preamble="#include <cuda/atomic>",
     )
 
 
@@ -1085,15 +1093,21 @@ def _get_inexact_fill_labels_kernel(ndim):
             }
           }""".replace("NDIM2", str(2 * ndim)).replace("NDIM", str(ndim)),
     )
+    # The flag of a label is read and set by all of its pixels, from any
+    # block: device-scope relaxed atomics (a stale read only means that the
+    # neighbors are checked again).
     source = f"""
       X a = labels[i];
-      if (a != 0 && !flags[a - 1]) {{
+      if (a != 0
+          && cuda::atomic_ref<unsigned char, cuda::thread_scope_device>(
+                 flags[a - 1]).load(cuda::memory_order_relaxed) == 0) {{
         {_pixel_coords_code(ndim)}
         const B* box_a = &bbox[(a - 1) * {2 * ndim}];
         bool flag = false;
         {neighbors}
         if (flag) {{
-          flags[a - 1] = 1;
+          cuda::atomic_ref<unsigned char, cuda::thread_scope_device>(
+              flags[a - 1]).store(1, cuda::memory_order_relaxed);
         }}
       }}\n"""
     return cp.ElementwiseKernel(
@@ -1102,6 +1116,7 @@ def _get_inexact_fill_labels_kernel(ndim):
         "raw uint8 flags",
         source,
         name=f"cucim_inexact_fill_labels_{ndim}d",
+        preamble="#include <cuda/atomic>",
     )
 
 
