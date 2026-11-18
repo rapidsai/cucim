@@ -533,8 +533,9 @@ def regionprops_bbox_coords(
     max_label=None,
     return_slices=False,
     pixels_per_thread=16,
-    compute_num_pixels=False,
     props_dict=None,
+    *,
+    compute_num_pixels=False,
 ):
     """Determine bounding box coordinates (and slices) of each labeled region.
 
