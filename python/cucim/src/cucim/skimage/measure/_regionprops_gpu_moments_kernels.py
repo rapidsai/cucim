@@ -317,6 +317,7 @@ def _get_raw_moments_code(
     has_weights=False,
     accum_c_type=None,
     pixels_per_thread=16,
+    run_c_type=None,
 ):
     """
     Notes
@@ -325,7 +326,10 @@ def _get_raw_moments_code(
 
         - mom{c}_{k} : the moment at raveled index k of the moments matrix of
             channel c (only for the entries of total order <= `order`), with
-            type `accum_c_type` (default: `moments_c_type`)
+            type `run_c_type` (default: `accum_c_type`). The last runs of
+            up to a warp's 32 lanes are summed in this type before the flush,
+            so it must hold the sum over 32 lanes (`accum_c_type` only that
+            of one lane)
         - psum{c}_{e} : sum of (weight times) the e-th power of the last
             coordinate over the pixels of the current row, expanded into the
             moments when the row changes and at the end of the run
@@ -361,6 +365,8 @@ def _get_raw_moments_code(
 
     if accum_c_type is None:
         accum_c_type = moments_c_type
+    if run_c_type is None:
+        run_c_type = accum_c_type
     use_floating_point = accum_c_type in ["float", "double"]
 
     source_pre = ""
@@ -416,15 +422,20 @@ def _get_raw_moments_code(
             var = f"mom{c}_{k}"
             reduce.append((var, "sum"))
             source_pre += f"""
-    {accum_c_type} {var};"""
+    {run_c_type} {var};"""
             source_start += f"""
           {var} = 0;"""
             factors = []
             for d in row_axes:
                 factors += [f"r{d}"] * exponents[d]
             factors.append(f"psum{c}_{exponents[last]}")
+            term = " * ".join(factors)
+            if run_c_type != accum_c_type:
+                # each term is a partial sum of one lane's run: it fits
+                # accum_c_type
+                term = f"static_cast<{run_c_type}>({term})"
             expand += f"""
-            {var} += {" * ".join(factors)};"""
+            {var} += {term};"""
         for e in range(order + 1):
             expand += f"""
             psum{c}_{e} = 0;"""
@@ -504,16 +515,17 @@ def _get_raw_moments_code(
     )
 
 
-def _get_moments_accum_c_type(shape, order, pixels_per_thread):
+def _get_moments_accum_c_type(shape, order, pixels_per_thread, lanes=1):
     """C type of the per-run sums of the unweighted moments kernel.
 
     The local coordinates are smaller than max(shape), so each term of a
     per-run sum is at most (max(shape) - 1)**order and the sum of at most
-    `pixels_per_thread` terms fits in a 32 or 64-bit unsigned integer for any
-    practical image. Integer arithmetic is exact and much faster than double
-    precision on GPUs with low FP64 throughput.
+    `pixels_per_thread` terms of one lane (or of `lanes` lanes: the last runs
+    of a warp's 32 lanes are combined before the flush) fits in a 32 or 64-bit
+    unsigned integer for any practical image. Integer arithmetic is exact and
+    much faster than double precision on GPUs with low FP64 throughput.
     """
-    max_sum = (max(shape) - 1) ** order * pixels_per_thread
+    max_sum = (max(shape) - 1) ** order * pixels_per_thread * lanes
     if max_sum < 2**32:
         return "unsigned int"
     elif max_sum < 2**64:
@@ -532,6 +544,7 @@ def get_raw_moments_kernel(
     num_channels=1,
     pixels_per_thread=8,
     accum_c_type=None,
+    run_c_type=None,
 ):
     moments_dtype = cp.dtype(moments_dtype)
 
@@ -555,7 +568,10 @@ def get_raw_moments_kernel(
         if moments_dtype.kind != "f":
             raise ValueError("moments must have a floating point data type")
 
-    if weighted and accum_c_type not in [None, "double"]:
+    if weighted and (
+        accum_c_type not in [None, "double"]
+        or run_c_type not in [None, "double"]
+    ):
         raise ValueError("weighted moments are accumulated in double")
     pre, start, op, flush, reduce, finish = _get_raw_moments_code(
         coord_c_type=coord_c_type,
@@ -567,6 +583,7 @@ def get_raw_moments_kernel(
         num_channels=num_channels,
         accum_c_type=accum_c_type,
         pixels_per_thread=pixels_per_thread,
+        run_c_type=run_c_type,
     )
 
     pre += _unravel_loop_index_declarations("labels", ndim, uint_t=coord_c_type)
@@ -607,6 +624,8 @@ def get_raw_moments_kernel(
     name += f"_{coord_dtype.char}_{moments_dtype.char}_batch{pixels_per_thread}"
     if accum_c_type is not None:
         name += "_" + accum_c_type.replace(" ", "_")
+    if run_c_type is not None:
+        name += "_run_" + run_c_type.replace(" ", "_")
     return cp.ElementwiseKernel(
         inputs, outputs, source, preamble=_warp_includes, name=name
     )
@@ -740,10 +759,15 @@ def regionprops_moments(
     # total number of elements in the moments matrix
     moments = cp.zeros(moments_shape, dtype=cp.float64)
     if weighted:
-        accum_c_type = None
+        accum_c_type = run_c_type = None
     else:
+        # per-pixel sums of one lane, and per-run moments, which are
+        # combined over up to a warp's 32 lanes
         accum_c_type = _get_moments_accum_c_type(
             label_image.shape, order, pixels_per_thread
+        )
+        run_c_type = _get_moments_accum_c_type(
+            label_image.shape, order, pixels_per_thread, lanes=32
         )
     moments_kernel = get_raw_moments_kernel(
         ndim=label_image.ndim,
@@ -755,6 +779,7 @@ def regionprops_moments(
         num_channels=num_channels,
         pixels_per_thread=pixels_per_thread,
         accum_c_type=accum_c_type,
+        run_c_type=run_c_type,
     )
     input_args = (
         label_image,
