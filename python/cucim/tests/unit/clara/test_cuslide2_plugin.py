@@ -118,9 +118,9 @@ _CHECK = textwrap.dedent(
 )
 
 
-def _run_cuslide2(path):
+def _run_cuslide2(path, check=_CHECK, *args):
     proc = subprocess.run(
-        [sys.executable, "-c", _CHECK, str(path)],
+        [sys.executable, "-c", check, str(path), *args],
         env=_cuslide2_env(),
         capture_output=True,
         text=True,
@@ -168,24 +168,58 @@ def test_cuslide2_reads_synthetic_pyramid(
 _CHECK_READ = textwrap.dedent(
     """
     import json, sys
+    import cupy as cp
     import numpy as np
     from cucim import CuImage
 
-    img = CuImage(sys.argv[1])
+    batch_size = int(sys.argv[2])
+    locations = [(20 + i, 30 + i) for i in range(batch_size + 1)]
+    size = (16, 16)
     out = {}
     for device in ("cpu", "cuda"):
-        try:
-            region = img.read_region((20, 30), (100, 80), level=0, device=device)
-        except RuntimeError as e:
-            out[device] = {"error": str(e)}
-            continue
-        if device == "cuda":
-            import cupy as cp
-            region = cp.asnumpy(cp.asarray(region))
-        out[device] = {"region": np.asarray(region).tolist()}
+        for mode in ("direct", "cached", "batch"):
+            CuImage.cache("per_process" if mode == "cached" else "nocache",
+                          memory_capacity=16)
+            img = CuImage(sys.argv[1])
+            key = f"{mode}-{device}"
+            try:
+                if mode == "batch":
+                    # Destroy a prefetched reader without consuming its first batch.
+                    pending = img.read_region(locations, size, device=device,
+                                              num_workers=1, batch_size=batch_size)
+                    del pending
+                    reader = img.read_region(locations, size, device=device,
+                                             num_workers=1, batch_size=batch_size)
+                    arrays = [cp.asnumpy(cp.asarray(batch)) if device == "cuda"
+                              else np.array(batch) for batch in reader]
+                    region = np.concatenate(arrays)
+                else:
+                    region = img.read_region(locations[0], size, device=device)
+                    region = cp.asnumpy(cp.asarray(region)) if device == "cuda" else np.asarray(region)
+            except RuntimeError as e:
+                out[key] = {"error": str(e)}
+                continue
+            out[key] = {"region": region.tolist()}
     print("RESULT" + json.dumps(out))
     """
 )
+
+
+def _assert_read_pixels(key, outcome, image, batch_size, tolerance):
+    expected = image[30:46, 20:36]
+    if key.startswith("batch"):
+        expected = np.stack(
+            [
+                image[30 + i : 46 + i, 20 + i : 36 + i]
+                for i in range(batch_size + 1)
+            ]
+        )
+    region = np.asarray(outcome["region"])
+    assert region.shape == expected.shape, key
+    mae = np.abs(region.astype(int) - expected.astype(int)).mean()
+    assert region.any() and mae <= tolerance, (
+        f"{key}: region is blank or wrong (mean abs error {mae})"
+    )
 
 
 @pytest.mark.parametrize(
@@ -213,26 +247,21 @@ def test_cuslide2_jpeg2000_is_decoded_or_an_error(
         compression=compression,
     )
 
-    proc = subprocess.run(
-        [sys.executable, "-c", _CHECK_READ, str(path)],
-        env=_cuslide2_env(),
-        capture_output=True,
-        text=True,
-        timeout=600,
-    )
-    assert proc.returncode == 0, proc.stderr[-4000:]
-    lines = [ln for ln in proc.stdout.splitlines() if ln.startswith("RESULT")]
-    assert lines, proc.stdout[-2000:] + proc.stderr[-2000:]
-    result = json.loads(lines[-1][len("RESULT") :])
-
-    expected = image[30:110, 20:120]
-    for device, outcome in result.items():
+    result = _run_cuslide2(path, _CHECK_READ, "2")
+    for key, outcome in result.items():
         if "error" in outcome:
             assert "nvImageCodec" in outcome["error"], outcome["error"]
-            continue
-        region = np.asarray(outcome["region"])
-        assert region.shape == expected.shape, device
-        mae = np.abs(region.astype(int) - expected.astype(int)).mean()
-        assert region.any() and mae <= 1, (
-            f"{device}: region is blank or wrong (mean abs error {mae})"
-        )
+        else:
+            _assert_read_pixels(key, outcome, image, batch_size=2, tolerance=1)
+
+
+@pytest.mark.parametrize("batch_size", [2, 65])
+def test_cuslide2_cached_and_batched_deflate(tmp_path, batch_size):
+    image = _make_image((256, 320, 3))
+    path = tmp_path / "deflate.tif"
+    _write_pyramid(path, image, "adobe_deflate", n_levels=1)
+
+    result = _run_cuslide2(path, _CHECK_READ, str(batch_size))
+    for key, outcome in result.items():
+        assert "error" not in outcome, (key, outcome)
+        _assert_read_pixels(key, outcome, image, batch_size, tolerance=0)

@@ -463,12 +463,8 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             std::move(request_location), std::move(request_size),
             adjusted_location_len, one_raster_size, batch_size, prefetch_factor, num_workers);
 
-        // load_func is a no-op (batch processor handles decoding), so load_size
-        // only affects bookkeeping in the loader.
-        const uint32_t load_size =
-            std::min(static_cast<uint64_t>(1), adjusted_location_len);
-
-        loader->request(load_size);
+        // Queue the bookkeeping for the same output batch sent to nvImageCodec.
+        loader->request(batch_size);
 
         // If reading single location synchronously, fetch immediately
         if (adjusted_location_len == 1 && batch_size == 1)
@@ -837,15 +833,9 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                     else
                     {
                         tile_lock.unlock();
-                        // tile_value destructor handles backend-correct cleanup
-                        #ifdef DEBUG
-                        ::fmt::print("  ❌ Tile decode FAILED tile[{},{}] — filling background\n",
-                                     tile_col, tile_row);
-                        #endif
-
-                        fill_background(dest_row_ptr + dest_col_byte_offset, copy_bytes_per_row, copy_rows);
-                        dest_col_byte_offset += copy_bytes_per_row;
-                        continue;
+                        throw std::runtime_error(fmt::format(
+                            "Failed to decode IFD[{}] tile ({},{}) with nvImageCodec",
+                            ifd_index_, tile_col, tile_row));
                     }
                 }
 
