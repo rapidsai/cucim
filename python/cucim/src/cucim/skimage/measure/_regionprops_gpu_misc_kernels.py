@@ -215,10 +215,20 @@ def _get_boundary_kernel(
         op = _get_perimeter_op(option)
     else:
         op = _get_windows_op(ndim, omit_image_edges=option)
-    # integer coefficients of the Euler number are summed exactly
-    acc_c_type, dtype = (
-        ("int", "int32") if kind == "euler" else ("double", "float64")
-    )
+    # integer coefficients of the Euler number are summed exactly: per run
+    # (and over a warp's last runs) in int, over the whole region in 64 bits
+    # (the unscaled 3D coefficients add up to 8 times the Euler number, which
+    # can exceed 2**31 - 1 for a region of many isolated voxels)
+    if kind == "euler":
+        acc_c_type, dtype, out_dtype = "int", "int32", "int64"
+        flush = """
+          atomicAdd(reinterpret_cast<unsigned long long*>(&out[lab - 1]),
+                    static_cast<unsigned long long>(
+                        static_cast<long long>(acc)));"""
+    else:
+        acc_c_type, dtype, out_dtype = "double", "float64", "float64"
+        flush = """
+          atomicAdd(&out[lab - 1], acc);"""
     pre = (
         _get_shape_code(ndim, int32_coords)
         + f"""
@@ -226,14 +236,12 @@ def _get_boundary_kernel(
     )
     start = """
           acc = 0;"""
-    flush = """
-          atomicAdd(&out[lab - 1], acc);"""
     source = _get_label_run_loop(
         pixels_per_thread, pre, start, op, flush, warp_reduce=[("acc", "sum")]
     )
     return cp.ElementwiseKernel(
         f"raw X labels, raw uint64 labels_size, raw {dtype} coefs",
-        f"raw {dtype} out",
+        f"raw {out_dtype} out",
         source,
         preamble=_warp_includes,
         name=(
@@ -250,7 +258,9 @@ def _boundary_sums(kind, labels, coefs, option, max_label, pixels_per_thread):
     kernel = _get_boundary_kernel(
         kind, labels.ndim, option, pixels_per_thread, int32_coords
     )
-    out = cp.zeros((max_label,), dtype=coefs.dtype)
+    # (the Euler coefficients are summed in 64 bits, see _get_boundary_kernel)
+    out_dtype = cp.int64 if kind == "euler" else coefs.dtype
+    out = cp.zeros((max_label,), dtype=out_dtype)
     kernel(
         labels,
         labels.size,

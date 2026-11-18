@@ -1491,7 +1491,9 @@ def test_boundary_kernel_coordinate_types(kind, ndim, int32_coords):
         expected = [measure_cpu.euler_number(m, 1) for m in masks]
     labels = cp.asarray(labels, dtype=cp.int32)
     kernel = _get_boundary_kernel(kind, ndim, option, 10, int32_coords)
-    out = cp.zeros((max_label,), dtype=coefs.dtype)
+    # (the Euler coefficients are summed into int64)
+    out_dtype = cp.int64 if kind == "euler" else coefs.dtype
+    out = cp.zeros((max_label,), dtype=out_dtype)
     kernel(labels, labels.size, coefs, out, size=math.ceil(labels.size / 10))
     if kind == "euler" and ndim == 3:
         out = (out * 0.125).astype(cp.int64)
@@ -2409,3 +2411,39 @@ def test_regionprops_dict_centroids_with_weighted_props(
             ref = expected[prop]
         tol = 1e-6 if value.dtype == cp.float32 else 1e-9
         assert_allclose(value, ref, rtol=tol, atol=tol)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+def test_euler_sums_beyond_int32(ndim):
+    """The Euler coefficients of a region are summed in 64 bits. (In 3D the
+    unscaled coefficients add up to 8 times the Euler number, which
+    overflowed int32 for a 1292**3 volume of isolated voxels.) Large
+    coefficients make a small image of isolated pixels cross 2**31 while
+    the sums of one run, and of a warp's last runs, stay small."""
+    from cucim.skimage.measure._regionprops_gpu_misc_kernels import (
+        _boundary_sums,
+    )
+
+    shape = (2000, 2000) if ndim == 2 else (160, 160, 160)
+    labels = cp.zeros(shape, dtype=cp.uint8)
+    labels[(slice(None, None, 2),) * ndim] = 1
+    n_pixels = int(labels.sum())
+    c = 1 << 12
+    coefs = cp.full((2 ** (2**ndim),), c, dtype=cp.int32)
+    coefs[-1] = 0  # a window full of the region contributes 0
+    out = _boundary_sums("euler", labels, coefs, False, 1, 10)
+    # an isolated pixel is the first region pixel of all 2**ndim windows
+    # that contain it, each of which contains only this pixel of the region
+    expected = n_pixels * 2**ndim * c
+    assert expected > 2**31
+    assert out.dtype == cp.int64
+    assert int(out[0]) == expected
+
+
+def test_euler_number_many_isolated_voxels():
+    # a smaller version of the reported case (646**3 isolated voxels): the
+    # Euler number of n isolated voxels is n
+    labels = cp.zeros((100, 100, 100), dtype=cp.uint8)
+    labels[::2, ::2, ::2] = 1
+    out = regionprops_dict(labels, properties=["euler_number"])
+    assert int(out["euler_number"][0]) == 50**3
