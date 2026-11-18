@@ -587,6 +587,27 @@ def test_convex_hull_image_uint8_values(value, cpu_fallback_threshold):
     )
 
 
+@pytest.mark.parametrize("scale", [1, 16])
+@pytest.mark.parametrize("repeat", range(2))
+def test_convex_hull_object_overlap_many_blocks(scale, repeat):
+    """U-shaped objects enclosing disconnected inner objects: the hulls
+    overlap, across many blocks for the larger scale; the result is the
+    logical OR of the separately computed hulls."""
+    from cucim.skimage.measure import label
+
+    tile = np.zeros((12, 12), dtype=bool)
+    tile[1:11, 1] = tile[1:11, 10] = tile[10, 1:11] = True  # a U
+    tile[3:7, 4:8] = True  # inside the U, not connected to it
+    tile = np.kron(tile, np.ones((scale, scale), dtype=bool))
+    image = cp.asarray(np.tile(tile, (4, 5)))
+    actual = convex_hull_object(image, cpu_fallback_threshold=0)
+    labels = label(image, connectivity=2)
+    expected = cp.zeros_like(image)
+    for lab in range(1, int(labels.max()) + 1):
+        expected |= convex_hull_image(labels == lab, cpu_fallback_threshold=0)
+    assert_array_equal(actual, expected)
+
+
 @pytest.mark.parametrize("empty", [False, True])
 def test_convex_hull_object_negative_threshold(empty):
     image = cp.zeros((20, 20), dtype=bool)

@@ -1167,7 +1167,9 @@ def _get_paint_convex_kernel(ndim, int32_index):
     `_get_convex_image_kernel`). A pixel inside the label's row interval is
     set in the output, which has the shape of the label image; pixels
     outside are left as they are, so the output is the union of the convex
-    images even where bounding boxes overlap (all writes store true).
+    images even where bounding boxes overlap. Overlapping hulls can set the
+    same pixel from several threads, so the stores are device-scope atomics
+    (relaxed: they all store true).
     """
     index_t = "int" if int32_index else "long long"
     source = f"""
@@ -1205,7 +1207,9 @@ def _get_paint_convex_kernel(ndim, int32_index):
                               * static_cast<cucim_index_t>(shape1);"""
     source += f"""
         index += static_cast<cucim_index_t>(box[{ndim - 1}]) + col;
-        out[index] = true;
+        cuda::atomic_ref<unsigned char, cuda::thread_scope_device>(
+            reinterpret_cast<unsigned char&>(out[index])).store(
+                1, cuda::memory_order_relaxed);
       }}\n"""
     inputs = (
         "raw E row_lo, raw E row_hi, raw int64 offsets, "
@@ -1215,7 +1219,13 @@ def _get_paint_convex_kernel(ndim, int32_index):
     name = f"cucim_paint_convex_{ndim}d"
     if not int32_index:
         name += "_index64"
-    return cp.ElementwiseKernel(inputs, "raw bool out", source, name=name)
+    return cp.ElementwiseKernel(
+        inputs,
+        "raw bool out",
+        source,
+        name=name,
+        preamble="#include <cuda/atomic>",
+    )
 
 
 def _convex_hull_union(label_image, bbox, max_label, *, tolerance=1e-10):
