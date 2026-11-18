@@ -132,6 +132,10 @@ and TIFF files, in addition to nvJPEG for JPEG.
   `Failed to load nvjpeg2k library!`, and cuslide2 reports the wrong number of
   levels and tile sizes of `(0, 0)` or fails to read JPEG 2000 files.
 
+- **Conda:** The `libcucim` package includes cuslide2 and depends on the
+  nvImageCodec and codec libraries. The plugin loads them from the active
+  Conda environment's `lib` directory without setting `LD_LIBRARY_PATH`.
+
 ### Test Scripts
 
 The test scripts are in the cuCIM repository (`scripts/`) and are not installed
