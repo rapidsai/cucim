@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import itertools
+import math
 import warnings
 from collections.abc import Callable
 from copy import copy
@@ -1032,7 +1033,9 @@ def regionprops_dict(
 
 def _property_array(props, name, separator):
     """``props[name]``, or the columns ``name-i-j`` of a `regionprops_table`
-    result stacked into an array of shape (n_labels, i, j); None if absent.
+    result stacked into an array of shape (n_labels, i, j); None if absent
+    or if the columns do not cover every index of that shape (e.g. a column
+    was removed from the table), so that no component is left unset.
     """
     if name in props:
         return props[name]
@@ -1047,23 +1050,46 @@ def _property_array(props, name, separator):
         return None
     first = next(iter(columns.values()))
     xp = cp.get_array_module(first)
-    shape = tuple(
-        1 + max(i[d] for i in columns) for d in range(len(next(iter(columns))))
-    )
+    ndim = len(next(iter(columns)))
+    if any(len(index) != ndim for index in columns):
+        return None
+    shape = tuple(1 + max(i[d] for i in columns) for d in range(ndim))
+    if len(columns) != math.prod(shape):
+        return None
     out = xp.empty(first.shape + shape, dtype=xp.float64)
     for index, column in columns.items():
         out[(Ellipsis, *index)] = column
     return out
 
 
-def _required_properties(props, names, function, separator):
+def _required_properties(props, names, function, separator, ranks=None):
     """The arrays of the properties `names`, or a ValueError that lists the
-    missing ones and how to request them."""
+    missing (or incomplete) ones and how to request them.
+
+    `ranks` gives the number of trailing axes of each property (0 for a
+    scalar, 1 for a vector, 2 for a matrix); all these axes have the same
+    length, ndim, taken as the largest one present, so that a table missing
+    a trailing component is reported as well.
+    """
     arrays = [_property_array(props, name, separator) for name in names]
+    if ranks is not None:
+        present = [
+            a.shape[a.ndim - r :]
+            for a, r in zip(arrays, ranks)
+            if a is not None and r > 0
+        ]
+        ndim = max((max(shape) for shape in present), default=0)
+        arrays = [
+            None
+            if a is None or a.ndim < r or a.shape[a.ndim - r :] != (ndim,) * r
+            else a
+            for a, r in zip(arrays, ranks)
+        ]
     missing = [name for name, array in zip(names, arrays) if array is None]
     if missing:
         raise ValueError(
-            f"{function} needs the properties {', '.join(names)}; missing: "
+            f"{function} needs the properties {', '.join(names)}; missing "
+            "or incomplete: "
             f"{', '.join(missing)}. Request them in the `properties` argument "
             "of regionprops_table or regionprops_dict."
         )
@@ -1152,6 +1178,7 @@ def oriented_bbox_corners(props, *, separator="-"):
         ),
         "oriented_bbox_corners",
         separator,
+        ranks=(1, 1, 2),
     )
     return _box_corners(size, center, eigenvectors)
 
@@ -1194,6 +1221,7 @@ def min_area_bbox_corners(props, *, separator="-"):
         ("min_area_bbox_size", "min_area_bbox_center", "min_area_bbox_angle"),
         "min_area_bbox_corners",
         separator,
+        ranks=(1, 1, 0),
     )
     xp = cp.get_array_module(size, center, angle)
     angle = xp.asarray(angle, dtype=xp.float64)

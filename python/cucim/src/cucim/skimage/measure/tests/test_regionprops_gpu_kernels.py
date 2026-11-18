@@ -1999,7 +1999,7 @@ def test_oriented_bbox_corners_missing_properties():
         labels, properties=["oriented_bbox_size", "oriented_bbox_center"]
     )
     with pytest.raises(
-        ValueError, match="missing: inertia_tensor_eigenvectors"
+        ValueError, match="missing or incomplete: inertia_tensor_eigenvectors"
     ):
         measure.oriented_bbox_corners(out)
     with pytest.raises(ValueError, match="regionprops_table"):
@@ -2687,7 +2687,9 @@ def test_min_area_bbox_corners_table_and_missing():
     )
     assert_allclose(corners, cp.asnumpy(expected)[table["label"] - 1])
     out = regionprops_dict(labels, properties=names[:2])
-    with pytest.raises(ValueError, match="missing: min_area_bbox_angle"):
+    with pytest.raises(
+        ValueError, match="missing or incomplete: min_area_bbox_angle"
+    ):
         measure.min_area_bbox_corners(out)
 
 
@@ -3708,3 +3710,62 @@ def test_convex_hulls_3d_unused_slots(max_extent, monkeypatch):
             got = {tuple(r) for r in np.round(slots[:used], 9) + 0.0}
             ref = {tuple(r) for r in np.round(hull.equations, 9) + 0.0}
             assert got == ref
+
+
+@pytest.mark.parametrize("host", [False, True])
+@pytest.mark.parametrize(
+    "function, names, removed",
+    [
+        # a missing first component of a vector (the reported case)
+        (
+            "min_area_bbox_corners",
+            [
+                "min_area_bbox_size",
+                "min_area_bbox_center",
+                "min_area_bbox_angle",
+            ],
+            "min_area_bbox_center-0",
+        ),
+        ("min_area_bbox_corners", None, "min_area_bbox_size-1"),
+        # entries of a matrix
+        (
+            "oriented_bbox_corners",
+            [
+                "oriented_bbox_size",
+                "oriented_bbox_center",
+                "inertia_tensor_eigenvectors",
+            ],
+            "inertia_tensor_eigenvectors-0-1",
+        ),
+        ("oriented_bbox_corners", None, "inertia_tensor_eigenvectors-1-1"),
+        ("oriented_bbox_corners", None, "oriented_bbox_center-0"),
+    ],
+)
+def test_box_corners_incomplete_columns(function, names, removed, host):
+    """A table missing one column of a vector or matrix property raises the
+    missing-property error instead of reading an unset component."""
+    if names is None:
+        names = (
+            [
+                "min_area_bbox_size",
+                "min_area_bbox_center",
+                "min_area_bbox_angle",
+            ]
+            if function == "min_area_bbox_corners"
+            else [
+                "oriented_bbox_size",
+                "oriented_bbox_center",
+                "inertia_tensor_eigenvectors",
+            ]
+        )
+    labels = cp.zeros((8, 9), dtype=cp.uint8)
+    labels[2:4, 1:4] = 1  # 2 x 3 rectangle with its top-left pixel at (2, 1)
+    table = measure.regionprops_table(
+        labels, properties=names, copy_output_to_host=host
+    )
+    corners = getattr(measure, function)(table)
+    assert corners.shape == (1, 4, 2)
+    del table[removed]
+    prop = removed.rsplit("-", 2 if removed.count("-") == 2 else 1)[0]
+    with pytest.raises(ValueError, match=f"missing or incomplete: {prop}"):
+        getattr(measure, function)(table)
