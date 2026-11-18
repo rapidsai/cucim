@@ -531,10 +531,13 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
     }
 }
 
-nvimgcodecDecoder_t NvImageCodecTiffParserManager::get_decoder_for(const std::string& codec,
-                                                                   bool compression_known)
+nvimgcodecDecoder_t NvImageCodecTiffParserManager::get_decoder_for(const IfdInfo& ifd_info)
 {
-    const bool needs_gpu_decoder = (codec == "jpeg2000") || (codec == "tiff" && !compression_known);
+    const auto compression = ifd_info.tiff_tags.find("COMPRESSION");
+    const bool compression_known =
+        compression != ifd_info.tiff_tags.end() && std::holds_alternative<uint16_t>(compression->second);
+    const bool needs_gpu_decoder =
+        (ifd_info.codec == "jpeg2000") || (ifd_info.codec == "tiff" && !compression_known);
     if (!needs_gpu_decoder || !initialized_ || cpu_only_mode_)
     {
         return decoder_;
@@ -1384,30 +1387,6 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     if (desc_it != ifd_info.tiff_tags.end() && ifd_info.image_description.empty())
     {
         ifd_info.image_description = tiff_tag_value_to_string(desc_it->second);
-    }
-
-    // Check if COMPRESSION tag was successfully extracted
-    if (ifd_info.tiff_tags.find("COMPRESSION") != ifd_info.tiff_tags.end())
-    {
-        return;  // Have compression info, no need for heuristics
-    }
-
-    // Fallback: file extension heuristics when the file carries no COMPRESSION tag
-#ifdef DEBUG
-    fmt::print("  ℹ️  COMPRESSION tag not available, using file extension heuristics\n");
-#endif // DEBUG
-
-    std::string ext;
-    size_t dot_pos = file_path_.rfind('.');
-    if (dot_pos != std::string::npos)
-    {
-        ext = file_path_.substr(dot_pos);
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-    }
-
-    if (ext == ".svs" || ext == ".scn" || ext == ".ndpi" || ext == ".bif")
-    {
-        ifd_info.tiff_tags["COMPRESSION"] = static_cast<uint16_t>(7);  // TIFF_COMPRESSION_JPEG
     }
 }
 

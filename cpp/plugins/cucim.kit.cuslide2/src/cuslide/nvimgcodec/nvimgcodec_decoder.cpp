@@ -322,7 +322,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         // the CPU-only backends for JPEG 2000, see get_decoder_for()).  For CPU output
         // requests, the buffer_kind is set to STRIDED_HOST below and nvImageCodec
         // handles the GPU decode → host copy internally.
-        nvimgcodecDecoder_t decoder = manager.get_decoder_for(ifd_info.codec, !ifd_info.tiff_tags.empty());
+        nvimgcodecDecoder_t decoder = manager.get_decoder_for(ifd_info);
 
         #ifdef DEBUG
         fmt::print("  💡 Decoding with default decoder (output buffer: {})\n", target_is_cpu ? "host" : "device");
@@ -615,7 +615,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
 
         // Always use the primary GPU-enabled decoder (handles both GPU and
         // CPU output via buffer_kind).
-        nvimgcodecDecoder_t decoder = manager.get_decoder_for(ifd_info.codec, !ifd_info.tiff_tags.empty());
+        nvimgcodecDecoder_t decoder = manager.get_decoder_for(ifd_info);
 
         // Step 1: Create ROI sub-streams for each region
 
@@ -916,7 +916,7 @@ BatchDecodeState schedule_batch_decode(
         }
 
         // Always use the primary GPU-enabled decoder
-        nvimgcodecDecoder_t decoder = manager.get_decoder_for(ifd_info.codec, !ifd_info.tiff_tags.empty());
+        nvimgcodecDecoder_t decoder = manager.get_decoder_for(ifd_info);
 
         // Step 1: Create ROI sub-streams for each region
         impl->roi_streams_raii.reserve(impl->batch_size);

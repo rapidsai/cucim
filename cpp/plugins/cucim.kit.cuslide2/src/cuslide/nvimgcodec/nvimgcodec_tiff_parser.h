@@ -293,12 +293,7 @@ private:
     void extract_ifd_metadata(IfdInfo& ifd_info);
 
     /**
-     * @brief Extract TIFF tags using file extension heuristics
-     *
-     * Fallback path: infers compression type from file extension for common WSI formats
-     * when TIFF tag metadata is not available from nvImageCodec.
-     *
-     * Populates ifd_info.tiff_tags map with inferred tags (primarily COMPRESSION).
+     * @brief Extract TIFF tags returned by nvImageCodec
      *
      * @param ifd_info IFD to extract TIFF tags for
      */
@@ -383,16 +378,15 @@ public:
      * of nvImageCodec (libtiff, OpenCV). They cannot decode JPEG 2000 in TIFF
      * (compression 33003, 33005 and 34712), but they accept such a stream and
      * report success after every tile failed, which gives an all-zero image.
-     * So for JPEG 2000, and when the compression is not known (no TIFF tags
-     * were returned, which means that nvTIFF is not loaded), use a decoder
+     * For JPEG 2000, or when nvImageCodec did not return a valid TIFF
+     * Compression tag, use a decoder
      * without the CPU-only backends. If the nvJPEG2000 or nvTIFF library is
      * missing, decoding then fails with an error status.
      *
-     * @param codec Codec of the IFD (IfdInfo::codec)
-     * @param compression_known true if the TIFF tags of the IFD were returned
+     * @param ifd_info Codec and retrieved TIFF tags for the requested IFD
      * @return nvImageCodec decoder handle
      */
-    nvimgcodecDecoder_t get_decoder_for(const std::string& codec, bool compression_known);
+    nvimgcodecDecoder_t get_decoder_for(const IfdInfo& ifd_info);
 
     /**
      * @brief Check if nvImageCodec is available and initialized

@@ -193,7 +193,10 @@ _CHECK_READ = textwrap.dedent(
     [33003, 33005, 34712],
     ids=["aperio_33003", "aperio_33005", "jpeg2000_34712"],
 )
-def test_cuslide2_jpeg2000_is_decoded_or_an_error(tmp_path, compression):
+@pytest.mark.parametrize("filename", ["jpeg2000.tif", "sample.svs", "JP2K.svs"])
+def test_cuslide2_jpeg2000_is_decoded_or_an_error(
+    tmp_path, compression, filename
+):
     """A JPEG 2000 TIFF is decoded correctly or the read raises an error.
 
     If the nvJPEG2000 or nvTIFF library cannot be loaded, nvImageCodec falls
@@ -201,7 +204,7 @@ def test_cuslide2_jpeg2000_is_decoded_or_an_error(tmp_path, compression):
     success. The plugin must not return an all-zero region then.
     """
     image = _make_image((256, 320, 3))
-    path = tmp_path / "jpeg2000.tif"
+    path = tmp_path / filename
     tifffile.imwrite(
         path,
         image,
@@ -210,10 +213,9 @@ def test_cuslide2_jpeg2000_is_decoded_or_an_error(tmp_path, compression):
         compression=compression,
     )
 
-    env = dict(os.environ, ENABLE_CUSLIDE2="1")
     proc = subprocess.run(
         [sys.executable, "-c", _CHECK_READ, str(path)],
-        env=env,
+        env=_cuslide2_env(),
         capture_output=True,
         text=True,
         timeout=600,
