@@ -62,6 +62,7 @@ from ._regionprops_gpu_moments_kernels import (
     required_order,
 )
 from ._regionprops_gpu_utils import _find_close_labels, _get_min_integer_dtype
+from ._regionprops_utils import _normalize_spacing
 
 __all__ = [
     "equivalent_diameter_area",
@@ -360,6 +361,9 @@ def regionprops_dict(
         required_props.update(property_requirements[prop])
 
     ndim = label_image.ndim
+    if spacing is not None:
+        # a scalar means the same spacing along every axis (scikit-image)
+        spacing = _normalize_spacing(spacing, ndim)
     if ndim != 2:
         invalid_names = requested_props & ndim_2_only
         if any(invalid_names):

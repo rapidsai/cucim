@@ -19,7 +19,12 @@ from cucim.skimage._vendored.ndimage import find_objects
 from cucim.skimage.morphology.convex_hull import convex_hull_image
 
 from . import _moments
-from ._regionprops_utils import euler_number, perimeter, perimeter_crofton
+from ._regionprops_utils import (
+    _normalize_spacing,
+    euler_number,
+    perimeter,
+    perimeter_crofton,
+)
 
 __all__ = ["regionprops", "euler_number", "perimeter", "perimeter_crofton"]
 
@@ -344,11 +349,12 @@ class RegionProperties:
         self._ndim = label_image.ndim
         self._multichannel = multichannel
         self._spatial_axes = tuple(range(self._ndim))
-        self._spacing = spacing if spacing is not None else (1.0,) * self._ndim
-        if isinstance(self._spacing, cp.ndarray):
-            self._pixel_area = cp.product(self._spacing)
+        if spacing is None:
+            self._spacing = (1.0,) * self._ndim
         else:
-            self._pixel_area = math.prod(self._spacing)
+            # a scalar means the same spacing along every axis
+            self._spacing = _normalize_spacing(spacing, self._ndim)
+        self._pixel_area = math.prod(self._spacing)
 
         self._extra_properties = {}
         if extra_properties is not None:
