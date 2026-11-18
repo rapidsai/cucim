@@ -329,8 +329,7 @@ private:
 bool is_supported_nvimgcodec_version(uint32_t packed_version);
 
 /**
- * @brief Describe a packed version, reporting raw values when the 0.9 encoding
- *        cannot distinguish their semantic versions.
+ * @brief Describe a packed version as `major.minor.patch` for a diagnostic.
  */
 std::string format_nvimgcodec_version(uint32_t packed_version);
 
