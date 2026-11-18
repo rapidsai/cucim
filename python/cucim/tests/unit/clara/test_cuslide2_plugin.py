@@ -6,20 +6,20 @@
 """Basic tests of the cuslide2 plugin on synthetic TIFF files.
 
 The images are written with tifffile, so no sample data has to be downloaded.
-The plugin is selected with ``ENABLE_CUSLIDE2=1``, which is read when the
-plugins are loaded, so every check runs in a new Python process.
+Each check runs in a fresh Python process with ``CUCIM_PLUGINS``
+set to the discovered cuslide2 library.
 
 The tests are skipped when the package has no cuslide2 plugin. If it is
 present, it is expected to work: a missing nvImageCodec, nvJPEG2000 or nvTIFF
 library is a failure, not a reason to skip.
 """
 
-import glob
 import json
 import os
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -31,17 +31,29 @@ TILE = 128
 SHAPE = (512, 640, 3)  # (height, width, channels) of the base level
 
 
-def _has_cuslide2_plugin():
+def _find_cuslide2_plugin():
     from cucim.clara import _get_plugin_root
 
-    return bool(
-        glob.glob(os.path.join(_get_plugin_root(), "cucim.kit.cuslide2@*.so"))
-    )
+    # Pip stages plugins next to the extension. Conda installs them with
+    # libcucim under the environment's lib directory.
+    for directory in (Path(_get_plugin_root()), Path(sys.prefix) / "lib"):
+        plugins = sorted(directory.glob("cucim.kit.cuslide2@*.so"))
+        if plugins:
+            assert len(plugins) == 1, (
+                f"Expected one cuslide2 plugin, found {plugins}"
+            )
+            return plugins[0].absolute()
+    return None
 
 
+_CUSLIDE2_PLUGIN = _find_cuslide2_plugin()
 pytestmark = pytest.mark.skipif(
-    not _has_cuslide2_plugin(), reason="cucim.kit.cuslide2 is not installed"
+    _CUSLIDE2_PLUGIN is None, reason="cucim.kit.cuslide2 is not installed"
 )
+
+
+def _cuslide2_env():
+    return dict(os.environ, CUCIM_PLUGINS=str(_CUSLIDE2_PLUGIN))
 
 
 def _make_image(shape=SHAPE):
@@ -107,10 +119,9 @@ _CHECK = textwrap.dedent(
 
 
 def _run_cuslide2(path):
-    env = dict(os.environ, ENABLE_CUSLIDE2="1")
     proc = subprocess.run(
         [sys.executable, "-c", _CHECK, str(path)],
-        env=env,
+        env=_cuslide2_env(),
         capture_output=True,
         text=True,
         timeout=600,

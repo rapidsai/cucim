@@ -7,9 +7,11 @@
 import json
 import os
 import re
+import sys
 import tempfile
 import time
 from importlib import metadata as importlib_metadata
+from importlib.util import find_spec
 from pathlib import Path
 
 import numpy as np
@@ -50,13 +52,20 @@ def setup_environment(config_name: str = "cucim_test") -> str:
             plugin_lib = candidate
             break
     if plugin_lib is None:
-        from cucim.clara import _get_plugin_root
-
-        plugin_lib = Path(_get_plugin_root())
-        if not list(plugin_lib.glob("cucim.kit.cuslide2@*.so")):
+        # The native library reads the plugin configuration at load time.
+        # Inspect the top-level package without importing it.
+        spec = find_spec("cucim")
+        package_dirs = () if spec is None else spec.submodule_search_locations or ()
+        candidates = [Path(directory) / "clara" for directory in package_dirs]
+        candidates.append(Path(sys.prefix) / "lib")
+        for candidate in candidates:
+            if any(candidate.glob("cucim.kit.cuslide2@*.so")):
+                plugin_lib = candidate
+                break
+        if plugin_lib is None:
             raise RuntimeError(
-                f"No cuslide2 plugin (cucim.kit.cuslide2@*.so) found in the "
-                f"installed cuCIM package ({plugin_lib}) or in a source build."
+                "No cuslide2 plugin (cucim.kit.cuslide2@*.so) found in the "
+                "installed cuCIM package or in a source build."
             )
 
     dist_version = None
