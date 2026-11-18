@@ -2355,3 +2355,57 @@ def test_raw_moments_large_region_exact(shape, order):
             expected *= _power_sum(n, e)
         # all values are below 2**53, so float64 holds them exactly
         assert moments[exponents] == expected, exponents
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize(
+    "centroid_props",
+    [["centroid"], ["centroid_local"], ["centroid", "centroid_local"]],
+)
+@pytest.mark.parametrize(
+    "weighted_props",
+    [
+        ["centroid_weighted"],
+        ["centroid_weighted_local"],
+        ["moments_weighted"],
+        ["moments_weighted_central", "intensity_mean"],
+    ],
+)
+def test_regionprops_dict_centroids_with_weighted_props(
+    ndim, centroid_props, weighted_props
+):
+    """Unweighted centroids (from coordinate sums) together with weighted
+    properties that do not need the unweighted moments (this raised
+    KeyError: 'moments')."""
+    shape = (40, 50) if ndim == 2 else (12, 14, 16)
+    labels = get_labels_nd(shape)
+    rng = np.random.default_rng(0)
+    intensity = cp.asarray(rng.random(shape))
+    props = centroid_props + weighted_props
+    # (scikit-image's moments are of order 3)
+    actual = regionprops_dict(
+        labels, intensity, properties=props, moment_order=3
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels), cp.asnumpy(intensity), properties=props
+    )
+    for prop in props:
+        value = actual[prop]
+        if isinstance(value, cp.ndarray) and value.ndim > 1:
+            value = value.reshape(value.shape[0], -1)
+            keys = sorted(
+                (k for k in expected if k.startswith(prop + "-")),
+                key=lambda k: tuple(int(i) for i in k.split("-")[1:]),
+            )
+            ref = np.stack([expected[k] for k in keys], axis=-1)
+            if prop.startswith("moments"):
+                # the batch path computes the entries of total order <= 3
+                low = [
+                    sum(e) <= 3
+                    for e in itertools.product(range(4), repeat=ndim)
+                ]
+                value, ref = value[:, low], ref[:, low]
+        else:
+            ref = expected[prop]
+        tol = 1e-6 if value.dtype == cp.float32 else 1e-9
+        assert_allclose(value, ref, rtol=tol, atol=tol)

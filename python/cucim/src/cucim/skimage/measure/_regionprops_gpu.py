@@ -583,8 +583,15 @@ def regionprops_dict(
                 props_dict=out,
             )
 
-        compute_centroid_local = "centroid_local" in required_moment_props  # noqa:E501
-        compute_centroid = "centroid" in required_moment_props
+        # (the unweighted centroids were already computed from the coordinate
+        # sums if centroid_from_sums; the unweighted moments may then not
+        # exist, e.g. when only weighted moments are needed)
+        compute_centroid_local = (
+            "centroid_local" in required_moment_props and not centroid_from_sums
+        )
+        compute_centroid = (
+            "centroid" in required_moment_props and not centroid_from_sums
+        )
         if compute_centroid or compute_centroid_local:
             regionprops_centroid_weighted(
                 moments_raw=out["moments"],
