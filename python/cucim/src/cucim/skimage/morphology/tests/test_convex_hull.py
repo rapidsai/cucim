@@ -560,3 +560,37 @@ def test_singleton_axes_shape(shape):
     assert out.shape == shape
     assert_array_equal(out, image)
     assert convex_hull_object(image, connectivity=1).shape == shape
+
+
+@pytest.mark.parametrize("value", [1, 2, 255])
+@pytest.mark.parametrize("cpu_fallback_threshold", [0, None])
+def test_convex_hull_image_uint8_values(value, cpu_fallback_threshold):
+    """Any nonzero uint8 value is foreground (values other than 1 were read
+    as labels by the batch path: out-of-bounds atomic writes)."""
+    from skimage.morphology import convex_hull_image as convex_hull_image_cpu
+
+    shape = (5, 5) if cpu_fallback_threshold == 0 else (300, 300)
+    mask = np.zeros(shape, dtype=np.uint8)
+    mask[1, 1] = mask[1, 3] = mask[3, 2] = value
+    if shape != (5, 5):
+        mask[200, 150] = mask[120, 260] = value
+    expected = convex_hull_image_cpu(mask != 0)
+    kwargs = dict(cpu_fallback_threshold=cpu_fallback_threshold)
+    actual = convex_hull_image(cp.asarray(mask), **kwargs)
+    assert_array_equal(actual, cp.asarray(expected))
+    assert_array_equal(
+        actual, convex_hull_image(cp.asarray(mask != 0), **kwargs)
+    )
+    assert_array_equal(
+        convex_hull_object(cp.asarray(mask), **kwargs),
+        convex_hull_object(cp.asarray(mask != 0), **kwargs),
+    )
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_convex_hull_object_negative_threshold(empty):
+    image = cp.zeros((20, 20), dtype=bool)
+    if not empty:
+        image[5:8, 5:9] = True
+    with pytest.raises(ValueError, match="non-negative"):
+        convex_hull_object(image, cpu_fallback_threshold=-1)

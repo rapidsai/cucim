@@ -305,12 +305,9 @@ def _convex_hull_image(
         return cp.zeros(original_shape, dtype=bool)
 
     if image.dtype != cp.dtype(bool):
-        if image.dtype == cp.uint8:
-            # bool are actually already stored as uint8 so can use a view to
-            # avoid a copy
-            image = image.view(bool)
-        else:
-            image = image.astype(bool)
+        # canonical 0/1 values: a bool view of a uint8 image would keep
+        # values such as 255, which the batch path reads as labels
+        image = image != 0
 
     if batch:
         # the image as a label image with a single label (the hull kernels
@@ -435,6 +432,9 @@ def convex_hull_object(
     """
     if connectivity not in tuple(range(1, image.ndim + 1)):
         raise ValueError("`connectivity` must be between 1 and image.ndim.")
+    # (as convex_hull_image, whatever the image's contents and dispatch)
+    if cpu_fallback_threshold is not None and cpu_fallback_threshold < 0:
+        raise ValueError("cpu_fallback_threshold must be non-negative")
 
     labeled_im = label(image, connectivity=connectivity, background=0)
     max_label = int(labeled_im.max())
