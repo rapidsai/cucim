@@ -3047,3 +3047,52 @@ def test_regionprops_dict_filled_default_pool_limit():
         assert_array_equal(out["num_pixels_filled"], expected)
     finally:
         pool.set_limit(size=old_limit)
+
+
+@pytest.mark.parametrize("max_extent", [None, 5])
+def test_convex_hulls_3d_unused_slots(max_extent, monkeypatch):
+    """Only the facets the hull kernel wrote are converted to equations:
+    the other slots of each label (and all slots of a label whose hull is
+    left to the host, num_faces = -1) stay 0, and the facets match qhull's
+    (the conversion read every slot before, 216 uninitialized reads on a
+    3 x 4 x 5 cuboid under CUDA initcheck)."""
+    from scipy.spatial import ConvexHull
+
+    labels = _convex_test_labels("large_blobs", 3)
+    labels[:3, :4, :5] = int(labels.max()) + 1  # a solid cuboid
+    if max_extent is not None:
+        monkeypatch.setattr(
+            _regionprops_gpu_convex, "_HULL_3D_MAX_EXTENT", max_extent
+        )
+    max_label = int(labels.max())
+    bbox = _regionprops_label_pass(labels, max_label, compute_bbox=True)["bbox"]
+    row_first, row_last, offsets, num_rows = _regionprops_row_extents(
+        labels, bbox, max_label
+    )
+    points, point_offsets = _regionprops_gpu_convex._convex_hull_candidates_3d(
+        row_first,
+        row_last,
+        offsets,
+        num_rows,
+        bbox,
+        cp.asnumpy(bbox).astype(np.int64),
+        max_label,
+    )
+    equations, num_faces = _regionprops_gpu_convex._convex_hulls_3d(
+        points, point_offsets, bbox, max_label
+    )
+    points = cp.asnumpy(points) * 0.5
+    point_offsets = cp.asnumpy(point_offsets)
+    equations, num_faces = cp.asnumpy(equations), cp.asnumpy(num_faces)
+    if max_extent is not None:
+        assert (num_faces < 0).any()
+    for lab in range(max_label):
+        start, end = point_offsets[lab], point_offsets[lab + 1]
+        slots = equations[2 * start : 2 * end]
+        used = max(int(num_faces[lab]), 0)
+        assert not slots[used:].any()
+        if used:
+            hull = ConvexHull(points[start:end])
+            got = {tuple(r) for r in np.round(slots[:used], 9) + 0.0}
+            ref = {tuple(r) for r in np.round(hull.equations, 9) + 0.0}
+            assert got == ref

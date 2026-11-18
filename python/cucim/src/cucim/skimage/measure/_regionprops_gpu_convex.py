@@ -1736,8 +1736,27 @@ extern "C" __global__ void cucim_convex_hulls_3d(
 def _get_hull_equations_kernel():
     """Kernel converting hull planes (N, N . p in doubled coordinates) to
     facet equations in the form of qhull's (unit outward normal and offset,
-    in undoubled coordinates), one thread per plane."""
+    in undoubled coordinates), one thread per plane slot.
+
+    Label l's planes are the first ``num_faces[l]`` of its ``2 * n`` slots
+    (from ``2 * point_offsets[l]``); the other slots were not written by the
+    hull kernel and are skipped, as are labels whose hull was not computed
+    (``num_faces[l] < 0``)."""
     source = """
+      // the label of this slot: the last l with 2 * point_offsets[l] <= i
+      long long l = 0;
+      long long l_end = max_label;
+      while (l_end - l > 1) {
+        long long mid = (l + l_end) / 2;
+        if (2 * point_offsets[mid] <= i) {
+          l = mid;
+        } else {
+          l_end = mid;
+        }
+      }
+      if (i - 2 * point_offsets[l] >= static_cast<long long>(num_faces[l])) {
+        return;
+      }
       double nz = static_cast<double>(planes[4 * i]);
       double ny = static_cast<double>(planes[4 * i + 1]);
       double nx = static_cast<double>(planes[4 * i + 2]);
@@ -1748,7 +1767,8 @@ def _get_hull_equations_kernel():
       equations[4 * i + 3] =
           -0.5 * static_cast<double>(planes[4 * i + 3]) * inv_norm;\n"""
     return cp.ElementwiseKernel(
-        "raw int64 planes",
+        "raw int64 planes, raw int64 point_offsets, raw int32 num_faces, "
+        "int64 max_label",
         "raw float64 equations",
         source,
         name="cucim_convex_hull_equations",
@@ -1829,9 +1849,17 @@ def _convex_hulls_3d(points, point_offsets, bbox, max_label):
                 num_faces,
             ),
         )
-    equations = cp.empty((2 * num_points, 4), dtype=cp.float64)
+    # (the slots after each label's facets stay 0; they are not used)
+    equations = cp.zeros((2 * num_points, 4), dtype=cp.float64)
     if num_points > 0:
-        _get_hull_equations_kernel()(planes, equations, size=2 * num_points)
+        _get_hull_equations_kernel()(
+            planes,
+            point_offsets,
+            num_faces,
+            max_label,
+            equations,
+            size=2 * num_points,
+        )
     return equations, num_faces
 
 
