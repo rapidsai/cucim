@@ -2447,3 +2447,23 @@ def test_euler_number_many_isolated_voxels():
     labels[::2, ::2, ::2] = 1
     out = regionprops_dict(labels, properties=["euler_number"])
     assert int(out["euler_number"][0]) == 50**3
+
+
+def test_regionprops_bbox_coords_positional_props_dict():
+    """props_dict keeps its positional slot (compute_num_pixels, added
+    later, is keyword-only)."""
+    labels = get_labels_nd((32, 40))
+    max_label = int(labels.max())
+    props = {}
+    bbox, slices = regionprops_bbox_coords(labels, max_label, True, 16, props)
+    assert props["bbox"] is bbox
+    assert props["slice"] == slices
+    assert "num_pixels" not in props
+    props = {}
+    regionprops_bbox_coords(
+        labels, max_label, True, 16, props, compute_num_pixels=True
+    )
+    expected = cp.bincount(labels.ravel(), minlength=max_label + 1)[1:]
+    assert_array_equal(props["num_pixels"], expected)
+    with pytest.raises(TypeError):
+        regionprops_bbox_coords(labels, max_label, True, 16, True, props)
