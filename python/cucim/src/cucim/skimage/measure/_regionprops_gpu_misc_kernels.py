@@ -733,7 +733,25 @@ def _get_voronoi_crofton_weights(spacing):
     directions = offsets[neighbors] * np.asarray(spacing)
     directions /= np.linalg.norm(directions, axis=1, keepdims=True)
     areas = np.zeros(len(offsets))
-    areas[neighbors] = SphericalVoronoi(directions).calculate_areas()
+    # The directions of steps along a much longer axis cluster within about
+    # 1 / aspect ratio of each other: below SciPy's default duplicate
+    # threshold (1e-6) from an aspect ratio of 1e6. With a threshold of
+    # 1e-10 the construction works up to about 1e6; beyond, it fails or
+    # its cells no longer cover the sphere, and a clear error is raised.
+    error = None
+    try:
+        cells = SphericalVoronoi(directions, threshold=1e-10).calculate_areas()
+    except Exception as e:  # ValueError, QhullError, ...
+        cells, error = None, e
+    if cells is None or not abs(cells.sum() / (4 * math.pi) - 1) < 1e-9:
+        ratio = max(spacing) / min(spacing)
+        raise ValueError(
+            f"spacing {tuple(spacing)} is too anisotropic for the direction "
+            "weights of the surface measures (surface_area, "
+            "integral_mean_curvature): the ratio of the largest to the "
+            f"smallest spacing is {ratio:.3g}, supported up to about 1e6"
+        ) from error
+    areas[neighbors] = cells
     return tuple(
         float(np.sum(areas[group])) / (4 * math.pi)
         for group in _surface_area_groups(3, False)
@@ -817,7 +835,9 @@ def regionprops_surface_area(
     labels : (M, N, P) cupy.ndarray
         Label image.
     spacing : tuple of float, optional
-        The voxel spacing along each axis.
+        The voxel spacing along each axis. With anisotropic spacing, the ratio
+        of the largest to the smallest spacing can be up to about 1e6; larger
+        ratios raise a ValueError (the direction weights cannot be computed).
 
     Extra Parameters
     ----------------

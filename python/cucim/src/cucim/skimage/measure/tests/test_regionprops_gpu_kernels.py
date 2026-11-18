@@ -3769,3 +3769,43 @@ def test_box_corners_incomplete_columns(function, names, removed, host):
     prop = removed.rsplit("-", 2 if removed.count("-") == 2 else 1)[0]
     with pytest.raises(ValueError, match=f"missing or incomplete: {prop}"):
         getattr(measure, function)(table)
+
+
+@pytest.mark.parametrize(
+    "spacing", [(1e7, 1.0, 1.0), (1e-7, 1.0, 1.0), (1.0, 1e4, 1e-4)]
+)
+def test_surface_area_extreme_spacing_raises(spacing):
+    """Aspect ratios beyond the supported range raise a clear ValueError
+    (they raised SciPy's "Duplicate generators present")."""
+    labels = cp.ones((3, 4, 5), dtype=cp.int32)
+    with pytest.raises(ValueError, match="too anisotropic"):
+        measure.regionprops_table(
+            labels, properties=["surface_area"], spacing=spacing
+        )
+
+
+@pytest.mark.parametrize("ratio", [1e3, 1e5, 1e6])
+def test_surface_area_anisotropic_permutation_and_scaling(ratio):
+    """Highly anisotropic spacing within the supported range: permuting the
+    axes (image and spacing together) does not change the area, and scaling
+    the spacing by s scales it by s**2."""
+    rng = np.random.default_rng(int(np.log10(ratio)))
+    labels = cp.asarray(rng.random((7, 8, 9)) > 0.4, dtype=cp.int32)
+    spacing = (ratio, 1.0, 0.5)
+    area = regionprops_dict(
+        labels, properties=["surface_area"], spacing=spacing
+    )["surface_area"]
+    assert cp.isfinite(area).all()
+    for perm in [(1, 0, 2), (2, 1, 0), (1, 2, 0)]:
+        permuted = regionprops_dict(
+            cp.ascontiguousarray(labels.transpose(perm)),
+            properties=["surface_area"],
+            spacing=tuple(spacing[p] for p in perm),
+        )["surface_area"]
+        assert_allclose(permuted, area, rtol=1e-9)
+    scaled = regionprops_dict(
+        labels,
+        properties=["surface_area"],
+        spacing=tuple(3.0 * s for s in spacing),
+    )["surface_area"]
+    assert_allclose(scaled, 9.0 * area, rtol=1e-9)
