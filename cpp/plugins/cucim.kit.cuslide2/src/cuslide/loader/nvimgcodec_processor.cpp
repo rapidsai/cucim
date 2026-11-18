@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,6 +12,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Third-party
@@ -127,6 +128,13 @@ NvImageCodecProcessor::~NvImageCodecProcessor()
 void NvImageCodecProcessor::shutdown()
 {
     stopped_.store(true, std::memory_order_release);
+    PendingBatch discarded;
+    {
+        std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
+        discarded = std::exchange(pending_batch_, {});
+    }
+    // Destroying each decode state waits for its writes to finish before
+    // the loader releases the raster ring.
 }
 
 void NvImageCodecProcessor::set_output_buffer_provider(OutputBufferProvider provider)
@@ -144,124 +152,95 @@ uint32_t NvImageCodecProcessor::request(std::deque<uint32_t>& batch_item_counts,
     (void)batch_item_counts;
     (void)num_remaining_patches;
 
-    if (stopped_)
+    std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
+    if (stopped_ || next_decode_index_ == location_len_)
     {
         return 0;
     }
 
-    // Build batch of ROI decode requests
-    std::vector<RoiDecodeRequest> batch_requests;
+    assert(pending_batch_.chunks.empty() && !pending_batch_.submission_error);
+    const auto count = static_cast<uint32_t>(std::min<uint64_t>(batch_size_, location_len_ - next_decode_index_));
+    const uint64_t end = next_decode_index_ + count;
 
+    // Queue failures with the batch they belong to. A prefetch failure must
+    // not prevent next_data() from returning the previous, successful batch.
+    try
     {
-        std::lock_guard<std::mutex> lock(request_mutex_);
-
-        while (next_decode_index_ < location_len_ && batch_requests.size() < cuda_batch_size_)
+        while (next_decode_index_ < end)
         {
-            RoiDecodeRequest req;
-            req.location_index = next_decode_index_;
-            req.ifd_index = ifd_index_;
-            req.x = static_cast<uint32_t>(request_location_[next_decode_index_ * 2]);
-            req.y = static_cast<uint32_t>(request_location_[next_decode_index_ * 2 + 1]);
-            req.width = roi_width_;
-            req.height = roi_height_;
+            const uint64_t chunk_end = std::min(next_decode_index_ + cuda_batch_size_, end);
+            std::vector<RoiDecodeRequest> requests;
+            requests.reserve(chunk_end - next_decode_index_);
+            for (uint64_t i = next_decode_index_; i < chunk_end; ++i)
+            {
+                requests.push_back({ i,
+                                     ifd_index_,
+                                     static_cast<uint32_t>(request_location_[i * 2]),
+                                     static_cast<uint32_t>(request_location_[i * 2 + 1]),
+                                     roi_width_,
+                                     roi_height_ });
+            }
 
-            batch_requests.push_back(req);
-            ++next_decode_index_;
+            auto state = schedule_roi_batch(requests);
+            if (!state.is_valid())
+            {
+                throw std::runtime_error(fmt::format("Failed to schedule IFD[{}] batch decode with nvImageCodec",
+                                                     ifd_index_));
+            }
+            pending_batch_.chunks.push_back(std::move(state));
+            next_decode_index_ = chunk_end;
         }
     }
-
-    if (batch_requests.empty())
+    catch (...)
     {
-        return 0;
+        pending_batch_.submission_error = std::current_exception();
+        next_decode_index_ = end;
     }
-
-    #ifdef DEBUG
-    fmt::print("📦 Requesting batch decode of {} ROIs\n", batch_requests.size());
-    #endif
-
-    // nvImageCodec is not thread-safe, so schedule + enqueue must be
-    // serialized under the same mutex.
-    {
-        std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
-
-        cuslide2::nvimgcodec::BatchDecodeState decode_state = schedule_roi_batch(batch_requests);
-
-        // Check if the decode was actually scheduled (impl is always allocated,
-        // but impl->future is null when scheduling fails).
-        if (!decode_state.is_valid())
-        {
-            #ifdef DEBUG
-            fmt::print("❌ Failed to schedule batch decode\n");
-            #endif
-            return 0;
-        }
-
-        pending_batches_.push(std::move(decode_state));
-    }
-
-    return static_cast<uint32_t>(batch_requests.size());
+    return count;
 }
 
 uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
-                                            std::deque<uint32_t>& batch_item_counts,
-                                            uint32_t num_remaining_patches)
+                                          std::deque<uint32_t>& batch_item_counts,
+                                          uint32_t num_remaining_patches)
 {
     (void)batch_item_counts;
     (void)num_remaining_patches;
-    (void)index_in_task;
 
-    #ifdef DEBUG
-    fmt::print("🔍 wait_batch: index_in_task={}\n", index_in_task);
-    #endif
-
-    if (stopped_)
+    // The loader calls this once per item. Each pending batch covers all
+    // items in the output raster, so only its first item needs to wait.
+    if (index_in_task != 0 || stopped_)
     {
         return 0;
     }
 
-    // Pop the oldest pending batch under the lock, then release it before
-    // the (potentially blocking) wait_batch_decode() call so that other
-    // threads can continue to enqueue new batches concurrently.
-    cuslide2::nvimgcodec::BatchDecodeState decode_state;
-
+    PendingBatch batch;
     {
         std::lock_guard<std::mutex> lock(nvimgcodec_mutex_);
+        batch = std::exchange(pending_batch_, {});
+    }
+    if (batch.submission_error)
+    {
+        std::rethrow_exception(batch.submission_error);
+    }
+    if (batch.chunks.empty())
+    {
+        throw std::runtime_error(fmt::format("No pending nvImageCodec batch for IFD[{}]", ifd_index_));
+    }
 
-        if (pending_batches_.empty())
+    uint32_t decoded = 0;
+    for (auto& chunk : batch.chunks)
+    {
+        const auto results = cuslide2::nvimgcodec::wait_batch_decode(chunk);
+        if (results.empty() || std::any_of(results.begin(), results.end(),
+                                           [](const auto& result) { return !result.success; }))
         {
-            return 0;  // No pending batches to process
+            throw std::runtime_error(fmt::format("Failed to decode IFD[{}] batch with nvImageCodec. "
+                                                 "Check that nvTIFF and the required codec libraries are installed.",
+                                                 ifd_index_));
         }
-
-        decode_state = std::move(pending_batches_.front());
-        pending_batches_.pop();
-    }  // lock released — safe to block on GPU now
-
-    // Wait for batch decode completion.  The decoded data was written directly
-    // into the ThreadBatchDataLoader's raster ring buffer via the output_buffer
-    // pointers passed to schedule_batch_decode(), so there is nothing to copy.
-    std::vector<cuslide2::nvimgcodec::BatchDecodeResult> results =
-        cuslide2::nvimgcodec::wait_batch_decode(decode_state);
-
-    // Count successful decodes (log failures even in release builds)
-    size_t success_count = 0;
-    for (const auto& r : results)
-    {
-        if (r.success)
-            ++success_count;
+        decoded += static_cast<uint32_t>(results.size());
     }
-
-    if (success_count < results.size())
-    {
-        fmt::print(stderr, "[cuslide2] Batch decode: {}/{} regions failed\n",
-                   results.size() - success_count, results.size());
-    }
-
-    #ifdef DEBUG
-    fmt::print("  ✅ wait_batch[{}]: {}/{} regions decoded successfully (zero-copy)\n",
-               index_in_task, success_count, results.size());
-    #endif
-
-    return batch_size_;
+    return decoded;
 }
 
 std::shared_ptr<cucim::cache::ImageCacheValue> NvImageCodecProcessor::wait_for_processing(uint32_t index)
