@@ -1370,9 +1370,16 @@ _FILL_BYTES_PER_PIXEL = 16
 
 def _canvas_pixel_limit():
     """Largest canvas (in pixels) to fill at once: a quarter of the memory
-    that is free on the device."""
-    free = cp.cuda.runtime.memGetInfo()[0]
-    free += cp.get_default_memory_pool().free_bytes()
+    that is free on the device (a heuristic: the labeling of the canvas needs
+    several temporaries, more per pixel for canvases of more than 2**31
+    pixels). If CuPy's default memory pool is the allocator and has a limit,
+    the memory left below that limit counts instead when it is smaller.
+    `_fill_holes_of_labels` also splits a batch whose allocation fails."""
+    pool = cp.get_default_memory_pool()
+    free = cp.cuda.runtime.memGetInfo()[0] + pool.free_bytes()
+    limit = pool.get_limit()
+    if limit and cp.cuda.get_allocator() == pool.malloc:
+        free = min(free, max(limit - pool.used_bytes(), 0))
     return free // 4 // _FILL_BYTES_PER_PIXEL
 
 
@@ -1438,51 +1445,93 @@ def _fill_holes_of_labels(
 
     counts = np.zeros(len(labels), dtype=np.int64)
     images = [None] * len(labels) if compute_image else None
-    for order, canvas_shape, starts in batches:
-        batch_extents = extents[order]
-        sizes = np.prod(batch_extents, axis=1)
-        box_offsets = np.zeros(len(order), dtype=np.int64)
-        np.cumsum(sizes[:-1], out=box_offsets[1:])
-        boxes = np.concatenate(
-            [
-                box_min[order],
-                batch_extents,
+    # a batch whose allocations fail (the budget is an estimate, and other
+    # allocators or pool limits may leave less) is split in two and retried
+    pending = batches[::-1]
+    while pending:
+        order, canvas_shape, starts = pending.pop()
+        try:
+            _fill_batch(
+                label_image,
+                labels,
+                box_min,
+                extents,
+                order,
+                canvas_shape,
                 starts,
-                labels[order][:, np.newaxis],
-            ],
-            axis=1,
-        )
-        canvas = cp.zeros(canvas_shape, dtype=bool)
-        box_ids = cp.zeros(canvas_shape, dtype=cp.int32)
-        _get_crops_to_canvas_kernel(ndim)(
-            label_image,
-            cp.asarray(label_image.shape, dtype=cp.int64),
-            cp.asarray(boxes),
-            cp.asarray(box_offsets),
-            len(order),
-            cp.asarray(canvas_shape, dtype=cp.int64),
-            canvas,
-            box_ids,
-            size=int(sizes.sum()),
-        )
-        filled = _fill_canvas_holes(canvas)
-        del canvas
-        # the filled pixels of each box, with the label-run count (few boxes
-        # would make the atomics of cupy.bincount contend)
-        counts[order] = cp.asnumpy(
-            regionprops_num_pixels(
-                cp.where(filled, box_ids, 0), max_label=len(order)
+                counts,
+                images,
             )
-        )
-        del box_ids
-        if compute_image:
-            for i, st, ext in zip(order, starts, batch_extents):
-                image = filled[
-                    tuple(slice(int(a), int(a + e)) for a, e in zip(st, ext))
-                ]
-                images[i] = image.copy() if len(batches) > 1 else image
-        del filled
+        except cp.cuda.memory.OutOfMemoryError:
+            if len(order) == 1:
+                raise
+            half = len(order) // 2
+            for part in (order[half:], order[:half]):
+                pending.append((part,) + _pack_crops(extents[part]))
     return cp.asarray(counts), images
+
+
+def _fill_batch(
+    label_image,
+    labels,
+    box_min,
+    extents,
+    order,
+    canvas_shape,
+    starts,
+    counts,
+    images,
+):
+    """Fill the crops of the labels ``labels[order]`` packed in one canvas
+    (see `_fill_holes_of_labels`), writing ``counts[order]`` and, if
+    `images` is not None, ``images[order]``."""
+    ndim = label_image.ndim
+    batch_extents = extents[order]
+    sizes = np.prod(batch_extents, axis=1)
+    box_offsets = np.zeros(len(order), dtype=np.int64)
+    np.cumsum(sizes[:-1], out=box_offsets[1:])
+    boxes = np.concatenate(
+        [
+            box_min[order],
+            batch_extents,
+            starts,
+            labels[order][:, np.newaxis],
+        ],
+        axis=1,
+    )
+    canvas = cp.zeros(canvas_shape, dtype=bool)
+    box_ids = cp.zeros(canvas_shape, dtype=cp.int32)
+    _get_crops_to_canvas_kernel(ndim)(
+        label_image,
+        cp.asarray(label_image.shape, dtype=cp.int64),
+        cp.asarray(boxes),
+        cp.asarray(box_offsets),
+        len(order),
+        cp.asarray(canvas_shape, dtype=cp.int64),
+        canvas,
+        box_ids,
+        size=int(sizes.sum()),
+    )
+    filled = _fill_canvas_holes(canvas)
+    del canvas
+    # the filled pixels of each box, with the label-run count (few boxes
+    # would make the atomics of cupy.bincount contend)
+    counts[order] = cp.asnumpy(
+        regionprops_num_pixels(
+            cp.where(filled, box_ids, 0), max_label=len(order)
+        )
+    )
+    del box_ids
+    if images is not None:
+        # (views of the canvas if it holds every label; otherwise copies,
+        # so that each canvas can be freed)
+        whole = len(order) == len(labels)
+        for i, st, ext in zip(order, starts, batch_extents):
+            image = filled[
+                tuple(slice(int(a), int(a + e)) for a, e in zip(st, ext))
+            ]
+            images[i] = image if whole else image.copy()
+    del filled
 
 
 def _regionprops_filled(

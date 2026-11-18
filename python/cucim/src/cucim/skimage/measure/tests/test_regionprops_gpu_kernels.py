@@ -2555,3 +2555,40 @@ def test_regionprops_dict_filled_touching_tiles(repeat):
         cp.asnumpy(labels), properties=["area_filled"]
     )["area_filled"]
     assert_allclose(out["area_filled"], expected)
+
+
+def test_regionprops_dict_filled_bounded_pool_retries():
+    """With a 16 MiB memory pool (not the default pool, so the canvas
+    budget cannot see its limit), a canvas that does not fit is split and
+    retried (this raised OutOfMemoryError)."""
+    n = 256
+    labels = _concentric_shells(n)
+    expected = cp.asarray([(n - 2 * i) ** 2 for i in range(n // 2)])
+    pool = cp.cuda.MemoryPool()
+    pool.set_limit(size=16 * 2**20)
+    with cp.cuda.using_allocator(pool.malloc):
+        out = regionprops_dict(labels, properties=["num_pixels_filled"])
+        counts = out["num_pixels_filled"].copy()
+    assert_array_equal(counts, expected)
+
+
+def test_regionprops_dict_filled_default_pool_limit():
+    """The canvas budget accounts for a limit of the default memory pool."""
+    from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
+        _FILL_BYTES_PER_PIXEL,
+        _canvas_pixel_limit,
+    )
+
+    n = 256
+    labels = _concentric_shells(n)
+    expected = cp.asarray([(n - 2 * i) ** 2 for i in range(n // 2)])
+    pool = cp.get_default_memory_pool()
+    old_limit = pool.get_limit()
+    try:
+        pool.set_limit(size=pool.used_bytes() + 16 * 2**20)
+        budget = _canvas_pixel_limit()
+        assert budget <= 16 * 2**20 // 4 // _FILL_BYTES_PER_PIXEL
+        out = regionprops_dict(labels, properties=["num_pixels_filled"])
+        assert_array_equal(out["num_pixels_filled"], expected)
+    finally:
+        pool.set_limit(size=old_limit)
