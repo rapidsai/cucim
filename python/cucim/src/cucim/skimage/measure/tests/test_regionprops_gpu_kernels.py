@@ -4,6 +4,7 @@
 
 import functools
 import inspect
+import itertools
 import math
 import warnings
 from copy import deepcopy
@@ -2307,3 +2308,50 @@ def test_filled_erosion_kernel_reused_across_label_counts(monkeypatch):
         if previous is not None:
             assert minimum_kernels == previous
         previous = minimum_kernels.copy()
+
+
+def _power_sum(n, e):
+    return sum(i**e for i in range(n))
+
+
+@pytest.mark.parametrize(
+    "shape", [(512, 512), (1024, 700), (2048, 64), (40, 300, 300)]
+)
+@pytest.mark.parametrize("order", [2, 3])
+def test_raw_moments_large_region_exact(shape, order):
+    """One region filling the image, with the default launch parameters: the
+    per-run moments are combined over up to 32 lanes before the flush, so
+    their type must hold a warp's sum, not only a lane's (a 512 x 512 region
+    gave M[0, 3] = 2164697071616 instead of 8761766838272 when only one
+    lane's sum was bounded)."""
+    import inspect
+
+    from cucim.skimage.measure._regionprops_gpu import regionprops_dict
+    from cucim.skimage.measure._regionprops_gpu_moments_kernels import (
+        _get_moments_accum_c_type,
+        regionprops_moments,
+    )
+
+    ppt = (
+        inspect.signature(regionprops_moments)
+        .parameters["pixels_per_thread"]
+        .default
+    )
+    if order == 3 and shape[:2] == (512, 512):
+        # this case crosses the 32-bit limit between one lane and a warp
+        assert _get_moments_accum_c_type(shape, order, ppt) == "unsigned int"
+        assert (
+            _get_moments_accum_c_type(shape, order, ppt, lanes=32)
+            == "unsigned long long"
+        )
+    labels = cp.ones(shape, dtype=cp.int32)
+    out = regionprops_dict(labels, properties=["moments"], moment_order=order)
+    moments = cp.asnumpy(out["moments"][0])
+    for exponents in itertools.product(range(order + 1), repeat=len(shape)):
+        if sum(exponents) > order:
+            continue
+        expected = 1
+        for n, e in zip(shape, exponents):
+            expected *= _power_sum(n, e)
+        # all values are below 2**53, so float64 holds them exactly
+        assert moments[exponents] == expected, exponents
