@@ -15,12 +15,12 @@ pydistcheck \
 
 rapids-logger "check that the wheel contains a single copy of libcucim"
 
-# 'auditwheel repair' vendors an extra, renamed copy of libcucim (in the
-# '*.libs' directory) when the plugins do not find 'libcucim.so.*' next to
-# them. The Python extension and the plugins would then use different copies,
-# each with its own cache and statistics.
-if unzip -Z1 "$(echo "${wheel_dir_relative_path}"/*.whl)" | grep -E '\.libs/libcucim-'; then
-    echo "ERROR: the wheel vendors a second copy of libcucim (listed above)" >&2
+# The packaged SONAME is preloaded by cucim. Check for a missing copy and
+# for any extra shared libraries, including renamed auditwheel copies.
+libcucim_files=$(unzip -Z1 "$(echo "${wheel_dir_relative_path}"/*.whl)" |
+    awk '/(^|\/)libcucim(-[^/]+)?\.so(\.[^/]+)?$/')
+if [[ ! "$libcucim_files" =~ ^cucim/clara/libcucim\.so\.[0-9]+$ ]]; then
+    printf 'Expected one libcucim shared library under cucim/clara. Found\n%s\n' "$libcucim_files" >&2
     exit 1
 fi
 
