@@ -65,7 +65,9 @@ rapids-pip-retry wheel \
 sccache --show-adv-stats
 
 # repair wheels and write to the location that artifact-uploading code expects to find them
-python -m auditwheel repair -w "${RAPIDS_WHEEL_BLD_OUTPUT_DIR}" dist/*
+# The wheel already contains libcucim next to the Python extension.
+# cucim preloads that copy so the extension and plugins share it.
+python -m auditwheel repair --exclude "libcucim.so.*" -w "${RAPIDS_WHEEL_BLD_OUTPUT_DIR}" dist/*
 # shellcheck disable=SC2010
 ls -1 "${RAPIDS_WHEEL_BLD_OUTPUT_DIR}" | grep -vqz 'none'
 
