@@ -218,7 +218,15 @@ jobs:
     with:
       build_type: pull-request
       script: ci/test_python.sh
-      matrix_type: pull-request
+      # Temporarily reproduce the two #1159 CI configurations on this PR.
+      matrix_type: nightly,pull-request
+      matrix_filter: >-
+        map(select(.ARCH == "amd64" and .DEPENDENCIES == "latest" and (
+          (.CUDA_VER == "12.2.2" and .PY_VER == "3.13" and .LINUX_VER == "rockylinux8"
+          and .GPU == "v100" and .DRIVER == "earliest")
+          or (.CUDA_VER == "13.0.3" and .PY_VER == "3.14" and .LINUX_VER == "ubuntu24.04"
+          and .GPU == "rtxpro6000" and .DRIVER == "latest")
+        )))
   docs-build-matrix:
     permissions:
       contents: read
