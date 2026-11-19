@@ -16,9 +16,11 @@
 #include <nvimgcodec_version.h>
 #include <stdio.h>
 #include <iostream>
+#include <iterator>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include <stdexcept>
 
 #define STR_IMPL_(x) #x
@@ -36,27 +38,53 @@ const char nvimgcodecLibNameFullVer[] = "libnvimgcodec.so." FULL_VER_STR;
 const char nvimgcodecLibNameMajorVer[] = "libnvimgcodec.so." MAJOR_VER_STR;
 const char nvimgcodecLibName[] = "libnvimgcodec.so";
 
+// Directory of the shared object that contains this code (the plugin), or an
+// empty string if it cannot be determined.
+std::string pluginDirectory() {
+  Dl_info info;
+  if (dladdr(reinterpret_cast<void *>(&pluginDirectory), &info) == 0 || info.dli_fname == nullptr) {
+    return std::string();
+  }
+  std::string file(info.dli_fname);
+  auto pos = file.rfind('/');
+  return pos == std::string::npos ? std::string(".") : file.substr(0, pos);
+}
+
 NVIMGCODECDRIVER loadNvimgcodecLibrary() {
-  static const char *paths[] = {nvimgcodecLibNameFullVer,
+  static const char *names[] = {nvimgcodecLibNameFullVer,
                                 nvimgcodecLibNameMajorVer,
                                 nvimgcodecLibName};
-  NVIMGCODECDRIVER ret = nullptr;
-  std::string last_error;
-  for (const char *path : paths) {
-    ret = dlopen(path, RTLD_NOW);
-    if (ret) {
-      fprintf(stderr, "[nvimgcodec_dynlink] Successfully loaded: %s\n", path);
-      break;
-    } else {
-      const char* err = dlerror();
-      fprintf(stderr, "[nvimgcodec_dynlink] Failed to load %s: %s\n", path, err ? err : "unknown error");
-      if (err) last_error = err;
+  std::vector<std::string> candidates(std::begin(names), std::end(names));
+
+  // The nvidia-nvimgcodec-cu* pip packages install the library in
+  // site-packages/nvidia/nvimgcodec/, which is not on the default search path.
+  // The plugin is installed in site-packages/cucim/clara/, so look in the
+  // directory of the nvImageCodec package that is next to cucim as well.
+  // Libraries found by the default search (system installs, conda,
+  // LD_LIBRARY_PATH) take precedence.
+  const std::string plugin_dir = pluginDirectory();
+  if (!plugin_dir.empty()) {
+    for (const char *name : names) {
+      candidates.push_back(plugin_dir + "/../../nvidia/nvimgcodec/" + name);
     }
   }
 
+  NVIMGCODECDRIVER ret = nullptr;
+  std::string errors;
+  for (const std::string &path : candidates) {
+    ret = dlopen(path.c_str(), RTLD_NOW);
+    if (ret) {
+      fprintf(stderr, "[nvimgcodec_dynlink] Successfully loaded: %s\n", path.c_str());
+      break;
+    }
+    const char *err = dlerror();
+    errors += "\n  " + path + ": " + (err ? err : "unknown error");
+  }
+
   if (!ret) {
-    std::string error_msg = "dlopen libnvimgcodec.so failed! Last error: " + last_error +
-        "\nPlease install nvimagecodec: See https://developer.nvidia.com/nvimgcodec-downloads.";
+    std::string error_msg = "dlopen libnvimgcodec.so failed! Tried:" + errors +
+        "\nPlease install nvImageCodec (pip: nvidia-nvimgcodec-cu12 or nvidia-nvimgcodec-cu13, "
+        "conda: libnvimgcodec): See https://developer.nvidia.com/nvimgcodec-downloads.";
     throw std::runtime_error(error_msg);
   }
   return ret;
