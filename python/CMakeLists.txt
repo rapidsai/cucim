@@ -20,9 +20,15 @@ string(REGEX REPLACE "a.*$" "" VERSION ${VERSION})
 # Fetch rapids-cmake (used to obtain the RAPIDS-pinned CCCL version)
 include(${CMAKE_CURRENT_LIST_DIR}/../cmake/rapids_config.cmake)
 
+# Build for all RAPIDS-supported GPU architectures unless CMAKE_CUDA_ARCHITECTURES
+# or the CUDAARCHS environment variable is set (e.g. CUDAARCHS=NATIVE for the
+# GPU(s) in the build machine only).
+include(rapids-cuda)
+rapids_cuda_init_architectures(cucim)
+
 # Append local cmake module path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
-project(cucim VERSION ${VERSION} DESCRIPTION "cucim" LANGUAGES CXX)
+project(cucim VERSION ${VERSION} DESCRIPTION "cucim" LANGUAGES CXX CUDA)
 
 ################################################################################
 # Include utilities
@@ -57,9 +63,14 @@ endif ()
 find_package(CUDAToolkit) # cucim library depends on CUDA::cudart_static
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
+set(CMAKE_CUDA_STANDARD ${CMAKE_CXX_STANDARD})
+set(CMAKE_CUDA_STANDARD_REQUIRED YES)
 
-# Disable visibility to not expose unnecessary symbols
+# Disable visibility to not expose unnecessary symbols. For CUDA sources this
+# also keeps the CUB/libcu++ symbols they instantiate from being exported and
+# interposing with other CUB users loaded in the same process (e.g. CuPy).
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_CUDA_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN YES)
 
 # Set RPATH
