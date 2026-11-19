@@ -6,6 +6,12 @@
 
 set -euo pipefail
 
+repeat_count=${1:-1}
+if [[ ! "${repeat_count}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Expected a positive CUDA read test repeat count." >&2
+  exit 2
+fi
+
 . /opt/conda/etc/profile.d/conda.sh
 
 rapids-logger "Configuring conda strict channel priority"
@@ -40,16 +46,59 @@ rapids-print-env
 rapids-logger "Check GPU usage"
 nvidia-smi
 
+rapids-logger "Check the nvJPEG version used by cuslide"
+python - <<'PY'
+import ctypes
+import sys
+from pathlib import Path
+
+plugin = next((Path(sys.prefix) / "lib").glob("cucim.kit.cuslide@*.so"), None)
+if plugin is None:
+    print("The installed cuslide plugin was not found")
+    sys.exit(0)
+
+try:
+    lib = ctypes.CDLL(str(plugin))
+    get_version = lib.nvjpegGetProperty
+except (OSError, AttributeError) as error:
+    print(f"Could not query nvJPEG from {plugin.name}: {error}")
+    sys.exit(0)
+
+get_version.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+get_version.restype = ctypes.c_int
+version = []
+for part in range(3):  # MAJOR_VERSION, MINOR_VERSION, PATCH_LEVEL
+    value = ctypes.c_int()
+    status = get_version(part, ctypes.byref(value))
+    if status:
+        print(f"nvjpegGetProperty failed with status {status}")
+        sys.exit(0)
+    version.append(str(value.value))
+print(f"{plugin.name} uses nvJPEG {'.'.join(version)}")
+PY
+
 EXITCODE=0
 trap "EXITCODE=1" ERR
 set +e
 
 rapids-logger "pytest cucim"
+export CUCIM_CUDA_TEST_REPEAT="${repeat_count}"
 export CUCIM_CUDA_TEST_TRACE_DIR
 CUCIM_CUDA_TEST_TRACE_DIR=$(mktemp -d)
+test_timeout=20m
+test_targets=(src tests/unit tests/performance)
+if [[ "${repeat_count}" != 1 ]]; then
+  rapids-logger "Repeat each of the three CUDA read tests ${repeat_count} times"
+  test_timeout=6m
+  test_targets=(
+    tests/unit/clara/test_batch_decoding.py::TestBatchDecodingCUDA::test_batch_read_cuda_memory_cleanup
+    tests/unit/clara/test_bindings_cuimage.py::test_cuda_array_interface
+    tests/unit/clara/test_tiff_read_region.py::test_cuda_array_interface_support
+  )
+fi
 pushd python/cucim
 # Print stacks for stalled xdist tests before the job-wide timeout.
-timeout 20m pytest \
+timeout "${test_timeout}" pytest \
   --cache-clear \
   -o faulthandler_timeout=120 \
   --junitxml="${RAPIDS_TESTS_DIR}/junit-cucim.xml" \
@@ -60,9 +109,7 @@ timeout 20m pytest \
   --cov-report=xml:"${RAPIDS_COVERAGE_DIR}/cucim-coverage.xml" \
   --cov-report=term \
   -v \
-  src \
-  tests/unit \
-  tests/performance
+  "${test_targets[@]}"
 popd
 
 if (( EXITCODE != 0 )); then

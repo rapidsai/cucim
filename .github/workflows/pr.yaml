@@ -217,7 +217,8 @@ jobs:
     uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@release/26.12
     with:
       build_type: pull-request
-      script: ci/test_python.sh
+      script: ci/test_python.sh 100
+      run_codecov: false
       # Temporarily reproduce the two #1159 CI configurations on this PR.
       matrix_type: nightly,pull-request
       matrix_filter: >-

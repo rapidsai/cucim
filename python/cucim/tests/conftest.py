@@ -11,6 +11,35 @@ import pytest
 
 from .fixtures.testimage import *  # noqa
 
+_stress_trace = pytest.StashKey[Path]()
+_stress_failed = pytest.StashKey[bool]()
+
+
+def pytest_generate_tests(metafunc):
+    if "cuda_read_trace" in metafunc.fixturenames:
+        repeats = int(os.environ.get("CUCIM_CUDA_TEST_REPEAT", "1"))
+        if repeats > 1:
+            metafunc.parametrize(
+                "cuda_read_trace",
+                range(1, repeats + 1),
+                indirect=True,
+                ids=lambda attempt: f"repeat-{attempt:03d}",
+            )
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    report = yield
+    path = item.stash.get(_stress_trace, None)
+    if path:
+        if report.failed:
+            item.stash[_stress_failed] = True
+        if report.when == "teardown" and not item.stash.get(
+            _stress_failed, False
+        ):
+            path.unlink(missing_ok=True)
+    return report
+
 
 @pytest.fixture
 def cuda_read_trace(request, monkeypatch):
@@ -20,6 +49,9 @@ def cuda_read_trace(request, monkeypatch):
     if trace_dir:
         path = Path(trace_dir) / f"{request.node.name}-{os.getpid()}.log"
         monkeypatch.setenv("CUCIM_CUDA_TEST_TRACE_FILE", str(path))
+        if hasattr(request, "param"):
+            # Keep only failed or unfinished stress-test traces for the CI log.
+            request.node.stash[_stress_trace] = path
 
     def trace(phase):
         if path:
