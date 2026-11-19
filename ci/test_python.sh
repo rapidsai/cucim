@@ -8,12 +8,18 @@ set -euo pipefail
 
 repeat_count=${1:-1}
 input_staging=${2:-device}
+nvjpeg_override=${3:-}
 if [[ ! "${repeat_count}" =~ ^[1-9][0-9]*$ ]]; then
   echo "Expected a positive CUDA read test repeat count." >&2
   exit 2
 fi
 if [[ "${input_staging}" != device && "${input_staging}" != host ]]; then
   echo "Expected host or device CUDA read input staging." >&2
+  exit 2
+fi
+
+if [[ -n "${nvjpeg_override}" && "${nvjpeg_override}" != 13.1.0.59 ]]; then
+  echo "The diagnostic nvJPEG override supports 13.1.0.59." >&2
   exit 2
 fi
 
@@ -51,23 +57,47 @@ rapids-print-env
 rapids-logger "Check GPU usage"
 nvidia-smi
 
+if [[ -n "${nvjpeg_override}" ]]; then
+  rapids-logger "Load nvJPEG ${nvjpeg_override} for this diagnostic run"
+  nvjpeg_dir=$(mktemp -d)
+  trap 'rm -rf -- "${nvjpeg_dir}"' EXIT
+  nvjpeg_archive="libnvjpeg-linux-x86_64-${nvjpeg_override}-archive"
+  nvjpeg_library="libnvjpeg.so.${nvjpeg_override}"
+  (
+    cd "${nvjpeg_dir}"
+    curl --fail --silent --show-error --location --retry 3 --max-time 60 \
+      "https://developer.download.nvidia.com/compute/cuda/redist/libnvjpeg/linux-x86_64/${nvjpeg_archive}.tar.xz" \
+      --output nvjpeg.tar.xz
+    # SHA-256 from NVIDIA's redistrib_13.2.2.json.
+    printf '%s  %s\n' cd4d825630e85bee77444cf54cfe1d8a271cb496b6c61d398359e1ad8bcd20e2 nvjpeg.tar.xz | sha256sum --check
+    tar -xf nvjpeg.tar.xz --strip-components=2 "${nvjpeg_archive}/lib/${nvjpeg_library}"
+  )
+  export LD_PRELOAD="${nvjpeg_dir}/${nvjpeg_library}${LD_PRELOAD:+:${LD_PRELOAD}}"
+fi
+
 rapids-logger "Check the nvJPEG version used by cuslide"
-python - <<'PY'
+python - "${nvjpeg_override%.*}" <<'PY_VERSION'
 import ctypes
 import sys
 from pathlib import Path
 
+expected_version = sys.argv[1]
+
+
+def unavailable(message):
+    print(message)
+    sys.exit(1 if expected_version else 0)
+
+
 plugin = next((Path(sys.prefix) / "lib").glob("cucim.kit.cuslide@*.so"), None)
 if plugin is None:
-    print("The installed cuslide plugin was not found")
-    sys.exit(0)
+    unavailable("The installed cuslide plugin was not found")
 
 try:
     lib = ctypes.CDLL(str(plugin))
     get_version = lib.nvjpegGetProperty
 except (OSError, AttributeError) as error:
-    print(f"Could not query nvJPEG from {plugin.name}: {error}")
-    sys.exit(0)
+    unavailable(f"Could not query nvJPEG from {plugin.name}: {error}")
 
 get_version.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
 get_version.restype = ctypes.c_int
@@ -76,11 +106,13 @@ for part in range(3):  # MAJOR_VERSION, MINOR_VERSION, PATCH_LEVEL
     value = ctypes.c_int()
     status = get_version(part, ctypes.byref(value))
     if status:
-        print(f"nvjpegGetProperty failed with status {status}")
-        sys.exit(0)
+        unavailable(f"nvjpegGetProperty failed with status {status}")
     version.append(str(value.value))
-print(f"{plugin.name} uses nvJPEG {'.'.join(version)}")
-PY
+actual_version = ".".join(version)
+print(f"{plugin.name} uses nvJPEG {actual_version}")
+if expected_version and actual_version != expected_version:
+    sys.exit(f"Expected nvJPEG {expected_version}, got {actual_version}")
+PY_VERSION
 
 EXITCODE=0
 trap "EXITCODE=1" ERR
