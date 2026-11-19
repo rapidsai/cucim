@@ -7,8 +7,13 @@
 set -euo pipefail
 
 repeat_count=${1:-1}
+input_staging=${2:-device}
 if [[ ! "${repeat_count}" =~ ^[1-9][0-9]*$ ]]; then
   echo "Expected a positive CUDA read test repeat count." >&2
+  exit 2
+fi
+if [[ "${input_staging}" != device && "${input_staging}" != host ]]; then
+  echo "Expected host or device CUDA read input staging." >&2
   exit 2
 fi
 
@@ -82,7 +87,9 @@ trap "EXITCODE=1" ERR
 set +e
 
 rapids-logger "pytest cucim"
+rapids-logger "nvJPEG input staging: ${input_staging}"
 export CUCIM_CUDA_TEST_REPEAT="${repeat_count}"
+export CUCIM_CUDA_TEST_INPUT_STAGING="${input_staging}"
 export CUCIM_CUDA_TEST_TRACE_DIR
 CUCIM_CUDA_TEST_TRACE_DIR=$(mktemp -d)
 test_timeout=20m

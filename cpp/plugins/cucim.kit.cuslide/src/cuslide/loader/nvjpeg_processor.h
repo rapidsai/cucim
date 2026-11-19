@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef CUSLIDE_NVJPEG_PROCESSOR_H
@@ -11,6 +11,7 @@
 #include <mutex>
 #include <queue>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <nvjpeg.h>
@@ -52,7 +53,9 @@ public:
     uint32_t preferred_loader_prefetch_factor();
 
 private:
-    void update_file_block_info(const int64_t* request_location, const int64_t* request_size, uint64_t location_len);
+    std::pair<size_t, size_t> update_file_block_info(const int64_t* request_location,
+                                                    const int64_t* request_size,
+                                                    uint64_t location_len);
 
     bool stopped_ = false;
     uint32_t preferred_loader_prefetch_factor_ = 2;
@@ -71,7 +74,7 @@ private:
     uint32_t cuda_batch_size_ = 1;
     nvjpegHandle_t handle_ = nullptr;
     nvjpegOutputFormat_t output_format_ = NVJPEG_OUTPUT_RGBI;
-    nvjpegJpegState_t state_;
+    nvjpegJpegState_t state_ = nullptr;
     nvjpegBackend_t backend_ = NVJPEG_BACKEND_GPU_HYBRID_DEVICE;
     cudaStream_t stream_ = nullptr;
 

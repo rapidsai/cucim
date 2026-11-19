@@ -5,6 +5,11 @@
 
 #include "nvjpeg_processor.h"
 
+#include <cerrno>
+#include <cstdlib>
+#include <string_view>
+#include <type_traits>
+#include <unistd.h>
 #include <vector>
 
 #include <cucim/cache/image_cache_manager.h>
@@ -26,6 +31,29 @@ namespace
 void trace_nvjpeg_phase(const char* phase, uint64_t value = 0)
 {
     cucim::profiler::trace_cuda_test_phase("nvjpeg", phase, value);
+}
+
+ssize_t read_buffered(int fd, std::vector<uint8_t>& buffer, size_t file_offset)
+{
+    size_t total = 0;
+    while (total < buffer.size())
+    {
+        const auto count = ::pread(fd, buffer.data() + total, buffer.size() - total, file_offset + total);
+        if (count == 0)
+        {
+            break;
+        }
+        if (count < 0)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+            throw std::runtime_error(fmt::format("Buffered read of nvJPEG input failed (errno {})", errno));
+        }
+        total += static_cast<size_t>(count);
+    }
+    return static_cast<ssize_t>(total);
 }
 } // namespace
 
@@ -86,15 +114,21 @@ NvJpegProcessor::NvJpegProcessor(CuCIMFileHandle* file_handle,
         {
             throw std::runtime_error(fmt::format("NVJPEG initialization error"));
         }
+        std::unique_ptr<std::remove_pointer_t<nvjpegHandle_t>, decltype(&nvjpegDestroy)> handle_owner(
+            handle_, nvjpegDestroy);
         if (NVJPEG_STATUS_SUCCESS != nvjpegJpegStateCreate(handle_, &state_))
         {
             throw std::runtime_error(fmt::format("JPEG state initialization error"));
         }
+        std::unique_ptr<std::remove_pointer_t<nvjpegJpegState_t>, decltype(&nvjpegJpegStateDestroy)> state_owner(
+            state_, nvjpegJpegStateDestroy);
 
         nvjpegDecodeBatchedParseJpegTables(handle_, state_, jpegtable_data, jpegtable_size);
         nvjpegDecodeBatchedInitialize(handle_, state_, cuda_batch_size_, 1, output_format_);
 
         CUDA_ERROR(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking));
+        std::unique_ptr<std::remove_pointer_t<cudaStream_t>, decltype(&cudaStreamDestroy)> stream_owner(
+            stream_, cudaStreamDestroy);
 
         raw_cuda_inputs_.reserve(cuda_batch_size_);
         raw_cuda_inputs_len_.reserve(cuda_batch_size_);
@@ -116,7 +150,7 @@ NvJpegProcessor::NvJpegProcessor(CuCIMFileHandle* file_handle,
         file_start_offset_ = 0;
         file_block_size_ = file_size_;
 
-        update_file_block_info(request_location, request_size, location_len);
+        const auto [first_tile, last_tile] = update_file_block_info(request_location, request_size, location_len);
 
         constexpr int BLOCK_SECTOR_SIZE = 4096;
         switch (backend_)
@@ -127,19 +161,74 @@ NvJpegProcessor::NvJpegProcessor(CuCIMFileHandle* file_handle,
             aligned_host_ = reinterpret_cast<uint8_t*>(ALIGN_UP(unaligned_host_, BLOCK_SECTOR_SIZE));
             cufile_->pread(aligned_host_, file_block_size_, file_start_offset_);
             break;
-        case NVJPEG_BACKEND_GPU_HYBRID_DEVICE:
-            trace_nvjpeg_phase("file_open_begin");
-            cufile_ = cucim::filesystem::open(file_handle->path, "r");
+        case NVJPEG_BACKEND_GPU_HYBRID_DEVICE: {
+            const char* input_staging = std::getenv("CUCIM_CUDA_TEST_INPUT_STAGING");
+            const bool use_host_staging = input_staging && std::string_view(input_staging) == "host";
+            if (!use_host_staging)
+            {
+                trace_nvjpeg_phase("file_open_begin");
+                cufile_ = cucim::filesystem::open(file_handle->path, "r");
+            }
             trace_nvjpeg_phase("input_allocation_begin", file_block_size_);
             CUDA_ERROR(cudaMalloc(&unaligned_device_, file_block_size_ + BLOCK_SECTOR_SIZE));
+            std::unique_ptr<uint8_t, decltype(&cudaFree)> device_owner(unaligned_device_, cudaFree);
             aligned_device_ = reinterpret_cast<uint8_t*>(ALIGN_UP(unaligned_device_, BLOCK_SECTOR_SIZE));
-            trace_nvjpeg_phase("cufile_read_begin", file_block_size_);
-            cufile_->pread(aligned_device_, file_block_size_, file_start_offset_);
-            trace_nvjpeg_phase("cufile_read_end");
+
+            std::vector<uint8_t> host_block;
+            ssize_t bytes_read;
+            if (use_host_staging)
+            {
+                host_block.resize(file_block_size_);
+                trace_nvjpeg_phase("buffered_read_begin", file_block_size_);
+                bytes_read = read_buffered(file_handle_->fd, host_block, file_start_offset_);
+            }
+            else
+            {
+                trace_nvjpeg_phase("cufile_read_begin", file_block_size_);
+                bytes_read = cufile_->pread(aligned_device_, file_block_size_, file_start_offset_);
+            }
+            if (bytes_read < 0)
+            {
+                throw std::runtime_error("Failed to read the compressed nvJPEG input block");
+            }
+            const auto input_size = static_cast<size_t>(bytes_read);
+            trace_nvjpeg_phase("input_bytes_read", input_size);
+            if (input_size > file_block_size_)
+            {
+                throw std::runtime_error("nvJPEG input read returned more bytes than requested");
+            }
+            const auto& offsets = ifd_->image_piece_offsets();
+            const auto& sizes = ifd_->image_piece_bytecounts();
+            for (size_t tile = first_tile; tile <= last_tile; ++tile)
+            {
+                const auto offset = offsets[tile];
+                if (sizes[tile] && (offset < file_start_offset_ || offset - file_start_offset_ > input_size ||
+                                    sizes[tile] > input_size - (offset - file_start_offset_)))
+                {
+                    trace_nvjpeg_phase("tile_outside_input_block", tile);
+                    throw std::runtime_error(fmt::format("Tile {} extends outside the compressed nvJPEG input block", tile));
+                }
+            }
+            trace_nvjpeg_phase("input_ranges_checked", last_tile - first_tile + 1);
+            if (use_host_staging)
+            {
+                trace_nvjpeg_phase("host_to_device_input_copy_begin", input_size);
+                CUDA_ERROR(cudaMemcpyAsync(
+                    aligned_device_, host_block.data(), input_size, cudaMemcpyHostToDevice, stream_));
+                // Finish the transfer before releasing the pageable host buffer.
+                const auto transfer_status = cudaStreamSynchronize(stream_);
+                trace_nvjpeg_phase("host_to_device_input_copy_end", transfer_status);
+                CUDA_ERROR(transfer_status);
+            }
+            device_owner.release();
             break;
+        }
         default:
             throw std::runtime_error("Unsupported backend type");
         }
+        stream_owner.release();
+        state_owner.release();
+        handle_owner.release();
     }
     trace_nvjpeg_phase("processor_init_end");
 }
@@ -406,9 +495,9 @@ uint32_t NvJpegProcessor::preferred_loader_prefetch_factor()
     return preferred_loader_prefetch_factor_;
 }
 
-void NvJpegProcessor::update_file_block_info(const int64_t* request_location,
-                                             const int64_t* request_size,
-                                             const uint64_t location_len)
+std::pair<size_t, size_t> NvJpegProcessor::update_file_block_info(const int64_t* request_location,
+                                                                 const int64_t* request_size,
+                                                                 const uint64_t location_len)
 {
 
     uint32_t width = ifd_->width();
@@ -451,6 +540,7 @@ void NvJpegProcessor::update_file_block_info(const int64_t* request_location,
 
     file_start_offset_ = min_offset;
     file_block_size_ = max_offset - min_offset + 1;
+    return { min_tile_index, max_tile_index };
 }
 
 } // namespace cuslide::loader
