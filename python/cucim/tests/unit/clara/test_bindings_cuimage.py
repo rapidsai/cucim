@@ -290,11 +290,16 @@ def test_read_region_releases_gil(
 
 
 @pytest.mark.skipif(not _gpu_available(), reason="needs a CUDA device")
-def test_cuda_array_interface(testimg_tiff_stripe_32x24_16_jpeg):
+def test_cuda_array_interface(
+    cuda_read_trace, testimg_tiff_stripe_32x24_16_jpeg
+):
     import cupy
 
+    cuda_read_trace("open_image_begin")
     img = CuImage(testimg_tiff_stripe_32x24_16_jpeg)
+    cuda_read_trace("read_region_begin")
     region = img.read_region((0, 0), (16, 8), device="cuda")
+    cuda_read_trace("read_region_end")
     assert region.device.type == io.DeviceType.CUDA
     assert not hasattr(region, "__array_interface__")
     interface = region.__cuda_array_interface__
@@ -313,7 +318,9 @@ def test_cuda_array_interface(testimg_tiff_stripe_32x24_16_jpeg):
     assert interface["mask"] is None
     assert interface["stream"] == 1
     assert interface["version"] == 3
+    cuda_read_trace("asarray_begin")
     arr = cupy.asarray(region)
+    cuda_read_trace("asarray_end")
     assert arr.shape == (8, 16, 3) and arr.dtype == cupy.uint8
 
 

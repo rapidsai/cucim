@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 
 #include <fmt/format.h>
 
+#include "cucim/profiler/cuda_test_trace.h"
 #include "cucim/profiler/nvtx3.h"
 #include "cucim/util/cuda.h"
 
@@ -58,7 +59,9 @@ ThreadBatchDataLoader::ThreadBatchDataLoader(LoadFunc load_func,
         case io::DeviceType::kCUDA: {
             cudaError_t cuda_status;
             void* image_data_ptr = nullptr;
+            profiler::trace_cuda_test_phase("loader", "initial_raster_allocation_begin", buffer_size_);
             CUDA_ERROR(cudaMalloc(&image_data_ptr, buffer_size_));
+            profiler::trace_cuda_test_phase("loader", "initial_raster_allocation_end");
             raster_data_.emplace_back(static_cast<uint8_t*>(image_data_ptr));
             break;
         }
@@ -86,7 +89,9 @@ ThreadBatchDataLoader::ThreadBatchDataLoader(LoadFunc load_func,
 ThreadBatchDataLoader::~ThreadBatchDataLoader()
 {
     // Wait until all tasks are done.
+    profiler::trace_cuda_test_phase("loader", "destructor_wait_begin", tasks_.size());
     while (wait_batch() > 0);
+    profiler::trace_cuda_test_phase("loader", "destructor_wait_end");
 
     cucim::io::DeviceType device_type = out_device_.type();
     for (auto& raster_ptr : raster_data_)
@@ -104,7 +109,9 @@ ThreadBatchDataLoader::~ThreadBatchDataLoader()
             if (raster_ptr)
             {
                 cuda_status = cudaSuccess;
+                profiler::trace_cuda_test_phase("loader", "raster_free_begin");
                 CUDA_TRY(cudaFree(raster_ptr));
+                profiler::trace_cuda_test_phase("loader", "raster_free_end", cuda_status);
             }
             break;
         case io::DeviceType::kCUDAHost:
@@ -220,7 +227,9 @@ uint32_t ThreadBatchDataLoader::wait_batch()
 #endif // DEBUG
             auto& future = tasks_.front();
             try {
+                profiler::trace_cuda_test_phase("loader", "tile_future_wait_begin", i);
                 future.wait();
+                profiler::trace_cuda_test_phase("loader", "tile_future_wait_end", i);
 #ifdef DEBUG
                 fmt::print("🔍 wait_batch(): Task {} completed\n", i);
 #endif // DEBUG
@@ -310,7 +319,9 @@ uint8_t* ThreadBatchDataLoader::next_data()
         break;
     case io::DeviceType::kCUDA: {
         cudaError_t cuda_status;
+        profiler::trace_cuda_test_phase("loader", "replacement_raster_allocation_begin", buffer_size_);
         CUDA_ERROR(cudaMalloc(&raster_data_[buffer_item_head_index_], buffer_size_));
+        profiler::trace_cuda_test_phase("loader", "replacement_raster_allocation_end");
         break;
     }
     case io::DeviceType::kCUDAHost:

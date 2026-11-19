@@ -315,8 +315,10 @@ uint32_t NvJpegProcessor::request(std::deque<uint32_t>& batch_item_counts, const
     {
         throw std::runtime_error(fmt::format("Error in batched decode: {}", error_code));
     }
-    CUDA_ERROR(cudaStreamSynchronize(stream_));
-    trace_nvjpeg_phase("decode_sync_end");
+    trace_nvjpeg_phase("decode_sync_begin");
+    const auto sync_status = cudaStreamSynchronize(stream_);
+    trace_nvjpeg_phase("decode_sync_end", sync_status);
+    CUDA_ERROR(sync_status);
 
     // Remove previous batch (keep last 'cuda_batch_size_' items) before adding to cuda_image_cache_
     // TODO: Utilize the removed tiles if next batch uses them.
