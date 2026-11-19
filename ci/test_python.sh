@@ -70,7 +70,19 @@ if [[ -n "${nvjpeg_override}" ]]; then
       --output nvjpeg.tar.xz
     # SHA-256 from NVIDIA's redistrib_13.2.2.json.
     printf '%s  %s\n' cd4d825630e85bee77444cf54cfe1d8a271cb496b6c61d398359e1ad8bcd20e2 nvjpeg.tar.xz | sha256sum --check
-    tar -xf nvjpeg.tar.xz --strip-components=2 "${nvjpeg_archive}/lib/${nvjpeg_library}"
+    python - "${nvjpeg_archive}" "${nvjpeg_library}" <<'PY_EXTRACT'
+import shutil
+import sys
+import tarfile
+
+archive, library = sys.argv[1:]
+with (
+    tarfile.open("nvjpeg.tar.xz", "r:xz") as source,
+    source.extractfile(f"{archive}/lib/{library}") as member,
+    open(library, "wb") as target,
+):
+    shutil.copyfileobj(member, target)
+PY_EXTRACT
   )
   export LD_PRELOAD="${nvjpeg_dir}/${nvjpeg_library}${LD_PRELOAD:+:${LD_PRELOAD}}"
 fi
