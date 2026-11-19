@@ -47,6 +47,13 @@ build:
       ./run build_local cucim "${CUCIM_BUILD_TYPE}"
 
       cp -P python/install/lib/* python/cucim/src/cucim/clara/
+      # Compiled cucim.skimage extension modules, if any, belong to the
+      # cucim.skimage package
+      for ext in python/cucim/src/cucim/clara/_cucim_skimage_*.so; do
+        if [ -e "${ext}" ]; then
+          mv "${ext}" python/cucim/src/cucim/skimage/
+        fi
+      done
 
       pushd python/cucim
 

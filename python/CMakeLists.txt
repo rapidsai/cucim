@@ -191,11 +191,15 @@ set_target_properties(cucim PROPERTIES
 ################################################################################
 # Install
 ################################################################################
+# Compiled cucim.skimage extension modules: set the target's OUTPUT_NAME to
+# cucim/skimage/_cucim_skimage_<name> (as cucim/_cucim above) and add it to
+# INSTALL_TARGETS. `./run build_local` and the conda recipe copy the
+# _cucim_skimage_* modules into the cucim.skimage package.
 set(INSTALL_TARGETS
         cucim
         )
 
-install(TARGETS cucim
+install(TARGETS ${INSTALL_TARGETS}
         EXPORT cucim-targets
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT cucim_Runtime
