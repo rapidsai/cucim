@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,6 +13,7 @@
 #include <fmt/format.h>
 
 #include "cucim/io/device_type.h"
+#include "cucim/profiler/cuda_test_trace.h"
 #include "cucim/profiler/nvtx3.h"
 #include "cucim/util/cuda.h"
 
@@ -74,12 +75,16 @@ CUCIM_API bool move_raster_from_host(void** target, size_t size, const cucim::io
         cudaError_t cuda_status;
         void* host_mem = *target;
         void* cuda_mem;
+        cucim::profiler::trace_cuda_test_phase("memory", "cuda_malloc_begin", size);
         CUDA_TRY(cudaMalloc(&cuda_mem, size));
+        cucim::profiler::trace_cuda_test_phase("memory", "cuda_malloc_end", cuda_status);
         if (cuda_status)
         {
             throw std::bad_alloc();
         }
+        cucim::profiler::trace_cuda_test_phase("memory", "host_to_device_copy_begin", size);
         CUDA_TRY(cudaMemcpy(cuda_mem, host_mem, size, cudaMemcpyHostToDevice));
+        cucim::profiler::trace_cuda_test_phase("memory", "host_to_device_copy_end", cuda_status);
         if (cuda_status)
         {
             throw std::bad_alloc();

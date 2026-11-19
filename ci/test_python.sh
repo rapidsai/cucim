@@ -45,8 +45,8 @@ trap "EXITCODE=1" ERR
 set +e
 
 rapids-logger "pytest cucim"
-export CUCIM_NVJPEG_TRACE_DIR
-CUCIM_NVJPEG_TRACE_DIR=$(mktemp -d)
+export CUCIM_CUDA_TEST_TRACE_DIR
+CUCIM_CUDA_TEST_TRACE_DIR=$(mktemp -d)
 pushd python/cucim
 # Print stacks for stalled xdist tests before the job-wide timeout.
 timeout 20m pytest \
@@ -66,9 +66,9 @@ timeout 20m pytest \
 popd
 
 if (( EXITCODE != 0 )); then
-  for trace in "${CUCIM_NVJPEG_TRACE_DIR}"/*.log; do
+  for trace in "${CUCIM_CUDA_TEST_TRACE_DIR}"/*.log; do
     if [[ -f "${trace}" ]]; then
-      rapids-logger "nvJPEG test trace: ${trace##*/}"
+      rapids-logger "CUDA read test trace: ${trace##*/}"
       tail -n 300 "${trace}"
     fi
   done

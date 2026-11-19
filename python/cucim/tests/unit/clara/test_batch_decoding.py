@@ -9,10 +9,6 @@ These tests verify that the ThreadBatchDataLoader + NvImageCodecProcessor
 correctly batch-decodes multiple ROI regions from TIFF files.
 """
 
-import os
-import time
-from pathlib import Path
-
 import numpy as np
 import pytest
 
@@ -407,7 +403,7 @@ class TestBatchDecodingCUDA:
                 assert arr.device.id >= 0
 
     def test_batch_read_cuda_memory_cleanup(
-        self, testimg_tiff_stripe_4096x4096_256_jpeg, monkeypatch
+        self, cuda_read_trace, testimg_tiff_stripe_4096x4096_256_jpeg
     ):
         """Test that CUDA memory is properly cleaned up after batch read.
 
@@ -415,19 +411,7 @@ class TestBatchDecodingCUDA:
         """
         import cupy as cp
 
-        trace_dir = os.environ.get("CUCIM_NVJPEG_TRACE_DIR")
-        trace_path = (
-            Path(trace_dir) / f"nvjpeg-{os.getpid()}.log" if trace_dir else None
-        )
-        if trace_path:
-            monkeypatch.setenv("CUCIM_NVJPEG_TRACE_FILE", str(trace_path))
-
-        def trace(phase):
-            if trace_path:
-                with trace_path.open("a") as stream:
-                    stream.write(
-                        f"{time.monotonic_ns() // 1000} pytest {phase}\n"
-                    )
+        trace = cuda_read_trace
 
         # Get initial memory usage
         mempool = cp.get_default_memory_pool()

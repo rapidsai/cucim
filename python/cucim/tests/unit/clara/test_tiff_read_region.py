@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright (c) 2021-2023, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -171,10 +171,16 @@ def test_array_interface_support(testimg_tiff_stripe_32x24_16_jpeg):
     assert array_interface["version"] == 3
 
 
-def test_cuda_array_interface_support(testimg_tiff_stripe_32x24_16_jpeg):
+def test_cuda_array_interface_support(
+    cuda_read_trace, testimg_tiff_stripe_32x24_16_jpeg
+):
+    cuda_read_trace("open_image_begin")
     img = open_image_cucim(testimg_tiff_stripe_32x24_16_jpeg)
+    cuda_read_trace("read_region_begin")
     whole_img = img.read_region(device="cuda")
+    cuda_read_trace("cuda_array_interface_begin")
     array_interface = whole_img.__cuda_array_interface__
+    cuda_read_trace("cuda_array_interface_end")
     print(array_interface)
 
     # {'data': (81888083968, False), 'strides': None,
@@ -189,6 +195,7 @@ def test_cuda_array_interface_support(testimg_tiff_stripe_32x24_16_jpeg):
     assert array_interface["version"] == 3
     assert array_interface["mask"] is None
     assert array_interface["stream"] == 1
+    cuda_read_trace("assertions_end")
 
 
 def test_tiff_iterator(testimg_tiff_stripe_4096x4096_256):

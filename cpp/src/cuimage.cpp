@@ -15,6 +15,7 @@
 #endif
 #include <fmt/format.h>
 
+#include "cucim/profiler/cuda_test_trace.h"
 #include "cucim/profiler/nvtx3.h"
 #include "cucim/util/cuda.h"
 #include "cucim/util/file.h"
@@ -282,7 +283,9 @@ CuImage::~CuImage()
                 // If no loader exists, CuImage allocated the memory directly.
                 // Either way, CuImage is responsible for freeing it.
                 cudaError_t cuda_status;
+                cucim::profiler::trace_cuda_test_phase("cuimage", "cuda_free_begin");
                 CUDA_TRY(cudaFree(image_data_->container.data));
+                cucim::profiler::trace_cuda_test_phase("cuimage", "cuda_free_end", cuda_status);
                 image_data_->container.data = nullptr;
                 break;
             }

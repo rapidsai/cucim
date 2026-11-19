@@ -5,14 +5,12 @@
 
 #include "nvjpeg_processor.h"
 
-#include <chrono>
-#include <cstdio>
-#include <cstdlib>
 #include <vector>
 
 #include <cucim/cache/image_cache_manager.h>
 #include <cucim/codec/hash_function.h>
 #include <cucim/io/device.h>
+#include <cucim/profiler/cuda_test_trace.h>
 #include <cucim/util/cuda.h>
 #include <fmt/format.h>
 
@@ -27,19 +25,7 @@ namespace
 {
 void trace_nvjpeg_phase(const char* phase, uint64_t value = 0)
 {
-    const char* path = std::getenv("CUCIM_NVJPEG_TRACE_FILE");
-    if (!path)
-    {
-        return;
-    }
-    if (auto* file = std::fopen(path, "a"))
-    {
-        const auto elapsed = std::chrono::steady_clock::now().time_since_epoch();
-        const auto micros = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
-        std::fprintf(file, "%lld nvjpeg %s %llu\n", static_cast<long long>(micros), phase,
-                     static_cast<unsigned long long>(value));
-        std::fclose(file);
-    }
+    cucim::profiler::trace_cuda_test_phase("nvjpeg", phase, value);
 }
 } // namespace
 
