@@ -211,10 +211,13 @@ nanobind_add_module(cucim_skimage_cpp
         nanobind/skimage/segmented_sort.h
         nanobind/skimage/segmented_sort.cu
         )
+# Link the CUDA runtime statically, as libcucim and its plugins do, so that the
+# module does not need libcudart.so at run time (and auditwheel does not have
+# to bundle it into the wheel).
 target_link_libraries(cucim_skimage_cpp
     PRIVATE
         CCCL::CCCL
-        CUDA::cudart
+        CUDA::cudart_static
         )
 set_target_properties(cucim_skimage_cpp PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}
