@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 """
@@ -8,6 +8,10 @@ Tests for batch ROI decoding using nvImageCodec v0.7.0+ API.
 These tests verify that the ThreadBatchDataLoader + NvImageCodecProcessor
 correctly batch-decodes multiple ROI regions from TIFF files.
 """
+
+import os
+import time
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -403,7 +407,7 @@ class TestBatchDecodingCUDA:
                 assert arr.device.id >= 0
 
     def test_batch_read_cuda_memory_cleanup(
-        self, testimg_tiff_stripe_4096x4096_256_jpeg
+        self, testimg_tiff_stripe_4096x4096_256_jpeg, monkeypatch
     ):
         """Test that CUDA memory is properly cleaned up after batch read.
 
@@ -411,28 +415,54 @@ class TestBatchDecodingCUDA:
         """
         import cupy as cp
 
+        trace_dir = os.environ.get("CUCIM_NVJPEG_TRACE_DIR")
+        trace_path = (
+            Path(trace_dir) / f"nvjpeg-{os.getpid()}.log" if trace_dir else None
+        )
+        if trace_path:
+            monkeypatch.setenv("CUCIM_NVJPEG_TRACE_FILE", str(trace_path))
+
+        def trace(phase):
+            if trace_path:
+                with trace_path.open("a") as stream:
+                    stream.write(
+                        f"{time.monotonic_ns() // 1000} pytest {phase}\n"
+                    )
+
         # Get initial memory usage
         mempool = cp.get_default_memory_pool()
+        trace("initial_pool_cleanup_begin")
         mempool.free_all_blocks()
         initial_used = mempool.used_bytes()
+        trace("initial_pool_cleanup_end")
 
+        trace("open_image_begin")
         with open_image_cucim(testimg_tiff_stripe_4096x4096_256_jpeg) as img:
+            trace("open_image_end")
             locations = [(i * 100, i * 100) for i in range(10)]
             size = (256, 256)
 
-            for _ in range(5):
+            for iteration in range(5):
+                trace(f"read_region_begin {iteration}")
                 gen = img.read_region(
                     locations, size, 0, num_workers=2, device="cuda"
                 )
-                for result in gen:
+                trace(f"read_region_end {iteration}")
+                for crop, result in enumerate(gen):
+                    trace(f"asarray_begin {iteration} {crop}")
                     _ = cp.asarray(result)
+                    trace(f"asarray_end {iteration} {crop}")
 
                 # Free memory after each iteration
+                trace(f"pool_cleanup_begin {iteration}")
                 mempool.free_all_blocks()
+                trace(f"pool_cleanup_end {iteration}")
 
         # Memory should be back to initial level (within tolerance)
+        trace("final_pool_cleanup_begin")
         mempool.free_all_blocks()
         final_used = mempool.used_bytes()
+        trace("final_pool_cleanup_end")
         # Allow some overhead (1MB)
         assert final_used - initial_used < 1024 * 1024
 

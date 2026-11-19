@@ -1,10 +1,13 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "nvjpeg_processor.h"
 
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 #include <cucim/cache/image_cache_manager.h>
@@ -20,6 +23,26 @@ namespace cuslide::loader
 
 constexpr uint32_t MAX_CUDA_BATCH_SIZE = 1024;
 
+namespace
+{
+void trace_nvjpeg_phase(const char* phase, uint64_t value = 0)
+{
+    const char* path = std::getenv("CUCIM_NVJPEG_TRACE_FILE");
+    if (!path)
+    {
+        return;
+    }
+    if (auto* file = std::fopen(path, "a"))
+    {
+        const auto elapsed = std::chrono::steady_clock::now().time_since_epoch();
+        const auto micros = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
+        std::fprintf(file, "%lld nvjpeg %s %llu\n", static_cast<long long>(micros), phase,
+                     static_cast<unsigned long long>(value));
+        std::fclose(file);
+    }
+}
+} // namespace
+
 NvJpegProcessor::NvJpegProcessor(CuCIMFileHandle* file_handle,
                                  const cuslide::tiff::IFD* ifd,
                                  const int64_t* request_location,
@@ -31,6 +54,7 @@ NvJpegProcessor::NvJpegProcessor(CuCIMFileHandle* file_handle,
                                  const uint32_t jpegtable_size)
     : cucim::loader::BatchDataProcessor(batch_size), file_handle_(file_handle), ifd_(ifd)
 {
+    trace_nvjpeg_phase("processor_init_begin", maximum_tile_count);
     if (maximum_tile_count > 1)
     {
         // Calculate nearlest power of 2 that is equal or larger than the given number.
@@ -118,19 +142,25 @@ NvJpegProcessor::NvJpegProcessor(CuCIMFileHandle* file_handle,
             cufile_->pread(aligned_host_, file_block_size_, file_start_offset_);
             break;
         case NVJPEG_BACKEND_GPU_HYBRID_DEVICE:
+            trace_nvjpeg_phase("file_open_begin");
             cufile_ = cucim::filesystem::open(file_handle->path, "r");
+            trace_nvjpeg_phase("input_allocation_begin", file_block_size_);
             CUDA_ERROR(cudaMalloc(&unaligned_device_, file_block_size_ + BLOCK_SECTOR_SIZE));
             aligned_device_ = reinterpret_cast<uint8_t*>(ALIGN_UP(unaligned_device_, BLOCK_SECTOR_SIZE));
+            trace_nvjpeg_phase("cufile_read_begin", file_block_size_);
             cufile_->pread(aligned_device_, file_block_size_, file_start_offset_);
+            trace_nvjpeg_phase("cufile_read_end");
             break;
         default:
             throw std::runtime_error("Unsupported backend type");
         }
     }
+    trace_nvjpeg_phase("processor_init_end");
 }
 
 NvJpegProcessor::~NvJpegProcessor()
 {
+    trace_nvjpeg_phase("processor_destroy_begin");
     if (unaligned_host_)
     {
         cucim_free(unaligned_host_);
@@ -163,6 +193,7 @@ NvJpegProcessor::~NvJpegProcessor()
         NVJPEG_ERROR(nvjpegDestroy(handle_));
         handle_ = nullptr;
     }
+    trace_nvjpeg_phase("processor_destroy_end");
 }
 
 uint32_t NvJpegProcessor::request(std::deque<uint32_t>& batch_item_counts, const uint32_t num_remaining_patches)
@@ -226,6 +257,7 @@ uint32_t NvJpegProcessor::request(std::deque<uint32_t>& batch_item_counts, const
     {
         if (num_remaining_patches > 0)
         {
+            trace_nvjpeg_phase("defer_partial_batch", tile_to_request.size());
             // Restore cache_tile_queue_ and cache_tile_map_
             for (auto& added_tile : tile_to_request)
             {
@@ -266,6 +298,7 @@ uint32_t NvJpegProcessor::request(std::deque<uint32_t>& batch_item_counts, const
     // Initialize batch data with the first data
     if (raw_cuda_inputs_.empty())
     {
+        trace_nvjpeg_phase("output_allocations_begin", cuda_batch_size_);
         for (uint32_t i = 0; i < cuda_batch_size_; ++i)
         {
             uint8_t* mem_offset = file_block_ptr + tile_to_request[0].offset - file_start_offset_;
@@ -275,6 +308,7 @@ uint32_t NvJpegProcessor::request(std::deque<uint32_t>& batch_item_counts, const
                 &raw_cuda_outputs_[i].channel[0], &raw_cuda_outputs_[i].pitch[0], tile_width_bytes_, tile_height_));
         }
         CUDA_ERROR(cudaStreamSynchronize(stream_));
+        trace_nvjpeg_phase("output_allocations_end");
     }
 
     // Set inputs to nvJPEG
@@ -286,14 +320,17 @@ uint32_t NvJpegProcessor::request(std::deque<uint32_t>& batch_item_counts, const
         raw_cuda_inputs_len_[i] = tile_to_request[i].size;
     }
 
+    trace_nvjpeg_phase("decode_submit_begin", request_count);
     int error_code = nvjpegDecodeBatched(
         handle_, state_, raw_cuda_inputs_.data(), raw_cuda_inputs_len_.data(), raw_cuda_outputs_.data(), stream_);
+    trace_nvjpeg_phase("decode_submit_status", error_code);
 
     if (NVJPEG_STATUS_SUCCESS != error_code)
     {
         throw std::runtime_error(fmt::format("Error in batched decode: {}", error_code));
     }
     CUDA_ERROR(cudaStreamSynchronize(stream_));
+    trace_nvjpeg_phase("decode_sync_end");
 
     // Remove previous batch (keep last 'cuda_batch_size_' items) before adding to cuda_image_cache_
     // TODO: Utilize the removed tiles if next batch uses them.
@@ -329,6 +366,7 @@ uint32_t NvJpegProcessor::request(std::deque<uint32_t>& batch_item_counts, const
     ++processed_cuda_batch_count_;
 
     cuda_batch_cond_.notify_all();
+    trace_nvjpeg_phase("tiles_published", request_count);
     return request_count;
 }
 
@@ -347,6 +385,7 @@ uint32_t NvJpegProcessor::wait_batch(const uint32_t index_in_task,
 
 std::shared_ptr<cucim::cache::ImageCacheValue> NvJpegProcessor::wait_for_processing(const uint32_t index)
 {
+    trace_nvjpeg_phase("tile_wait_begin", index);
     uint64_t index_hash = cucim::codec::splitmix64(index);
     std::mutex* m = reinterpret_cast<std::mutex*>(cuda_image_cache_->mutex(index_hash));
     std::shared_ptr<cucim::cache::ImageCacheValue> value;
@@ -363,6 +402,8 @@ std::shared_ptr<cucim::cache::ImageCacheValue> NvJpegProcessor::wait_for_process
         value = cuda_image_cache_->find(key);
         return static_cast<bool>(value);
     });
+    lock.unlock();
+    trace_nvjpeg_phase("tile_wait_end", index);
     return value;
 }
 
