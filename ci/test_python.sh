@@ -46,8 +46,10 @@ set +e
 
 rapids-logger "pytest cucim"
 pushd python/cucim
+# Print stacks for stalled xdist tests before the job-wide timeout.
 timeout 20m pytest \
   --cache-clear \
+  -o faulthandler_timeout=120 \
   --junitxml="${RAPIDS_TESTS_DIR}/junit-cucim.xml" \
   --numprocesses=8 \
   --dist=worksteal \
