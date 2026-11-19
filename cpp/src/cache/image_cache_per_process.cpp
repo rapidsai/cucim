@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,9 @@
 #include "cucim/util/cuda.h"
 
 #include <fmt/format.h>
+
+#include <exception>
+#include <utility>
 
 namespace std
 {
@@ -46,8 +49,9 @@ struct PerProcessImageCacheItem
 PerProcessImageCacheValue::PerProcessImageCacheValue(void* data,
                                                      uint64_t size,
                                                      void* user_obj,
-                                                     const cucim::io::DeviceType device_type)
-    : ImageCacheValue(data, size, user_obj, device_type){};
+                                                     const cucim::io::DeviceType device_type,
+                                                     cucim::memory::DeviceResources device_resources)
+    : ImageCacheValue(data, size, user_obj, device_type), device_resources_(std::move(device_resources)){};
 
 PerProcessImageCacheValue::~PerProcessImageCacheValue()
 {
@@ -59,8 +63,10 @@ PerProcessImageCacheValue::~PerProcessImageCacheValue()
             cucim_free(data);
             break;
         case io::DeviceType::kCUDA: {
-            cudaError_t cuda_status;
-            CUDA_TRY(cudaFree(data));
+            // Returned to the resource that allocated it, not to cudaFree: a
+            // pool resource has to get its block back to stay a pool, and
+            // `size` is what tells it which block this was.
+            device_resources_.deallocate(data, size);
             break;
         }
         case io::DeviceType::kCUDAHost:
@@ -74,9 +80,12 @@ PerProcessImageCacheValue::~PerProcessImageCacheValue()
     }
 };
 
-PerProcessImageCache::PerProcessImageCache(const ImageCacheConfig& config, const cucim::io::DeviceType device_type)
+PerProcessImageCache::PerProcessImageCache(const ImageCacheConfig& config,
+                                           const cucim::io::DeviceType device_type,
+                                           cucim::memory::DeviceResources device_resources)
     : ImageCache(config, CacheType::kPerProcess, device_type),
       mutex_array_(config.mutex_pool_capacity),
+      device_resources_(std::move(device_resources)),
       capacity_nbytes_(kOneMiB * config.memory_capacity),
       capacity_(config.capacity),
       list_capacity_(config.capacity + config.list_padding),
@@ -103,7 +112,10 @@ std::shared_ptr<ImageCacheValue> PerProcessImageCache::create_value(void* data,
                                                                     uint64_t size,
                                                                     const cucim::io::DeviceType device_type)
 {
-    return std::make_shared<PerProcessImageCacheValue>(data, size, nullptr, device_type);
+    // The value carries the resource so it can free through it later, even if
+    // the cache itself is gone by then. The cache's resource cannot change, so
+    // this is necessarily the one that allocated *data*.
+    return std::make_shared<PerProcessImageCacheValue>(data, size, nullptr, device_type, device_resources_);
 }
 
 void* PerProcessImageCache::allocate(std::size_t n)
@@ -113,10 +125,21 @@ void* PerProcessImageCache::allocate(std::size_t n)
     case io::DeviceType::kCPU:
         return cucim_malloc(n);
     case io::DeviceType::kCUDA: {
-        cudaError_t cuda_status;
-        void* image_data_ptr = nullptr;
-        CUDA_TRY(cudaMalloc(&image_data_ptr, n));
-        return image_data_ptr;
+        // The resource throws on failure, whereas this returns nullptr to
+        // signal "no room in the cache" to callers that then decode without
+        // caching. Keep that contract rather than propagating.
+        //
+        // Not just std::bad_alloc: a CCCL pool reports failure as
+        // cuda::cuda_error, which derives from std::runtime_error, and a
+        // caller-supplied resource may use something else again.
+        try
+        {
+            return device_resources_.allocate(n);
+        }
+        catch (const std::exception&)
+        {
+            return nullptr;
+        }
     }
     case io::DeviceType::kCUDAHost:
     case io::DeviceType::kCUDAManaged:

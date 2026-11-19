@@ -102,6 +102,7 @@ find_package(Threads REQUIRED)
 ################################################################################
 superbuild_depend(fmt)
 #superbuild_depend(boost)
+superbuild_depend(cccl)
 superbuild_depend(abseil)
 superbuild_depend(googletest)
 superbuild_depend(googlebenchmark)
@@ -166,6 +167,34 @@ install(EXPORT ${CUCIM_PACKAGE_NAME}-targets
             ${CUCIM_PACKAGE_NAME}::
         DESTINATION
             ${CMAKE_INSTALL_LIBDIR}/cmake/${CUCIM_PACKAGE_NAME})
+
+# <cucim/memory/device_resources.h> needs CCCL 3.4.2, which is newer than the
+# CCCL bundled with some supported CUDA toolkits (CUDA 12.9 ships 2.8). Install
+# the fetched copy under a cuCIM-private prefix so installed consumers can find
+# it there without it shadowing any other CCCL installed into the same prefix.
+# Packages that depend on a CCCL >=3.4.2 package instead turn this off.
+option(CUCIM_INSTALL_CCCL "Install the fetched CCCL headers and CMake package with cuCIM" ON)
+set(CUCIM_INSTALL_CCCL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/${CUCIM_PACKAGE_NAME}/3rdparty")
+if(CUCIM_INSTALL_CCCL)
+    # A function scope keeps CCCL's install-rule settings, including its
+    # CMAKE_SKIP_INSTALL_ALL_DEPENDENCY, from leaking into cuCIM's.
+    function(cucim_install_cccl)
+        set(CCCL_SOURCE_DIR "${deps-cccl_SOURCE_DIR}")
+        set(CCCL_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/cccl-install")
+        set(CCCL_TOPLEVEL_PROJECT OFF)
+        # Passed positionally by CCCL's cudax rules, so it must not be empty.
+        set(CCCL_ENABLE_CUDAX OFF)
+        # libcudacxx's package config also finds Thrust and CUB.
+        set(CCCL_ENABLE_INSTALL_RULES ON)
+        set(libcudacxx_ENABLE_INSTALL_RULES ON)
+        set(CUB_ENABLE_INSTALL_RULES ON)
+        set(Thrust_ENABLE_INSTALL_RULES ON)
+        set(CMAKE_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty/cccl")
+        set(CMAKE_INSTALL_LIBDIR "${CUCIM_INSTALL_CCCL_LIBDIR}")
+        include("${deps-cccl_SOURCE_DIR}/cmake/CCCLInstallRules.cmake")
+    endfunction()
+    cucim_install_cccl()
+endif()
 
 # Write package configs
 include(CMakePackageConfigHelpers)

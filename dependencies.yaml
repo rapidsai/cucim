@@ -239,6 +239,7 @@ dependencies:
     common:
       - output_types: conda
         packages:
+          - cccl >=3.4.2,<3.5.0a0
           - cuda-cudart-dev
           - libnvjpeg-dev
           - libnvimgcodec-dev>=0.10.0,<0.11.0

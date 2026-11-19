@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,6 +7,7 @@
 #define CUCIM_CACHE_IMAGE_CACHE_PER_PROCESS_H
 
 #include "cucim/cache/image_cache.h"
+#include "cucim/memory/device_resources.h"
 
 #include <libcuckoo/cuckoohash_map.hh>
 #include <memory>
@@ -38,11 +39,25 @@ struct PerProcessImageCacheItem;
 
 struct PerProcessImageCacheValue : public ImageCacheValue
 {
+    /**
+     * @param device_resources Resource that allocated *data*, when
+     *        *device_type* is kCUDA. Held by value rather than by reference
+     *        because a cached value can outlive the cache that produced it
+     *        (an entry evicted while a reader still holds it is destroyed
+     *        last), and freeing through a dangling resource would be worse.
+     *        Holding it by value does not duplicate the allocator: copies of
+     *        an owning handle share the one resource.
+     */
     PerProcessImageCacheValue(void* data,
                               uint64_t size,
                               void* user_obj = nullptr,
-                              const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU);
+                              const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU,
+                              cucim::memory::DeviceResources device_resources = {});
     ~PerProcessImageCacheValue() override;
+
+private:
+    /// Must be the resource that allocated `data`; see the constructor.
+    cucim::memory::DeviceResources device_resources_;
 };
 
 
@@ -56,8 +71,15 @@ struct PerProcessImageCacheValue : public ImageCacheValue
 class PerProcessImageCache : public ImageCache
 {
 public:
+    /**
+     * @param device_resources Where device tiles are allocated from. Fixed for
+     *        the lifetime of the cache: allocate() and create_value() are
+     *        separate calls, so a resource that could change between them
+     *        could record the wrong allocator as an entry's deallocator.
+     */
     PerProcessImageCache(const ImageCacheConfig& config,
-                         const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU);
+                         const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU,
+                         cucim::memory::DeviceResources device_resources = {});
     ~PerProcessImageCache();
 
     const char* type_str() const override;
@@ -98,6 +120,10 @@ private:
     bool erase(const std::shared_ptr<ImageCacheKey>& key);
 
     std::vector<std::mutex> mutex_array_;
+
+    /// Where device tiles come from. Set at construction, never reassigned;
+    /// see the constructor for why.
+    cucim::memory::DeviceResources device_resources_;
 
     std::atomic<uint64_t> size_nbytes_ = 0; /// size of cache memory used
     uint64_t capacity_nbytes_ = 0; /// size of cache memory allocated

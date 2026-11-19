@@ -221,6 +221,38 @@ def test_filesystem_roundtrip(tmp_path):
     assert isinstance(filesystem.discard_page_cache(path), bool)
 
 
+@pytest.mark.parametrize("count", [16, 4096 + 16])
+@pytest.mark.parametrize("buf_offset", [0, 16])
+def test_filesystem_aligned_partial_io(tmp_path, count, buf_offset):
+    page_size = 4096
+    file_offset = page_size
+    payload = np.random.default_rng(0).integers(
+        0, 256, 4 * page_size, dtype=np.uint8
+    )
+    path = tmp_path / "aligned.bin"
+    path.write_bytes(payload.tobytes())
+
+    # Force the aligned I/O path regardless of NumPy's allocator alignment.
+    storage = np.empty(count + buf_offset + page_size, dtype=np.uint8)
+    start = -(storage.ctypes.data + buf_offset) % page_size
+    buffer = storage[start : start + count + buf_offset]
+    buffer.fill(0)
+    assert (buffer.ctypes.data + buf_offset) % page_size == 0
+
+    with filesystem.open(str(path), "rp") as reader:
+        assert reader.pread(buffer, count, file_offset, buf_offset) == count
+    np.testing.assert_array_equal(
+        buffer[buf_offset:], payload[file_offset : file_offset + count]
+    )
+    np.testing.assert_array_equal(buffer[:buf_offset], 0)
+
+    buffer[buf_offset:] = 123
+    with filesystem.open(str(path), "r+p") as writer:
+        assert writer.pwrite(buffer, count, file_offset, buf_offset) == count
+    payload[file_offset : file_offset + count] = 123
+    assert path.read_bytes() == payload.tobytes()
+
+
 def test_device_cache():
     assert isinstance(CuImage.device_cache(), cache.ImageCache)
 

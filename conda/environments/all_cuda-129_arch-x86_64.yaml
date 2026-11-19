@@ -6,6 +6,7 @@ channels:
 - conda-forge
 dependencies:
 - c-compiler
+- cccl >=3.4.2,<3.5.0a0
 - click
 - cmake>=4.0,<4.5
 - cuda-cudart-dev
