@@ -756,6 +756,16 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
         }
     }
 
+    if (total_read_cnt > 0 && memory_type != cudaMemoryTypeUnregistered && file_type != FileHandleType::kGPUDirect)
+    {
+        // Copies from pageable memory can return before the transfer to the GPU completes.
+        // Finish the default-stream copies before a caller can use the buffer on another stream.
+        CUDA_TRY(cudaStreamSynchronize(nullptr));
+        if (cuda_status)
+        {
+            return -1;
+        }
+    }
     return total_read_cnt;
 }
 ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, off_t buf_offset)
