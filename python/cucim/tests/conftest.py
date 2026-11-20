@@ -49,8 +49,8 @@ def cuda_read_trace(request, monkeypatch):
     if trace_dir:
         path = Path(trace_dir) / f"{request.node.name}-{os.getpid()}.log"
         monkeypatch.setenv("CUCIM_CUDA_TEST_TRACE_FILE", str(path))
-        if hasattr(request, "param"):
-            # Keep only failed or unfinished stress-test traces for the CI log.
+        if getattr(request, "param", 1) != 1:
+            # Keep the first trial of each test plus all failures and hangs.
             request.node.stash[_stress_trace] = path
 
     def trace(phase):

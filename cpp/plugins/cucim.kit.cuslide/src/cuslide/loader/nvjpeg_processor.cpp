@@ -5,6 +5,7 @@
 
 #include "nvjpeg_processor.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdlib>
 #include <string_view>
@@ -163,7 +164,8 @@ NvJpegProcessor::NvJpegProcessor(CuCIMFileHandle* file_handle,
             break;
         case NVJPEG_BACKEND_GPU_HYBRID_DEVICE: {
             const char* input_staging = std::getenv("CUCIM_CUDA_TEST_INPUT_STAGING");
-            const bool use_host_staging = input_staging && std::string_view(input_staging) == "host";
+            const std::string_view staging = input_staging ? input_staging : "";
+            const bool use_host_staging = staging == "host";
             if (!use_host_staging)
             {
                 trace_nvjpeg_phase("file_open_begin");
@@ -220,6 +222,10 @@ NvJpegProcessor::NvJpegProcessor(CuCIMFileHandle* file_handle,
                 trace_nvjpeg_phase("host_to_device_input_copy_end", transfer_status);
                 CUDA_ERROR(transfer_status);
             }
+            else if (staging == "device-verify" && input_size != 0)
+            {
+                verify_device_input(input_size, first_tile, last_tile);
+            }
             device_owner.release();
             break;
         }
@@ -231,6 +237,51 @@ NvJpegProcessor::NvJpegProcessor(CuCIMFileHandle* file_handle,
         handle_owner.release();
     }
     trace_nvjpeg_phase("processor_init_end");
+}
+
+void NvJpegProcessor::verify_device_input(size_t input_size, size_t first_tile, size_t last_tile) const
+{
+    std::vector<uint8_t> readback(input_size);
+    cudaError_t cuda_status;
+    trace_nvjpeg_phase("device_input_readback_begin", input_size);
+    const auto copy_status = cudaMemcpy(readback.data(), aligned_device_, input_size, cudaMemcpyDeviceToHost);
+    trace_nvjpeg_phase("device_input_readback_end", copy_status);
+    CUDA_ERROR(copy_status);
+
+    std::vector<uint8_t> reference(input_size);
+    const auto reference_size = static_cast<size_t>(read_buffered(file_handle_->fd, reference, file_start_offset_));
+    trace_nvjpeg_phase("input_reference_bytes", reference_size);
+
+    const auto& offsets = ifd_->image_piece_offsets();
+    const auto& sizes = ifd_->image_piece_bytecounts();
+    size_t tiles_compared = 0;
+    for (size_t tile = first_tile; tile <= last_tile; ++tile)
+    {
+        if (sizes[tile] == 0)
+        {
+            continue;
+        }
+        // The caller has already checked that the tile is contained in the input block.
+        const auto offset = offsets[tile] - file_start_offset_;
+        if (offset > reference_size || sizes[tile] > reference_size - offset)
+        {
+            trace_nvjpeg_phase("input_reference_missing_tile", tile);
+            throw std::runtime_error(fmt::format("Buffered reference read did not cover nvJPEG tile {}", tile));
+        }
+        const auto start = reference.data() + offset;
+        const auto end = start + sizes[tile];
+        const auto mismatch = std::mismatch(start, end, readback.data() + offset);
+        if (mismatch.first != end)
+        {
+            const auto file_offset = offsets[tile] + (mismatch.first - start);
+            trace_nvjpeg_phase("input_mismatch_tile", tile);
+            trace_nvjpeg_phase("input_mismatch_file_offset", file_offset);
+            throw std::runtime_error(fmt::format("Device input differs from a buffered read at file byte {} in tile {}",
+                                                 file_offset, tile));
+        }
+        ++tiles_compared;
+    }
+    trace_nvjpeg_phase("input_tiles_match", tiles_compared);
 }
 
 NvJpegProcessor::~NvJpegProcessor()

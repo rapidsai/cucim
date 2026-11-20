@@ -215,11 +215,15 @@ jobs:
       pull-requests: read
     secrets: inherit # zizmor: ignore[secrets-inherit]
     uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@release/26.12
+    strategy:
+      fail-fast: false
+      matrix:
+        input-staging: [device, device-verify]
     with:
       build_type: pull-request
-      script: ci/test_python.sh 100 device 13.2.3.58
+      script: ci/test_python.sh 100 ${{ matrix.input-staging }}
       run_codecov: false
-      # Test a newer nvJPEG with the existing RTX device-read configuration.
+      # Compare device reads with and without a compressed-byte readback.
       matrix_type: pull-request
       matrix_filter: >-
         map(select(.ARCH == "amd64" and .DEPENDENCIES == "latest"

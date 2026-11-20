@@ -53,6 +53,7 @@ public:
     uint32_t preferred_loader_prefetch_factor();
 
 private:
+    void verify_device_input(size_t input_size, size_t first_tile, size_t last_tile) const;
     std::pair<size_t, size_t> update_file_block_info(const int64_t* request_location,
                                                     const int64_t* request_size,
                                                     uint64_t location_len);

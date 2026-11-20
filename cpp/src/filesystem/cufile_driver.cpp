@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -18,6 +18,7 @@
 #include <cuda_runtime.h>
 #include <fmt/format.h>
 
+#include "cucim/profiler/cuda_test_trace.h"
 #include "cucim/util/cuda.h"
 #include "cucim/util/platform.h"
 #include "cufile_stub.h"
@@ -462,6 +463,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
 
     if (file_type == FileHandleType::kPosix)
     {
+        profiler::trace_cuda_test_phase("cufile", "pread_posix", file_offset);
         if (memory_type != cudaMemoryTypeUnregistered)
         {
             uint64_t cache_size = s_cufile_initializer.max_host_cache_size();
@@ -498,6 +500,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
     }
     else if (file_type == FileHandleType::kMemoryMapped)
     {
+        profiler::trace_cuda_test_phase("cufile", "pread_mmap", file_offset);
         if (memory_type != cudaMemoryTypeUnregistered)
         {
             CUDA_TRY(cudaMemcpy(reinterpret_cast<char*>(buf) + buf_offset,
@@ -517,6 +520,8 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
     {
         uint64_t buf_align = (reinterpret_cast<uint64_t>(buf) + buf_offset) % PAGE_SIZE;
         bool is_aligned = (buf_align == 0) && ((file_offset % PAGE_SIZE) == 0);
+        profiler::trace_cuda_test_phase(
+            "cufile", is_aligned ? "pread_odirect_aligned" : "pread_odirect_unaligned", file_offset);
 
         if (is_aligned)
         {
@@ -739,6 +744,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
     }
     else if (file_type == FileHandleType::kGPUDirect)
     {
+        profiler::trace_cuda_test_phase("cufile", "pread_cufile", file_offset);
         (void*)s_cufile_cache.device_cache(); // Lazy initialization
 
         ssize_t read_cnt = cuFileRead(handle_->cufile, reinterpret_cast<char*>(buf) + buf_offset, count, file_offset, 0);
