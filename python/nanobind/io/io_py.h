@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef PYCUCIM_IO_INIT_H
-#define PYCUCIM_IO_INIT_H
+#pragma once
 
 #include <nanobind/nanobind.h>
 
@@ -16,6 +15,3 @@ namespace cucim::io
 void init_io(nb::module_ m);
 
 }
-
-
-#endif // PYCUCIM_IO_INIT_H

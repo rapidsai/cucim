@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef PYCUCIM_MACRO_H
-#define PYCUCIM_MACRO_H
+#pragma once
 
 #include <string>
 
@@ -16,5 +15,3 @@ constexpr const char* remove_leading_spaces(const char* str)
 }
 
 #define PYDOC(method, doc) static constexpr const char* doc_##method = remove_leading_spaces(doc);
-
-#endif // PYCUCIM_MACRO_H

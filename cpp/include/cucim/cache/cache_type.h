@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_CACHE_CACHE_TYPE_H
-#define CUCIM_CACHE_CACHE_TYPE_H
+#pragma once
 
 #include "cucim/macros/api_header.h"
 
@@ -44,5 +43,3 @@ EXPORT_VISIBLE std::string_view lookup_cache_type_str(const CacheType type);
 
 
 } // namespace cucim::cache
-
-#endif // CUCIM_CACHE_CACHE_TYPE_H

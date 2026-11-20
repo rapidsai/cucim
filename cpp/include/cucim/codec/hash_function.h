@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef CUCIM_HASH_FUNCTION_H
-#define CUCIM_HASH_FUNCTION_H
+#pragma once
 
 #include <cstdint>
 
@@ -61,5 +60,3 @@ inline uint64_t splitmix64_3(uint64_t a, uint64_t b, uint64_t c)
 }
 
 } // namespace cucim::codec
-
-#endif // CUCIM_HASH_FUNCTION_H

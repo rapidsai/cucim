@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_FRAMEWORK_H
-#define CUCIM_FRAMEWORK_H
+#pragma once
 
 #include "cucim/core/plugin.h"
 
@@ -94,6 +93,3 @@ T* Framework::acquire_interface_from_library(const char* library_path)
     return static_cast<T*>(this->acquire_interface_from_library_with_client(g_cucim_client_name, desc, library_path));
 }
 } // namespace cucim
-
-
-#endif // CUCIM_FRAMEWORK_H

@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef PYCUCIM_DEVICE_PYDOC_H
-#define PYCUCIM_DEVICE_PYDOC_H
+#pragma once
 
 #include "../macros.h"
 
@@ -40,5 +39,3 @@ Device index.
 )doc")
 
 } // namespace cucim::io::doc::Device
-
-#endif // PYCUCIM_DEVICE_PYDOC_H
