@@ -18,8 +18,8 @@ if [[ "${input_staging}" != device && "${input_staging}" != host ]]; then
   exit 2
 fi
 
-if [[ -n "${nvjpeg_override}" && "${nvjpeg_override}" != 13.1.0.59 ]]; then
-  echo "The diagnostic nvJPEG override supports 13.1.0.59." >&2
+if [[ -n "${nvjpeg_override}" && "${nvjpeg_override}" != 13.2.3.58 ]]; then
+  echo "The diagnostic nvJPEG override supports 13.2.3.58." >&2
   exit 2
 fi
 
@@ -68,8 +68,8 @@ if [[ -n "${nvjpeg_override}" ]]; then
     curl --fail --silent --show-error --location --retry 3 --max-time 60 \
       "https://developer.download.nvidia.com/compute/cuda/redist/libnvjpeg/linux-x86_64/${nvjpeg_archive}.tar.xz" \
       --output nvjpeg.tar.xz
-    # SHA-256 from NVIDIA's redistrib_13.2.2.json.
-    printf '%s  %s\n' cd4d825630e85bee77444cf54cfe1d8a271cb496b6c61d398359e1ad8bcd20e2 nvjpeg.tar.xz | sha256sum --check
+    # SHA-256 from NVIDIA's redistrib_13.4.3.json.
+    printf '%s  %s\n' ea46688875d58579f1bac24fa3b2525413843cb7d2e031dffb3d8f89fafd8e5b nvjpeg.tar.xz | sha256sum --check
     python - "${nvjpeg_archive}" "${nvjpeg_library}" <<'PY_EXTRACT'
 import shutil
 import sys
