@@ -449,13 +449,14 @@ build_local() {
     fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cucim" ]; then
+        # Remove stale compiled cucim.skimage extension modules; the install
+        # step of the build puts the current ones into the cucim.skimage package
+        rm -f "${TOP}"/python/cucim/src/cucim/skimage/_cucim_skimage_*.so
         build_local_cucim_ "${TOP}"/python "${build_type}" ${build_type_str} "${prefix}"
     fi
 
-    # Remove existing library files at python/cucim/src/cucim/clara and any
-    # compiled cucim.skimage extension modules
+    # Remove existing library files at python/cucim/src/cucim/clara
     rm -f "${TOP}"/python/cucim/src/cucim/clara/*.so*
-    rm -f "${TOP}"/python/cucim/src/cucim/skimage/_cucim_skimage_*.so
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cucim" ]; then
         # We don't need to copy binary if executed by conda-build
@@ -471,12 +472,6 @@ build_local() {
                 cp -P "${TOP}"/cpp/plugins/cucim.kit.cuslide2/build-"${build_type}"/lib*/cucim* "${TOP}"/python/cucim/src/cucim/clara/
             fi
             cp "${TOP}"/python/build-"${build_type}"/lib/cucim/_cucim.abi3.so "${TOP}"/python/cucim/src/cucim/clara/
-            # Compiled cucim.skimage extension modules, if any
-            for ext in "${TOP}"/python/build-"${build_type}"/lib/cucim/skimage/_cucim_skimage_*.abi3.so; do
-                if [ -e "${ext}" ]; then
-                    cp "${ext}" "${TOP}"/python/cucim/src/cucim/skimage/
-                fi
-            done
         fi
     fi
 

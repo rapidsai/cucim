@@ -143,6 +143,17 @@ set(CMAKE_BUILD_RPATH $ORIGIN)
 
 
 ################################################################################
+# Compiled cucim.skimage extension modules
+################################################################################
+# Give each module's target the OUTPUT_NAME cucim/skimage/_cucim_skimage_<name>
+# (as cucim/_cucim below) and add it to CUCIM_SKIMAGE_EXTENSION_TARGETS. The
+# install step puts these modules directly into the cucim.skimage package of
+# this source tree, from which `./run build_local` users, wheels and conda
+# packages all get them.
+set(CUCIM_SKIMAGE_EXTENSION_TARGETS "")
+set(CUCIM_SKIMAGE_PACKAGE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/cucim/src/cucim/skimage)
+
+################################################################################
 # Add library: cucim
 ################################################################################
 
@@ -191,15 +202,11 @@ set_target_properties(cucim PROPERTIES
 ################################################################################
 # Install
 ################################################################################
-# Compiled cucim.skimage extension modules: set the target's OUTPUT_NAME to
-# cucim/skimage/_cucim_skimage_<name> (as cucim/_cucim above) and add it to
-# INSTALL_TARGETS. `./run build_local` and the conda recipe copy the
-# _cucim_skimage_* modules into the cucim.skimage package.
 set(INSTALL_TARGETS
         cucim
         )
 
-install(TARGETS ${INSTALL_TARGETS}
+install(TARGETS cucim
         EXPORT cucim-targets
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
                 COMPONENT cucim_Runtime
@@ -209,6 +216,16 @@ install(TARGETS ${INSTALL_TARGETS}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
                 COMPONENT cucim_Development
         )
+
+# The cucim.skimage extension modules are installed into the Python package
+# rather than under CMAKE_INSTALL_PREFIX (whose lib/ directory the conda recipe
+# copies into cucim.clara).
+if(CUCIM_SKIMAGE_EXTENSION_TARGETS)
+    install(TARGETS ${CUCIM_SKIMAGE_EXTENSION_TARGETS}
+            LIBRARY DESTINATION ${CUCIM_SKIMAGE_PACKAGE_DIR}
+                    COMPONENT cucim_Runtime
+            )
+endif()
 
 export(PACKAGE cucim)
 
