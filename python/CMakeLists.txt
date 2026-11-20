@@ -17,9 +17,18 @@ file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/../VERSION VERSION)
 # strip alpha version info
 string(REGEX REPLACE "a.*$" "" VERSION ${VERSION})
 
+# Fetch rapids-cmake (used to obtain the RAPIDS-pinned CCCL version)
+include(${CMAKE_CURRENT_LIST_DIR}/../cmake/rapids_config.cmake)
+
+# Build for all RAPIDS-supported GPU architectures unless CMAKE_CUDA_ARCHITECTURES
+# or the CUDAARCHS environment variable is set (e.g. CUDAARCHS=NATIVE for the
+# GPU(s) in the build machine only).
+include(rapids-cuda)
+rapids_cuda_init_architectures(cucim)
+
 # Append local cmake module path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
-project(cucim VERSION ${VERSION} DESCRIPTION "cucim" LANGUAGES CXX)
+project(cucim VERSION ${VERSION} DESCRIPTION "cucim" LANGUAGES CXX CUDA)
 
 ################################################################################
 # Include utilities
@@ -54,9 +63,14 @@ endif ()
 find_package(CUDAToolkit) # cucim library depends on CUDA::cudart_static
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
+set(CMAKE_CUDA_STANDARD ${CMAKE_CXX_STANDARD})
+set(CMAKE_CUDA_STANDARD_REQUIRED YES)
 
-# Disable visibility to not expose unnecessary symbols
+# Disable visibility to not expose unnecessary symbols. For CUDA sources this
+# also keeps the CUB/libcu++ symbols they instantiate from being exported and
+# interposing with other CUB users loaded in the same process (e.g. CuPy).
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_CUDA_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN YES)
 
 # Set RPATH
@@ -82,6 +96,14 @@ include(ExternalProject)
 ################################################################################
 superbuild_depend(fmt)
 superbuild_depend(json)
+
+# Use the CCCL version pinned by rapids-cmake (as other RAPIDS projects do)
+# rather than the one bundled with the CUDA Toolkit.
+include(rapids-cmake)
+include(rapids-cpm)
+rapids_cpm_init()
+include(${rapids-cmake-dir}/cpm/cccl.cmake)
+rapids_cpm_cccl()
 
 find_package(Python 3.12 REQUIRED COMPONENTS Interpreter Development.Module Development.SABIModule)
 execute_process(
@@ -119,6 +141,17 @@ endif()
 #       The following is same with `set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)`.
 set(CMAKE_BUILD_RPATH $ORIGIN)
 
+
+################################################################################
+# Compiled cucim.skimage extension modules
+################################################################################
+# Give each module's target the OUTPUT_NAME cucim/skimage/_cucim_skimage_<name>
+# (as cucim/_cucim below) and add it to CUCIM_SKIMAGE_EXTENSION_TARGETS. The
+# install step puts these modules directly into the cucim.skimage package of
+# this source tree, from which `./run build_local` users, wheels and conda
+# packages all get them.
+set(CUCIM_SKIMAGE_EXTENSION_TARGETS "")
+set(CUCIM_SKIMAGE_PACKAGE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/cucim/src/cucim/skimage)
 
 ################################################################################
 # Add library: cucim
@@ -165,6 +198,33 @@ set_target_properties(cucim PROPERTIES
         OUTPUT_NAME cucim/_cucim
         )
 
+################################################################################
+# Add library: cucim_skimage_cpp
+################################################################################
+
+nanobind_add_module(cucim_skimage_cpp
+    STABLE_ABI
+    NB_STATIC
+    PROTECT_STACK
+    NOMINSIZE
+        nanobind/skimage/skimage_cpp_py.cpp
+        nanobind/skimage/segmented_sort.h
+        nanobind/skimage/segmented_sort.cu
+        )
+# Link the CUDA runtime statically, as libcucim and its plugins do, so that the
+# module does not need libcudart.so at run time (and auditwheel does not have
+# to bundle it into the wheel).
+target_link_libraries(cucim_skimage_cpp
+    PRIVATE
+        CCCL::CCCL
+        CUDA::cudart_static
+        )
+set_target_properties(cucim_skimage_cpp PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}
+        OUTPUT_NAME cucim/skimage/_cucim_skimage_cpp_ext
+        )
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}/cucim/skimage)
+list(APPEND CUCIM_SKIMAGE_EXTENSION_TARGETS cucim_skimage_cpp)
 
 ################################################################################
 # Install
@@ -183,6 +243,16 @@ install(TARGETS cucim
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
                 COMPONENT cucim_Development
         )
+
+# The cucim.skimage extension modules are installed into the Python package
+# rather than under CMAKE_INSTALL_PREFIX (whose lib/ directory the conda recipe
+# copies into cucim.clara).
+if(CUCIM_SKIMAGE_EXTENSION_TARGETS)
+    install(TARGETS ${CUCIM_SKIMAGE_EXTENSION_TARGETS}
+            LIBRARY DESTINATION ${CUCIM_SKIMAGE_PACKAGE_DIR}
+                    COMPONENT cucim_Runtime
+            )
+endif()
 
 export(PACKAGE cucim)
 
