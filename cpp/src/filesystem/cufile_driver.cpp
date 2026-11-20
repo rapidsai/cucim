@@ -761,6 +761,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
         // Copies from pageable memory can return before the transfer to the GPU completes.
         // Finish the default-stream copies before a caller can use the buffer on another stream.
         CUDA_TRY(cudaStreamSynchronize(nullptr));
+        profiler::trace_cuda_test_phase("cufile", "pread_staging_wait_end", cuda_status);
         if (cuda_status)
         {
             return -1;
