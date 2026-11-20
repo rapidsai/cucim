@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """Morphological algorithms, e.g., closing, opening, skeletonization."""
@@ -23,8 +23,10 @@ from .footprints import (
     ellipse,
     footprint_from_sequence,
     footprint_rectangle,
+    mirror_footprint,
     octagon,
     octahedron,
+    pad_footprint,
     star,
 )
 from .gray import (
@@ -47,10 +49,6 @@ from .misc import remove_small_holes, remove_small_objects
 __all__ = [
     "convex_hull_image",
     "convex_hull_object",
-    "binary_erosion",
-    "binary_dilation",
-    "binary_opening",
-    "binary_closing",
     "h_maxima",
     "h_minima",
     "local_maxima",
@@ -67,6 +65,8 @@ __all__ = [
     "black_tophat",
     "footprint_from_sequence",
     "footprint_rectangle",
+    "mirror_footprint",
+    "pad_footprint",
     "diamond",
     "disk",
     "ellipse",
