@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """Functions for converting between color spaces.
@@ -65,6 +65,7 @@ from .._shared.utils import (
     identity,
 )
 from ..util import dtype, dtype_limits
+from ._kernel_utils import elementwise_kernel
 
 # TODO: when minimum numpy dependency is 1.25 use:
 # np.exceptions.AxisError instead of AxisError
@@ -180,6 +181,61 @@ def _prepare_colorarray(
     return out
 
 
+# The value of an integer image is mapped to [0, 1] by img_as_float with a
+# multiplication by float32(1 / max) (computed in float32).
+_UNSCALED_INTEGER_MAX = {np.dtype(np.uint8): 255, np.dtype(np.uint16): 65535}
+
+# Kernels that read these inputs convert the value as ``mul_rn(X(x), scale)``.
+# The product is rounded on its own (no fused multiply-add with what follows),
+# as it is when the conversion is a separate pass.
+_LOAD_PREAMBLE = """
+static __device__ __forceinline__ float mul_rn(float a, float b)
+{
+    return __fmul_rn(a, b);
+}
+static __device__ __forceinline__ double mul_rn(double a, double b)
+{
+    return __dmul_rn(a, b);
+}
+"""
+
+
+def _prepare_colorarray_scaled(arr, channel_axis=-1):
+    """Like `_prepare_colorarray`, but without the conversion pass.
+
+    ``uint8``, ``uint16``, ``float16``, ``float32`` and ``float64`` arrays are
+    returned as they are (made C-contiguous) together with the floating point
+    dtype of the result and the factor ``scale`` that the kernel applies to
+    each value (``1 / 255`` or ``1 / 65535`` for the integer types, 1
+    otherwise), which gives the values of ``img_as_float``. The kernel does
+    the conversion while it reads the values, which saves a pass over the
+    array and reads only 1 or 2 bytes per value for the integer types. Other
+    dtypes are converted as in `_prepare_colorarray`.
+
+    Returns
+    -------
+    arr : ndarray
+    float_dtype : numpy.dtype
+        The dtype of the result.
+    scale : numpy scalar of float_dtype
+    """
+    if arr.shape[channel_axis] != 3:
+        msg = (
+            f"the input array must have size 3 along `channel_axis`, "
+            f"got {arr.shape}"
+        )
+        raise ValueError(msg)
+    float_dtype = np.dtype(_supported_float_type(arr.dtype))
+    if arr.dtype in _UNSCALED_INTEGER_MAX:
+        scale = float_dtype.type(1 / _UNSCALED_INTEGER_MAX[arr.dtype])
+    elif arr.dtype in (np.float16, np.float32, np.float64):
+        scale = float_dtype.type(1)
+    else:
+        arr = _prepare_colorarray(arr, channel_axis=channel_axis)
+        scale = float_dtype.type(1)
+    return cp.ascontiguousarray(arr), float_dtype, scale
+
+
 def _validate_channel_axis(channel_axis, ndim):
     if not isinstance(channel_axis, int):
         raise TypeError("channel_axis must be an integer")
@@ -198,7 +254,7 @@ def _rgba2rgb_kernel(background, name="rgba2rgb"):
         val = (1 - alpha) * {background[ch]} + alpha * rgba[4*i + {ch}];
         rgb[3*i + {ch}] = min(max(val, (X)0.0), (X)1.0);
         """
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         "raw X rgba", "raw X rgb", code, name="cucim_skimage_color_" + name
     )
 
@@ -282,12 +338,15 @@ def rgba2rgb(rgba, background=(1, 1, 1), *, channel_axis=-1):
 @cp.memoize(for_each_device=True)
 def _rgb_to_hsv_kernel(name="rgb2hsv"):
     code = """
-    X minv = rgb[3*i];
-    X maxv = rgb[3*i];
+    X c[3] = {mul_rn((X)(rgb[3*i]), scale),
+              mul_rn((X)(rgb[3*i + 1]), scale),
+              mul_rn((X)(rgb[3*i + 2]), scale)};
+    X minv = c[0];
+    X maxv = c[0];
     X tmp;
     for (int ch=1; ch < 3; ch++)
     {
-        tmp = rgb[3*i + ch];
+        tmp = c[ch];
         if (tmp > maxv)
         {
             maxv = tmp;
@@ -303,23 +362,27 @@ def _rgb_to_hsv_kernel(name="rgb2hsv"):
         hsv[3*i + 1] = 0.0;
     } else {
         hsv[3*i + 1] = delta / maxv;
-        if (rgb[3*i] == maxv)
+        if (c[0] == maxv)
         {
-           hsv[3*i]  = (rgb[3*i + 1] - rgb[3*i + 2]) / delta;
-        } else if (rgb[3*i + 1] == maxv)
+           hsv[3*i]  = (c[1] - c[2]) / delta;
+        } else if (c[1] == maxv)
         {
-           hsv[3*i]  = 2.0 + (rgb[3*i + 2] - rgb[3*i]) / delta;
-        } else if (rgb[3*i + 2] == maxv)
+           hsv[3*i]  = 2.0 + (c[2] - c[0]) / delta;
+        } else if (c[2] == maxv)
         {
-           hsv[3*i]  = 4.0 + (rgb[3*i] - rgb[3*i + 1]) / delta;
+           hsv[3*i]  = 4.0 + (c[0] - c[1]) / delta;
         }
         hsv[3*i] /= 6.0;
         hsv[3*i] = hsv[3*i] - floor(hsv[3*i] / (X)1.0);
     }
     hsv[3*i + 2] = maxv;
     """
-    return cp.ElementwiseKernel(
-        "raw X rgb", "raw X hsv", code, name="cucim_skimage_color_" + name
+    return elementwise_kernel(
+        "raw I rgb, X scale",
+        "raw X hsv",
+        code,
+        name="cucim_skimage_color_" + name,
+        preamble=_LOAD_PREAMBLE,
     )
 
 
@@ -367,14 +430,14 @@ def rgb2hsv(rgb, *, channel_axis=-1):
     if input_is_one_pixel:
         rgb = rgb[np.newaxis, ...]
 
-    rgb = _prepare_colorarray(
-        rgb, force_c_contiguous=True, channel_axis=channel_axis
+    rgb, float_dtype, scale = _prepare_colorarray_scaled(
+        rgb, channel_axis=channel_axis
     )
-    hsv = cp.empty_like(rgb)
+    hsv = cp.empty(rgb.shape, dtype=float_dtype)
 
-    name = f"rgb2hsv_{rgb.dtype.char}"
+    name = f"rgb2hsv_{float_dtype.char}"
     kern = _rgb_to_hsv_kernel(name=name)
-    kern(rgb, hsv, size=rgb.size // 3)
+    kern(rgb, scale, hsv, size=rgb.size // 3)
 
     if input_is_one_pixel:
         hsv = cp.squeeze(hsv, axis=0)
@@ -426,7 +489,7 @@ def _hsv_to_rgb_kernel(name="hsv2rgb"):
             break;
     }
     """
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         "raw X hsv", "raw X rgb", code, name="cucim_skimage_color_" + name
     )
 
@@ -795,16 +858,18 @@ hpx_from_rgb = linalg.inv(rgb_from_hpx)
 
 
 @cp.memoize(for_each_device=True)
-def _get_convert_kernel(matrix_tuple, pre, post, name):
-    # pre code may modify x so set both x and y as outputs
-    return cp.ElementwiseKernel(
-        '',
-        'raw X x, raw X y',
-        pre + _get_core_colorconv_operation(matrix_tuple) + post,
-        name='cucim_skimage_color_' + name)
+def _get_convert_kernel(matrix_tuple, pre, post, name, with_counter=False):
+    return elementwise_kernel(
+        'raw I x, X scale',
+        'raw X y' + (', raw int32 counter' if with_counter else ''),
+        _get_core_colorconv_operation(matrix_tuple, pre, post),
+        name='cucim_skimage_color_' + name,
+        preamble=_LOAD_PREAMBLE)
 
 
-def _convert(matrix, arr, pre='', post='', name='_convert'):
+def _convert(
+    matrix, arr, pre='', post='', name='_convert', count_invalid=False
+):
     """Do the color space conversion.
 
     Parameters
@@ -818,27 +883,146 @@ def _convert(matrix, arr, pre='', post='', name='_convert'):
     -------
     out : (..., C=3) ndarray
         The converted array. Same dimensions as input.
+    n_invalid : int
+        Only if `count_invalid` is set (the ``pre`` or ``post`` code then
+        increments ``counter[0]`` for each invalid pixel, with
+        ``_COUNT_INVALID``): the number of invalid pixels. Reading it
+        synchronizes with the device.
     """
-    arr = _prepare_colorarray(arr)
-    name = name + f'_{arr.dtype.char}'
-    kern = _get_convert_kernel(tuple(matrix.ravel()), pre, post, name)
-    out = cp.empty_like(arr)
-    kern(arr, out, size=arr.size // 3)
-    return out
+    arr, float_dtype, scale = _prepare_colorarray_scaled(arr)
+    name = name + f'_{float_dtype.char}'
+    kern = _get_convert_kernel(
+        tuple(matrix.ravel()), pre, post, name, with_counter=count_invalid
+    )
+    out = cp.empty(arr.shape, dtype=float_dtype)
+    if not count_invalid:
+        kern(arr, scale, out, size=arr.size // 3)
+        return out
+    counter = cp.zeros(1, dtype=np.int32)
+    kern(arr, scale, out, counter, size=arr.size // 3)
+    return out, int(counter[0])  # synchronize!
 
 
-def _get_core_colorconv_operation(m):
+def _get_core_colorconv_operation(m, pre="", post=""):
     """Generate inline CUDA kernel code for color conversions.
 
-    x is the input image with 3 channels on the last axis
-    y is the output image with 3 channels on the last axis
+    The input pixel x (3 channels on the last axis) is copied to the local
+    array v, which ``pre`` may modify; w = m v is computed in the local array
+    w, which ``post`` may modify, and is stored in the output y. The input
+    array is not modified.
     m is a 3x3 color conversion matrix
     """
     return f"""
-        y[3*i] = x[3*i] * {m[0]} + x[3*i + 1] * {m[1]} + x[3*i + 2] * {m[2]};
-        y[3*i + 1] = x[3*i] * {m[3]} + x[3*i + 1] * {m[4]} + x[3*i + 2] * {m[5]};
-        y[3*i + 2] = x[3*i] * {m[6]} + x[3*i + 1] * {m[7]} + x[3*i + 2] * {m[8]};
+        X v[3] = {{mul_rn((X)(x[3*i]), scale),
+                   mul_rn((X)(x[3*i + 1]), scale),
+                   mul_rn((X)(x[3*i + 2]), scale)}};
+        {pre}
+        X w[3];
+        w[0] = v[0] * {m[0]} + v[1] * {m[1]} + v[2] * {m[2]};
+        w[1] = v[0] * {m[3]} + v[1] * {m[4]} + v[2] * {m[5]};
+        w[2] = v[0] * {m[6]} + v[1] * {m[7]} + v[2] * {m[8]};
+        {post}
+        y[3*i] = w[0];
+        y[3*i + 1] = w[1];
+        y[3*i + 2] = w[2];
     """  # noqa
+
+
+# Pre- and post-processing code of the conversions through the convert kernel
+# (``v`` is the input pixel, ``w`` the output pixel, both of type X).
+
+# scaling applied to the sRGB input before the 3x3 matrix multiplication
+_RGB2XYZ_PRE = """
+    for (int c=0; c < 3; c++) {
+        if (v[c] > 0.04045) {
+            v[c] = pow((v[c] + (X)0.055) / (X)1.055, (X)2.4);
+        } else {
+            v[c] /= 12.92;
+        }
+    }
+"""
+
+# scaling applied to the result of the 3x3 matrix multiplication to give sRGB
+_XYZ2RGB_POST = """
+    for (int c=0; c < 3; c++) {
+        if (w[c] > 0.0031308) {
+            w[c] = 1.055 * pow(w[c], (X)(1 / 2.4)) - 0.055;
+        } else {
+            w[c] *= 12.92;
+        }
+        w[c] = min(max(w[c], (X)0.0), (X)1.0);
+    }
+"""
+
+# Add the number of threads in the warp that have an invalid pixel with one
+# atomic operation (instead of one per pixel). ``invalid`` is a bool.
+_COUNT_INVALID = """
+    {
+        unsigned int active = __activemask();
+        unsigned int bad = __ballot_sync(active, invalid);
+        if (bad != 0 && (threadIdx.x & 31) == (__ffs(active) - 1)) {
+            atomicAdd(&counter[0], (int)__popc(bad));
+        }
+    }
+"""
+
+
+def _xyz2lab_post(xyz_ref_white):
+    """Code that converts the pixel ``w`` from XYZ to CIE-LAB in place."""
+    return f"""
+        // scale by CIE XYZ tristimulus values of the reference white point
+        X t[3];
+        t[0] = w[0] / {xyz_ref_white[0]};
+        t[1] = w[1] / {xyz_ref_white[1]};
+        t[2] = w[2] / {xyz_ref_white[2]};
+        // Nonlinear distortion and linear transformation
+        for (int ch=0; ch < 3; ch++)
+        {{
+            if (t[ch] > 0.008856)
+            {{
+                t[ch] = cbrt(t[ch]);
+            }} else {{
+                t[ch] = 7.787 * t[ch] + 16.0 / 116.0;
+            }}
+        }}
+        // Vector scaling
+        w[0] = (116. * t[1]) - 16.0;
+        w[1] = 500.0 * (t[0] - t[1]);
+        w[2] = 200.0 * (t[1] - t[2]);
+    """
+
+
+def _lab2xyz_pre(xyz_ref_white):
+    """Code that converts the pixel ``v`` from CIE-LAB to XYZ in place.
+
+    Negative Z values are clipped to zero and counted (``counter``).
+    """
+    return f"""
+        X lab_l = v[0];
+        X lab_a = v[1];
+        X lab_b = v[2];
+        v[1] = (lab_l + 16.) / 116.;
+        v[0] = (lab_a / 500.0) + v[1];
+        v[2] = v[1] - (lab_b / 200.0);
+        bool invalid = v[2] < 0.0;
+        if (invalid)
+        {{
+            v[2] = 0.0;
+        }}
+        {_COUNT_INVALID}
+        for (int ch=0; ch < 3; ch++)
+        {{
+            if (v[ch] > 0.2068966)
+            {{
+                v[ch] *= v[ch] * v[ch];
+            }} else {{
+                v[ch] = (v[ch] - 16.0 / 116.0) / 7.787;
+            }}
+        }}
+        v[0] *= {xyz_ref_white[0]};
+        v[1] *= {xyz_ref_white[1]};
+        v[2] *= {xyz_ref_white[2]};
+    """
 
 
 @channel_as_last_axis()
@@ -886,19 +1070,7 @@ def xyz2rgb(xyz, *, channel_axis=-1):
     arr = _prepare_colorarray(xyz, force_c_contiguous=True,
                               channel_axis=channel_axis)
 
-    # scaling applied after the 3x3 conversion matrix multiplication
-    # (c indexes over color channels here)
-    _post_colorconv = """
-        for (int c=0; c < 3; c++) {
-            if (y[3*i + c] > 0.0031308) {
-                y[3*i + c] = 1.055 * pow(y[3*i + c], (X)(1 / 2.4)) - 0.055;
-            } else {
-                y[3*i + c] *= 12.92;
-            }
-            y[3*i + c] = min(max(y[3*i + c], (X)0.0), (X)1.0);
-        }
-    """
-    return _convert(rgb_from_xyz, arr, post=_post_colorconv, name='xyz2rgb')
+    return _convert(rgb_from_xyz, arr, post=_XYZ2RGB_POST, name='xyz2rgb')
 
 
 @channel_as_last_axis()
@@ -942,21 +1114,7 @@ def rgb2xyz(rgb, *, channel_axis=-1):
     """
     # Follow the algorithm from http://www.easyrgb.com/index.php
     # except we don't multiply/divide by 100 in the conversion
-    rgb = _prepare_colorarray(rgb, force_copy=True, force_c_contiguous=True,
-                              channel_axis=channel_axis)
-
-    # scaling applied to the input before 3x3 conversion matrix multiplication
-    # (c indexes over color channels here)
-    _pre_colorconv = """
-        for (int c=0; c < 3; c++) {
-            if (x[3*i + c] > 0.04045) {
-                x[3*i + c] = pow((x[3*i + c] + (X)0.055) / (X)1.055, (X)2.4);
-            } else {
-                x[3*i + c] /= 12.92;
-            }
-        }
-    """
-    return _convert(xyz_from_rgb, rgb, pre=_pre_colorconv, name='rgb2xyz')
+    return _convert(xyz_from_rgb, rgb, pre=_RGB2XYZ_PRE, name='rgb2xyz')
 
 
 @channel_as_last_axis()
@@ -1036,13 +1194,17 @@ def rgbcie2rgb(rgbcie, *, channel_axis=-1):
 
 @cp.memoize(for_each_device=True)
 def _rgb_to_gray_kernel(dtype):
-    return cp.ElementwiseKernel(
-        'raw X rgb',
+    return elementwise_kernel(
+        'raw I rgb, X scale',
         'raw X gray',
         """
-        gray[i] = 0.2125 * rgb[3*i] + 0.7154 * rgb[3*i + 1] + 0.0721 * rgb[3*i + 2];
+        X r = mul_rn((X)(rgb[3*i]), scale);
+        X g = mul_rn((X)(rgb[3*i + 1]), scale);
+        X b = mul_rn((X)(rgb[3*i + 2]), scale);
+        gray[i] = 0.2125 * r + 0.7154 * g + 0.0721 * b;
         """,  # noqa
-        name=f'cucim_skimage_color_rgb2gray_{np.dtype(dtype).char}')
+        name=f'cucim_skimage_color_rgb2gray_{np.dtype(dtype).char}',
+        preamble=_LOAD_PREAMBLE)
 
 
 @channel_as_last_axis(multichannel_output=False)
@@ -1087,11 +1249,12 @@ def rgb2gray(rgb, *, channel_axis=-1):
     >>> img = cp.array(data.astronaut())
     >>> img_gray = rgb2gray(img)
     """
-    rgb = _prepare_colorarray(rgb, force_c_contiguous=True,
-                              channel_axis=channel_axis)
-    kern = _rgb_to_gray_kernel(rgb.dtype)
-    gray = cp.empty(rgb.shape[:-1], dtype=rgb.dtype)
-    kern(rgb, gray, size=gray.size)
+    rgb, float_dtype, scale = _prepare_colorarray_scaled(
+        rgb, channel_axis=channel_axis
+    )
+    kern = _rgb_to_gray_kernel(float_dtype)
+    gray = cp.empty(rgb.shape[:-1], dtype=float_dtype)
+    kern(rgb, scale, gray, size=gray.size)
     return gray
 
 
@@ -1185,31 +1348,31 @@ def gray2rgb(image, *, channel_axis=-1):
 def _get_xyz_to_lab_kernel(xyz_ref_white, name='xyz2lab'):
     _xyz_to_lab = f"""
         // scale by CIE XYZ tristimulus values of the reference white point
-        arr[3*i] /= {xyz_ref_white[0]};
-        arr[3*i + 1] /= {xyz_ref_white[1]};
-        arr[3*i + 2] /= {xyz_ref_white[2]};
+        X t[3];
+        t[0] = arr[3*i] / {xyz_ref_white[0]};
+        t[1] = arr[3*i + 1] / {xyz_ref_white[1]};
+        t[2] = arr[3*i + 2] / {xyz_ref_white[2]};
 
         // Nonlinear distortion and linear transformation
         for (int ch=0; ch < 3; ch++)
         {{
-            if (arr[3*i + ch] > 0.008856)
+            if (t[ch] > 0.008856)
             {{
-                arr[3*i + ch] = cbrt(arr[3*i + ch]);
+                t[ch] = cbrt(t[ch]);
             }} else {{
-                arr[3*i + ch] = 7.787 * arr[3*i + ch] + 16.0 / 116.0;
+                t[ch] = 7.787 * t[ch] + 16.0 / 116.0;
             }}
         }}
 
         // Vector scaling
-        lab[3*i] = (116. * arr[3*i + 1]) - 16.0;
-        lab[3*i + 1] = 500.0 * (arr[3*i] - arr[3*i + 1]);
-        lab[3*i + 2] = 200.0 * (arr[3*i + 1] - arr[3*i + 2]);
+        lab[3*i] = (116. * t[1]) - 16.0;
+        lab[3*i + 1] = 500.0 * (t[0] - t[1]);
+        lab[3*i + 2] = 200.0 * (t[1] - t[2]);
     """
 
-    # array will be modified in-place
-    return cp.ElementwiseKernel(
-        '',
-        'raw X arr, raw X lab',
+    return elementwise_kernel(
+        'raw X arr',
+        'raw X lab',
         _xyz_to_lab,
         name='cucim_skimage_color_' + name)
 
@@ -1265,7 +1428,7 @@ def xyz2lab(xyz, illuminant="D65", observer="2", *, channel_axis=-1):
     >>> img_xyz = rgb2xyz(img)
     >>> img_lab = xyz2lab(img_xyz)
     """
-    xyz = _prepare_colorarray(xyz, force_copy=True, force_c_contiguous=True,
+    xyz = _prepare_colorarray(xyz, force_copy=False, force_c_contiguous=True,
                               channel_axis=channel_axis)
 
     xyz_ref_white = xyz_tristimulus_values(
@@ -1280,41 +1443,17 @@ def xyz2lab(xyz, illuminant="D65", observer="2", *, channel_axis=-1):
 
 @cp.memoize(for_each_device=True)
 def _get_lab_to_xyz_kernel(xyz_ref_white, name='lab2xyz'):
-    _lab_to_xyz = f"""
-
-        xyz[3*i + 1] = (lab[3*i] + 16.) / 116.;
-        xyz[3*i] = (lab[3*i + 1] / 500.0) + xyz[3*i + 1];
-        xyz[3*i + 2] = xyz[3*i + 1] - (lab[3*i + 2] /200.0);
-        if (xyz[3*i + 2] < 0.0)
-        {{
-            xyz[3*i + 2] = 0.0;
-            warn[i] = 1;
-        }}
-
-        for (int ch=0; ch < 3; ch++)
-        {{
-            if (xyz[3*i + ch] > 0.2068966)
-            {{
-                xyz[3*i + ch] *= xyz[3*i + ch] * xyz[3*i + ch];
-            }} else {{
-                xyz[3*i + ch] = (xyz[3*i + ch] - 16.0 / 116.0) / 7.787;
-            }}
-        }}
-
-        xyz[3*i] *= {xyz_ref_white[0]};
-        xyz[3*i + 1] *= {xyz_ref_white[1]};
-        xyz[3*i + 2] *= {xyz_ref_white[2]};
-
-        // xyz[3*i] = min(max(xyz[3*i], 0.0), 1.0);
-        // xyz[3*i + 1] = min(max(xyz[3*i + 1], 0.0), 1.0);
-        // xyz[3*i + 2] = min(max(xyz[3*i + 2], 0.0), 1.0);
+    code = f"""
+        X v[3] = {{lab[3*i], lab[3*i + 1], lab[3*i + 2]}};
+        {_lab2xyz_pre(xyz_ref_white)}
+        xyz[3*i] = v[0];
+        xyz[3*i + 1] = v[1];
+        xyz[3*i + 2] = v[2];
     """
-
-    # array will be modified in-place
-    return cp.ElementwiseKernel(
-        '',
-        'raw X lab, raw X xyz, raw int32 warn',
-        _lab_to_xyz,
+    return elementwise_kernel(
+        'raw X lab',
+        'raw X xyz, raw int32 counter',
+        code,
         name='cucim_skimage_color_' + name)
 
 
@@ -1403,12 +1542,9 @@ def _lab2xyz(lab, illuminant, observer, channel_axis):
     name = f'lab2xyz_{lab.dtype.char}'
     kern = _get_lab_to_xyz_kernel(xyz_ref_white, name=name)
     xyz = cp.empty_like(lab)
-
-    # TODO: better to use array for warn or a single element with atomic
-    #       operations?
-    warnings = cp.zeros(lab.shape[:-1], dtype=np.int32)
-    kern(lab, xyz, warnings, size=lab.size // 3)
-    n_invalid = int(cp.count_nonzero(warnings))  # synchronize!
+    counter = cp.zeros(1, dtype=np.int32)
+    kern(lab, xyz, counter, size=lab.size // 3)
+    n_invalid = int(counter[0])  # synchronize!
     return xyz, n_invalid
 
 
@@ -1455,7 +1591,16 @@ def rgb2lab(rgb, illuminant="D65", observer="2", *, channel_axis=-1):
     ----------
     .. [1] https://en.wikipedia.org/wiki/Standard_illuminant
     """
-    return xyz2lab(rgb2xyz(rgb), illuminant, observer)
+    xyz_ref_white = xyz_tristimulus_values(
+        illuminant=illuminant, observer=observer
+    )
+    return _convert(
+        xyz_from_rgb,
+        rgb,
+        pre=_RGB2XYZ_PRE,
+        post=_xyz2lab_post(xyz_ref_white),
+        name='rgb2lab',
+    )
 
 
 @channel_as_last_axis()
@@ -1504,14 +1649,24 @@ def lab2rgb(lab, illuminant="D65", observer="2", *, channel_axis=-1):
     .. [1] https://en.wikipedia.org/wiki/Standard_illuminant
     .. [2] https://en.wikipedia.org/wiki/CIELAB_color_space
     """
-    xyz, n_invalid = _lab2xyz(lab, illuminant, observer, channel_axis)
+    xyz_ref_white = xyz_tristimulus_values(
+        illuminant=illuminant, observer=observer
+    )
+    rgb, n_invalid = _convert(
+        rgb_from_xyz,
+        lab,
+        pre=_lab2xyz_pre(xyz_ref_white),
+        post=_XYZ2RGB_POST,
+        name='lab2rgb',
+        count_invalid=True,
+    )
     if n_invalid != 0:
         warn(
             "Conversion from CIE-LAB, via XYZ to sRGB color space resulted in "
             f"{n_invalid} negative Z values that have been clipped to zero",
             stacklevel=3,
         )
-    return xyz2rgb(xyz, channel_axis=channel_axis)
+    return rgb
 
 
 @cp.memoize(for_each_device=True)
@@ -1557,7 +1712,7 @@ def _get_xyz_to_luv_kernel(xyz_ref_white, dtype):
     """
 
     # array will be modified in-place
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         '',
         'raw X xyz, raw X luv',
         _xyz_to_luv,
@@ -1664,7 +1819,7 @@ def _get_luv_to_xyz_kernel(xyz_ref_white, dtype):
         xyz[3*i] = -(c / b + 3.0 * xyz[3*i + 2]);
 
     """  # noqa
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         '',
         'raw X luv, raw X xyz',
         _luv_to_xyz,
@@ -1876,17 +2031,24 @@ def _separate_stains_kernel(m):
     X tmp[3];
     for (int ch=0; ch<3; ch++)
     {{
-        tmp[ch] = log(max(rgb[3*i + ch], 1e-6)) * {log_adjust};
+        tmp[ch] = log(max(mul_rn((X)(rgb[3*i + ch]), scale), 1e-6)) * {log_adjust};
     }}
-    stains[3*i] = tmp[0] * {m[0]} + tmp[1] * {m[3]} + tmp[2] * {m[6]};
-    stains[3*i + 1] = tmp[0] * {m[1]} + tmp[1] * {m[4]} + tmp[2] * {m[7]};
-    stains[3*i + 2] = tmp[0] * {m[2]} + tmp[1] * {m[5]} + tmp[2] * {m[8]};
+    X out[3];
+    out[0] = tmp[0] * {m[0]} + tmp[1] * {m[3]} + tmp[2] * {m[6]};
+    out[1] = tmp[0] * {m[1]} + tmp[1] * {m[4]} + tmp[2] * {m[7]};
+    out[2] = tmp[0] * {m[2]} + tmp[1] * {m[5]} + tmp[2] * {m[8]};
+    // negative values are set to zero (a NaN is kept, as by maximum)
+    for (int ch=0; ch<3; ch++)
+    {{
+        stains[3*i + ch] = (out[ch] < 0) ? (X)0 : out[ch];
+    }}
     """  # noqa
-    return cp.ElementwiseKernel(
-        'raw X rgb',
+    return elementwise_kernel(
+        'raw I rgb, X scale',
         'raw X stains',
         code,
-        name='cucim_skimage_color_seperate_stains')
+        name='cucim_skimage_color_seperate_stains',
+        preamble=_LOAD_PREAMBLE)
 
 
 @channel_as_last_axis()
@@ -1952,9 +2114,9 @@ def separate_stains(rgb, conv_matrix, *, channel_axis=-1):
     >>> ihc = cp.array(data.immunohistochemistry())
     >>> ihc_hdx = separate_stains(ihc, hdx_from_rgb)
     """  # noqa
-    rgb = _prepare_colorarray(rgb, force_c_contiguous=True,
-                              channel_axis=channel_axis)
-
+    rgb, float_dtype, scale = _prepare_colorarray_scaled(
+        rgb, channel_axis=channel_axis
+    )
     if conv_matrix.shape != (3, 3):
         raise ValueError("conv_matrix must have shape (3, 3)")
     conv_matrix = tuple(cp.asnumpy(conv_matrix).ravel())
@@ -1966,9 +2128,8 @@ def separate_stains(rgb, conv_matrix, *, channel_axis=-1):
     # stains = (cp.log(rgb) / log_adjust) @ conv_matrix
 
     kern = _separate_stains_kernel(conv_matrix)
-    stains = cp.empty_like(rgb)
-    kern(rgb, stains, size=rgb.size // 3)
-    cp.maximum(stains, 0, out=stains)
+    stains = cp.empty(rgb.shape, dtype=float_dtype)
+    kern(rgb, scale, stains, size=rgb.size // 3)
     return stains
 
 
@@ -1992,7 +2153,7 @@ def _combine_stains_kernel(m):
         rgb[3*i + ch] = min(max(exp(rgb[3*i + ch]), (X)0.0), (X)1.0);
     }}
     """  # noqa
-    return cp.ElementwiseKernel(
+    return elementwise_kernel(
         'raw X stains',
         'raw X rgb',
         code,
@@ -2075,23 +2236,27 @@ def combine_stains(stains, conv_matrix, *, channel_axis=-1):
 
 @cp.memoize(for_each_device=True)
 def _lab2lch_kernel(nchannels=3, name='lab2lch'):
+    # channels 0 and 3 and above are copied
     code = f"""
     X a = lab[{nchannels}*i + 1];
     X b = lab[{nchannels}*i + 2];
-
-    // update lab array in-place with the lch values
-    lab[{nchannels}*i + 1] = hypot(a, b);
-    lab[{nchannels}*i + 2] = atan2(b, a);
-
+    lch[{nchannels}*i] = lab[{nchannels}*i];
+    lch[{nchannels}*i + 1] = hypot(a, b);
+    X h = atan2(b, a);
     // NON-STANDARD RANGE! Maps to ``(0, 2*pi)`` rather than ``(-pi, +pi)``
-    if (lab[{nchannels}*i + 2] < 0)
+    if (h < 0)
     {{
-       lab[{nchannels}*i + 2] += 2 * M_PI;
+       h += 2 * M_PI;
+    }}
+    lch[{nchannels}*i + 2] = h;
+    for (int c = 3; c < {nchannels}; c++)
+    {{
+        lch[{nchannels}*i + c] = lab[{nchannels}*i + c];
     }}
     """  # noqa
-    return cp.ElementwiseKernel(
-        '',
+    return elementwise_kernel(
         'raw X lab',
+        'raw X lch',
         code,
         name='cucim_skimage_color_' + name)
 
@@ -2134,13 +2299,14 @@ def lab2lch(lab, *, channel_axis=-1):
     >>> img_lab = rgb2lab(img)
     >>> img_lch = lab2lch(img_lab)
     """
-    lab = _prepare_lab_array(lab, force_copy=True)
+    lab = _prepare_lab_array(lab)
     nchannels = lab.shape[-1]
 
     name = f'lab2lch_{nchannels}channel_{lab.dtype}'
     kern = _lab2lch_kernel(nchannels, name=name)
-    kern(lab, size=lab.size // nchannels)
-    return lab
+    lch = cp.empty_like(lab)
+    kern(lab, lch, size=lab.size // nchannels)
+    return lch
 
 
 def _cart2polar_2pi(x, y):
@@ -2155,18 +2321,22 @@ def _cart2polar_2pi(x, y):
 
 @cp.memoize(for_each_device=True)
 def _lch2lab_kernel(nchannels=3, name='lch2lab'):
+    # channels 0 and 3 and above are copied
     code = f"""
     X sin_h = sin(lch[{nchannels}*i + 2]);
     X cos_h = cos(lch[{nchannels}*i + 2]);
-
-    // update lch array in-place with the lab values
-    lch[{nchannels}*i + 2] = lch[{nchannels}*i + 1] * sin_h;
-    lch[{nchannels}*i + 1] = lch[{nchannels}*i + 1] * cos_h;
-
+    X c = lch[{nchannels}*i + 1];
+    lab[{nchannels}*i] = lch[{nchannels}*i];
+    lab[{nchannels}*i + 1] = c * cos_h;
+    lab[{nchannels}*i + 2] = c * sin_h;
+    for (int ch = 3; ch < {nchannels}; ch++)
+    {{
+        lab[{nchannels}*i + ch] = lch[{nchannels}*i + ch];
+    }}
     """  # noqa
-    return cp.ElementwiseKernel(
-        '',
+    return elementwise_kernel(
         'raw X lch',
+        'raw X lab',
         code,
         name='cucim_skimage_color_' + name)
 
@@ -2207,21 +2377,22 @@ def lch2lab(lch, *, channel_axis=-1):
     >>> img_lab2 = lch2lab(img_lch)
     """
 
-    # make a copy because lch will be modified in-place by the kernel below
-    lch = _prepare_lab_array(lch, force_copy=True)
+    lch = _prepare_lab_array(lch)
     nchannels = lch.shape[-1]
 
     name = f'lch2lab_{nchannels}channel_{lch.dtype}'
     kern = _lch2lab_kernel(nchannels, name=name)
-    kern(lch, size=lch.size // nchannels)
-    return lch
+    lab = cp.empty_like(lch)
+    kern(lch, lab, size=lch.size // nchannels)
+    return lab
 
 
-def _prepare_lab_array(arr, force_copy=True):
+def _prepare_lab_array(arr, force_copy=False):
     """Ensure input for lab2lch, lch2lab are well-posed.
 
-    Arrays must be in floating point and have at least 3 elements in
-    last dimension.  Return a new array.
+    Arrays must be in floating point, C-contiguous and have at least 3
+    elements in last dimension. A new array is returned only if the input
+    has to be converted or made contiguous (or ``force_copy`` is set).
     """
     shape = arr.shape
     if shape[-1] < 3:
@@ -2231,7 +2402,7 @@ def _prepare_lab_array(arr, force_copy=True):
         _func = dtype.img_as_float32
     else:
         _func = dtype.img_as_float64
-    return _func(arr, force_copy=force_copy)
+    return cp.ascontiguousarray(_func(arr, force_copy=force_copy))
 
 
 @channel_as_last_axis()
@@ -2358,9 +2529,9 @@ def rgb2ycbcr(rgb, *, channel_axis=-1):
     .. [1] https://en.wikipedia.org/wiki/YCbCr
     """
     _post_colorconv = """
-        y[3*i] += 16;
-        y[3*i + 1] += 128;
-        y[3*i + 2] += 128;
+        w[0] += 16;
+        w[1] += 128;
+        w[2] += 128;
     """
     arr = _convert(ycbcr_from_rgb, rgb, post=_post_colorconv, name='rgb2ycbcr')
     return arr
@@ -2516,11 +2687,11 @@ def ycbcr2rgb(ycbcr, *, channel_axis=-1):
     ----------
     .. [1] https://en.wikipedia.org/wiki/YCbCr
     """
-    arr = ycbcr.copy()
+    arr = ycbcr
     _pre_colorconv = """
-        x[3*i] -= 16;
-        x[3*i + 1] -= 128;
-        x[3*i + 2] -= 128;
+        v[0] -= 16;
+        v[1] -= 128;
+        v[2] -= 128;
     """
     return _convert(rgb_from_ycbcr, arr, pre=_pre_colorconv,
                     name='ycbcr2rgb')
