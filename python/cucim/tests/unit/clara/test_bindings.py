@@ -226,7 +226,8 @@ def test_filesystem_roundtrip(tmp_path):
     "count", [16, 4096 + 16], ids=["tail", "block-and-tail"]
 )
 @pytest.mark.parametrize("write", [False, True], ids=["pread", "pwrite"])
-def test_filesystem_odirect_tail_offset(tmp_path, count, write):
+@pytest.mark.parametrize("device", ["host", "cuda"])
+def test_filesystem_odirect_tail_offset(tmp_path, count, write, device):
     page_size = 4096
     file_offset = page_size
     path = tmp_path / "pages.bin"
@@ -235,8 +236,15 @@ def test_filesystem_odirect_tail_offset(tmp_path, count, write):
     )
     path.write_bytes(original)
 
-    storage = np.empty(count + page_size - 1, dtype=np.uint8)
-    start = (-storage.ctypes.data) % page_size
+    if device == "cuda":
+        array_module = pytest.importorskip("cupy")
+        if not array_module.cuda.is_available():
+            pytest.skip("CUDA device is unavailable")
+    else:
+        array_module = np
+    storage = array_module.empty(count + page_size - 1, dtype=np.uint8)
+    address = storage.data.ptr if device == "cuda" else storage.ctypes.data
+    start = (-address) % page_size
     buffer = storage[start : start + count]
 
     if not hasattr(os, "O_DIRECT"):
@@ -251,6 +259,8 @@ def test_filesystem_odirect_tail_offset(tmp_path, count, write):
         with filesystem.CuFileDriver(fd, no_gds=True, file_path=path) as driver:
             if write:
                 buffer.fill(42)
+                if device == "cuda":
+                    array_module.cuda.get_current_stream().synchronize()
                 assert driver.pwrite(buffer, count, file_offset) == count
             else:
                 assert driver.pread(buffer, count, file_offset) == count
@@ -263,6 +273,8 @@ def test_filesystem_odirect_tail_offset(tmp_path, count, write):
         assert path.read_bytes() == expected
     else:
         expected = np.frombuffer(original[file_offset:end], dtype=np.uint8)
+        if device == "cuda":
+            buffer = buffer.get()
         np.testing.assert_array_equal(buffer, expected)
 
 
