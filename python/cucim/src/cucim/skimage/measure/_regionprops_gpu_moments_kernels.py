@@ -1,6 +1,7 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import itertools
 import math
 
 import cupy as cp
@@ -8,9 +9,13 @@ import cupy as cp
 from ._regionprops_gpu_basic_kernels import get_bbox_coords_kernel
 from ._regionprops_gpu_utils import (
     _check_intensity_image_shape,
+    _get_coord_dtype,
+    _get_count_dtype,
+    _get_label_run_loop,
     _includes,
     _unravel_loop_index,
     _unravel_loop_index_declarations,
+    _warp_includes,
 )
 
 __all__ = [
@@ -36,6 +41,7 @@ moment_deps["moments_weighted"] = ["bbox"]
 moment_deps["eccentricity"] = ["inertia_tensor_eigvals"]
 moment_deps["axis_major_length"] = ["inertia_tensor_eigvals"]
 moment_deps["axis_minor_length"] = ["inertia_tensor_eigvals"]
+moment_deps["axis_lengths"] = ["inertia_tensor_eigvals"]
 moment_deps["inertia_tensor_eigenvectors"] = ["inertia_tensor_eigvals"]
 moment_deps["inertia_tensor_eigvals"] = ["inertia_tensor"]
 moment_deps["orientation"] = ["inertia_tensor"]
@@ -60,6 +66,7 @@ required_order = {
     "centroid_weighted_local": 1,
     "axis_major_length": 2,
     "axis_minor_length": 2,
+    "axis_lengths": 2,
     "eccentricity": 2,
     "inertia_tensor": 2,
     "inertia_tensor_eigvals": 2,
@@ -97,19 +104,19 @@ def regionprops_centroid(
         max_label = int(label_image.max())
     ndim = label_image.ndim
 
-    int32_coords = max(label_image.shape) < 2**32
+    _, int32_coords = _get_coord_dtype(label_image.size)
+    count_dtype, int32_count = _get_count_dtype(label_image.size)
     if props_dict is not None and "num_pixels" in props_dict:
         centroid_counts = props_dict["num_pixels"]
-        if centroid_counts.dtype != cp.uint32:
-            centroid_counts = centroid_counts.astype(cp.uint32)
         compute_num_pixels = False
     else:
-        centroid_counts = cp.zeros((max_label,), dtype=cp.uint32)
+        centroid_counts = cp.zeros((max_label,), dtype=count_dtype)
         compute_num_pixels = True
 
     bbox_coords_kernel = get_bbox_coords_kernel(
         ndim=label_image.ndim,
         int32_coords=int32_coords,
+        int32_count=int32_count,
         compute_bbox=False,
         compute_num_pixels=compute_num_pixels,
         compute_coordinate_sums=True,
@@ -125,7 +132,7 @@ def regionprops_centroid(
     if compute_num_pixels:
         outputs = (centroid_counts, centroid_sums)
     else:
-        outputs = centroid_sums
+        outputs = (centroid_sums,)
     bbox_coords_kernel(
         label_image,
         label_image.size,
@@ -142,13 +149,13 @@ def regionprops_centroid(
 
 
 @cp.memoize(for_each_device=True)
-def get_centroid_local_kernel(coord_dtype, ndim):
+def get_centroid_local_kernel(coord_dtype, ndim, count_dtype=cp.uint32):
     """Keep this kernel for n-dimensional support as the raw_moments kernels
     currently only support 2D and 3D data.
     """
     coord_dtype = cp.dtype(coord_dtype)
     sum_dtype = cp.dtype(cp.uint64)
-    count_dtype = cp.dtype(cp.uint32)
+    count_dtype = cp.dtype(count_dtype)
     uint_t = (
         "unsigned int" if coord_dtype.itemsize <= 4 else "unsigned long long"
     )
@@ -226,8 +233,7 @@ def regionprops_centroid_local(
     if max_label is None:
         max_label = int(label_image.max())
 
-    int32_coords = max(label_image.shape) < 2**32
-    coord_dtype = cp.dtype(cp.uint32 if int32_coords else cp.uint64)
+    coord_dtype, int32_coords = _get_coord_dtype(label_image.size)
 
     ndim = label_image.ndim
 
@@ -284,10 +290,11 @@ def regionprops_centroid_local(
         if "bbox" not in props_dict:
             props_dict["bbox"] = bbox_coords
 
-    counts = cp.zeros((max_label,), dtype=cp.uint32)
+    count_dtype, _ = _get_count_dtype(label_image.size)
+    counts = cp.zeros((max_label,), dtype=count_dtype)
     centroids_sums = cp.zeros((max_label, ndim), dtype=cp.uint64)
     centroid_local_kernel = get_centroid_local_kernel(
-        coord_dtype, label_image.ndim
+        coord_dtype, label_image.ndim, count_dtype
     )
     centroid_local_kernel(
         label_image, bbox_coords, counts, centroids_sums, size=label_image.size
@@ -305,217 +312,213 @@ def _get_raw_moments_code(
     moments_c_type,
     ndim,
     order,
-    array_size,
     num_channels=1,
     has_spacing=False,
     has_weights=False,
+    accum_c_type=None,
+    pixels_per_thread=16,
 ):
     """
     Notes
     -----
-    Local variables created:
+    Variables created (per run of a label):
 
-        - local_moments : shape (array_size, num_channels, num_moments)
-            local set of moments up to the specified order (1-3 supported)
+        - mom{c}_{k} : the moment at raveled index k of the moments matrix of
+            channel c (only for the entries of total order <= `order`), with
+            type `accum_c_type` (default: `moments_c_type`)
+        - psum{c}_{e} : sum of (weight times) the e-th power of the last
+            coordinate over the pixels of the current row, expanded into the
+            moments when the row changes and at the end of the run
+            (`source_finish`)
+        - row0[, row1] : the other local coordinates of the current row
+
+    The per-run sums are computed from the local coordinates without spacing;
+    the spacing factor of each moment is applied once per run, when adding
+    the sums to the outputs. For unweighted moments, `accum_c_type` can be an
+    integer type, as the sums of products of integer coordinates are then
+    exact (see `_get_moments_accum_c_type`).
 
     Output variables written to:
 
         - moments : shape (max_label, num_channels, num_moments)
     """
+    if order > 3:
+        raise ValueError("Only moments of orders 0-3 are supported")
+    if ndim not in [2, 3]:
+        raise ValueError("only ndim = 2 or 3 is supported")
 
     # number is for a densely populated moments matrix of size (order + 1) per
     # side (values at locations where order is greater than specified will be 0)
     num_moments = (order + 1) ** ndim
 
-    if order > 3:
-        raise ValueError("Only moments of orders 0-3 are supported")
+    # the entries of total order <= order, as (raveled index, exponents)
+    entries = []
+    for k, exponents in enumerate(
+        itertools.product(range(order + 1), repeat=ndim)
+    ):
+        if sum(exponents) <= order:
+            entries.append((k, exponents))
 
-    use_floating_point = moments_c_type in ["float", "double"]
+    if accum_c_type is None:
+        accum_c_type = moments_c_type
+    use_floating_point = accum_c_type in ["float", "double"]
 
-    source_pre = f"""
-    {moments_c_type} local_moments[{array_size * num_channels * num_moments}] = {{0}};
-    {coord_c_type} m_offset = 0;
-    {coord_c_type} local_off = 0;\n"""  # noqa: E501
+    source_pre = ""
+    for d in range(ndim):
+        source_pre += f"""
+    {coord_c_type} bbox_min{d};"""
+        if has_spacing:
+            source_pre += f"""
+    double spacing{d} = spacing[{d}];"""
     if has_weights:
         source_pre += f"""
-    {moments_c_type} w = 0.0;\n"""
+    {accum_c_type} w;"""
+        if num_channels == 1:
+            source_pre += f"""
+    cucim_sequential_reader<Y> img_reader(
+        &img[start_index], {pixels_per_thread}, full_thread);"""
+
+    # the bounding box is used to transform the global coordinates to local ones
+    # (bbox : bounding box coordinates, shape (max_label, 2*ndim))
+    source_start = ""
+    for d in range(ndim):
+        source_start += f"""
+          bbox_min{d} = bbox[(lab - 1) * {2 * ndim} + {d}];"""
+
+    # Within a row of the image, only the last coordinate varies, so each
+    # moment is M[a, b] = sum(w * c0**a * c1**b) = c0**a * T[b] (2D), with the
+    # power sums T[e] = sum(w * c1**e) of the row's pixels. The pixels only
+    # update the order + 1 power sums of the current row; these are added to
+    # the moments (expanded) when the row changes and at the end of the run.
+    last = ndim - 1
+    row_axes = range(ndim - 1)
+    for d in row_axes:
+        source_pre += f"""
+    {coord_c_type} row{d};"""
+        source_start += f"""
+          row{d} = 0;"""
+    for c in range(num_channels):
+        for e in range(order + 1):
+            source_pre += f"""
+    {accum_c_type} psum{c}_{e};"""
+            source_start += f"""
+          psum{c}_{e} = 0;"""
+
+    # expand the power sums of the row `row0`(, `row1`) into the moments
+    expand = ""
+    for d in row_axes:
+        expand += f"""
+            {accum_c_type} r{d} = row{d};"""
+    source_flush = ""
+    reduce = []
+    for c in range(num_channels):
+        for k, exponents in entries:
+            var = f"mom{c}_{k}"
+            reduce.append((var, "sum"))
+            source_pre += f"""
+    {accum_c_type} {var};"""
+            source_start += f"""
+          {var} = 0;"""
+            factors = []
+            for d in row_axes:
+                factors += [f"r{d}"] * exponents[d]
+            factors.append(f"psum{c}_{exponents[last]}")
+            expand += f"""
+            {var} += {" * ".join(factors)};"""
+        for e in range(order + 1):
+            expand += f"""
+            psum{c}_{e} = 0;"""
 
     # op uses external coordinate array variables:
-    #    bbox : bounding box coordinates, shape (max_label, 2*ndim)
     #    in_coord[0]...in_coord[ndim - 1] : coordinates
     #        coordinates in the labeled image at the current index
     #    ii : index into labels array
-    #    current_label : value of the label image at location ii
-    #    spacing (optional) : pixel spacings
     #    img (optional) : intensity image
-    source_operation = ""
-    # using bounding box to transform the global coordinates to local ones
     # (c0 = local coordinate on axis 0, etc.)
+    source_operation = ""
     for d in range(ndim):
         source_operation += f"""
-                {moments_c_type} c{d} = in_coord[{d}]
-                            - bbox[(current_label - 1) * {2 * ndim} + {d}];"""
-        if has_spacing:
-            source_operation += f"""
-                c{d} *= spacing[{d}];"""
-
-    # need additional multiplication by the intensity value for weighted case
-    w = "w * " if has_weights else ""
-    for c in range(num_channels):
+          {coord_c_type} c{d} = in_coord[{d}] - bbox_min{d};"""
+    row_changed = " || ".join(f"c{d} != row{d}" for d in row_axes)
+    source_operation += f"""
+          if ({row_changed}) {{{expand}"""
+    for d in row_axes:
         source_operation += f"""
-                local_off = {num_moments * num_channels}*offset + {c * num_moments};\n"""  # noqa: E501
-
-        # zeroth moment
+            row{d} = c{d};"""
+    source_operation += """
+          }"""
+    # powers of the last coordinate
+    source_operation += f"""
+          {accum_c_type} x1 = c{last};"""
+    for e in range(2, order + 1):
+        source_operation += f"""
+          {accum_c_type} x{e} = x{e - 1} * x1;"""
+    for c in range(num_channels):
         if has_weights:
+            # need additional multiplication by the intensity value (a
+            # single-channel image is read with 16-byte loads, see
+            # _get_label_run_loop)
+            if num_channels == 1:
+                value = "img_reader.get(ii - start_index)"
+            else:
+                value = f"img[{num_channels} * ii + {c}]"
             source_operation += f"""
-                w = static_cast<{moments_c_type}>(img[{num_channels} * ii + {c}]);
-                local_moments[local_off] += w;\n"""  # noqa: E501
-        elif use_floating_point:
-            source_operation += """
-                local_moments[local_off] += 1.0;\n"""
+          w = static_cast<{accum_c_type}>({value});"""
+            source_operation += f"""
+          psum{c}_0 += w;"""
         else:
-            source_operation += """
-                local_moments[local_off] += 1;\n"""
+            one = "1.0" if use_floating_point else "1"
+            source_operation += f"""
+          psum{c}_0 += {one};"""
+        for e in range(1, order + 1):
+            w = "w * " if has_weights else ""
+            source_operation += f"""
+          psum{c}_{e} += {w}x{e};"""
 
-        # moments for order 1-3
-        if ndim == 2:
-            if order == 1:
-                source_operation += f"""
-                local_moments[local_off + 1] += {w}c1;
-                local_moments[local_off + 2] += {w}c0;\n"""
-            elif order == 2:
-                source_operation += f"""
-                local_moments[local_off + 1] += {w}c1;
-                local_moments[local_off + 2] += {w}c1 * c1;
-                local_moments[local_off + 3] += {w}c0;
-                local_moments[local_off + 4] += {w}c0 * c1;
-                local_moments[local_off + 6] += {w}c0 * c0;\n"""
-            elif order == 3:
-                source_operation += f"""
-                local_moments[local_off + 1] += {w}c1;
-                local_moments[local_off + 2] += {w}c1 * c1;
-                local_moments[local_off + 3] += {w}c1 * c1 * c1;
-                local_moments[local_off + 4] += {w}c0;
-                local_moments[local_off + 5] += {w}c0 * c1;
-                local_moments[local_off + 6] += {w}c0 * c1 * c1;
-                local_moments[local_off + 8] += {w}c0 * c0;
-                local_moments[local_off + 9] += {w}c0 * c0 * c1;
-                local_moments[local_off + 12] += {w}c0 * c0 * c0;\n"""
-        elif ndim == 3:
-            if order == 1:
-                source_operation += f"""
-                local_moments[local_off + 1] += {w}c2;
-                local_moments[local_off + 2] += {w}c1;
-                local_moments[local_off + 4] += {w}c0;\n"""
-            elif order == 2:
-                source_operation += f"""
-                local_moments[local_off + 1] += {w}c2;
-                local_moments[local_off + 2] += {w}c2 * c2;
-                local_moments[local_off + 3] += {w}c1;
-                local_moments[local_off + 4] += {w}c1 * c2;
-                local_moments[local_off + 6] += {w}c1 * c1;
-                local_moments[local_off + 9] += {w}c0;
-                local_moments[local_off + 10] += {w}c0 * c2;
-                local_moments[local_off + 12] += {w}c0 * c1;
-                local_moments[local_off + 18] += {w}c0 * c0;\n"""
-            elif order == 3:
-                source_operation += f"""
-                local_moments[local_off + 1] += {w}c2;
-                local_moments[local_off + 2] += {w}c2 * c2;
-                local_moments[local_off + 3] += {w}c2 * c2 * c2;
-                local_moments[local_off + 4] += {w}c1;
-                local_moments[local_off + 5] += {w}c1 * c2;
-                local_moments[local_off + 6] += {w}c1 * c2 * c2;
-                local_moments[local_off + 8] += {w}c1 * c1;
-                local_moments[local_off + 9] += {w}c1 * c1 * c2;
-                local_moments[local_off + 12] += {w}c1 * c1 * c1;
-                local_moments[local_off + 16] += {w}c0;
-                local_moments[local_off + 17] += {w}c0 * c2;
-                local_moments[local_off + 18] += {w}c0 * c2 * c2;
-                local_moments[local_off + 20] += {w}c0 * c1;
-                local_moments[local_off + 21] += {w}c0 * c1 * c2;
-                local_moments[local_off + 24] += {w}c0 * c1 * c1;
-                local_moments[local_off + 32] += {w}c0 * c0;
-                local_moments[local_off + 33] += {w}c0 * c0 * c2;
-                local_moments[local_off + 36] += {w}c0 * c0 * c1;
-                local_moments[local_off + 48] += {w}c0 * c0 * c0;\n"""
-        else:
-            raise ValueError("only ndim = 2 or 3 is supported")
+    # the power sums of the run's last row are expanded before the run's
+    # moments are combined across the warp and flushed
+    source_finish = f"""
+          {{{expand}
+          }}"""
 
-    # post_operation uses external variables:
-    #     ii : index into num_pixels array
-    #     lab : label value that corresponds to location ii
-    #     coord_sums : output with shape (max_label, ndim)
-    source_post = ""
-    for c in range(0, num_channels):
-        source_post += f"""
-                // moments outputs
-                m_offset = {num_moments * num_channels}*(lab - 1) + {c * num_moments};
-                local_off = {num_moments * num_channels}*ii + {c * num_moments};
-                atomicAdd(&moments[m_offset], local_moments[local_off]);\n"""  # noqa: E501
+    # flush uses external variables:
+    #     lab : label value of the run
+    #     moments : output with shape (max_label, num_channels, num_moments)
+    for c in range(num_channels):
+        for k, exponents in entries:
+            var = f"mom{c}_{k}"
+            m_index = f"{num_moments * num_channels}*(lab - 1) + {c * num_moments + k}"
+            value = f"static_cast<{moments_c_type}>({var})"
+            if has_spacing:
+                for d, e in enumerate(exponents):
+                    value += f" * spacing{d}" * e
+            source_flush += f"""
+          atomicAdd(&moments[{m_index}], {value});"""
+    return (
+        source_pre,
+        source_start,
+        source_operation,
+        source_flush,
+        reduce,
+        source_finish,
+    )
 
-        if ndim == 2:
-            if order == 1:
-                source_post += """
-                atomicAdd(&moments[m_offset + 1], local_moments[local_off + 1]);
-                atomicAdd(&moments[m_offset + 2], local_moments[local_off + 2]);\n"""  # noqa: E501
-            elif order == 2:
-                source_post += """
-                atomicAdd(&moments[m_offset + 1], local_moments[local_off + 1]);
-                atomicAdd(&moments[m_offset + 2], local_moments[local_off + 2]);
-                atomicAdd(&moments[m_offset + 3], local_moments[local_off + 3]);
-                atomicAdd(&moments[m_offset + 4], local_moments[local_off + 4]);
-                atomicAdd(&moments[m_offset + 6], local_moments[local_off + 6]);\n"""  # noqa: E501
-            elif order == 3:
-                source_post += """
-                atomicAdd(&moments[m_offset + 1], local_moments[local_off + 1]);
-                atomicAdd(&moments[m_offset + 2], local_moments[local_off + 2]);
-                atomicAdd(&moments[m_offset + 3], local_moments[local_off + 3]);
-                atomicAdd(&moments[m_offset + 4], local_moments[local_off + 4]);
-                atomicAdd(&moments[m_offset + 5], local_moments[local_off + 5]);
-                atomicAdd(&moments[m_offset + 6], local_moments[local_off + 6]);
-                atomicAdd(&moments[m_offset + 8], local_moments[local_off + 8]);
-                atomicAdd(&moments[m_offset + 9], local_moments[local_off + 9]);
-                atomicAdd(&moments[m_offset + 12], local_moments[local_off + 12]);\n"""  # noqa: E501
-        elif ndim == 3:
-            if order == 1:
-                source_post += """
-                atomicAdd(&moments[m_offset + 1], local_moments[local_off + 1]);
-                atomicAdd(&moments[m_offset + 2], local_moments[local_off + 2]);
-                atomicAdd(&moments[m_offset + 4], local_moments[local_off + 4]);\n"""  # noqa: E501
-            elif order == 2:
-                source_post += """
-                atomicAdd(&moments[m_offset + 1], local_moments[local_off + 1]);
-                atomicAdd(&moments[m_offset + 2], local_moments[local_off + 2]);
-                atomicAdd(&moments[m_offset + 3], local_moments[local_off + 3]);
-                atomicAdd(&moments[m_offset + 4], local_moments[local_off + 4]);
-                atomicAdd(&moments[m_offset + 6], local_moments[local_off + 6]);
-                atomicAdd(&moments[m_offset + 9], local_moments[local_off + 9]);
-                atomicAdd(&moments[m_offset + 10], local_moments[local_off + 10]);
-                atomicAdd(&moments[m_offset + 12], local_moments[local_off + 12]);
-                atomicAdd(&moments[m_offset + 18], local_moments[local_off + 18]);\n"""  # noqa: E501
-            elif order == 3:
-                source_post += """
-                atomicAdd(&moments[m_offset + 1], local_moments[local_off + 1]);
-                atomicAdd(&moments[m_offset + 2], local_moments[local_off + 2]);
-                atomicAdd(&moments[m_offset + 3], local_moments[local_off + 3]);
-                atomicAdd(&moments[m_offset + 4], local_moments[local_off + 4]);
-                atomicAdd(&moments[m_offset + 5], local_moments[local_off + 5]);
-                atomicAdd(&moments[m_offset + 6], local_moments[local_off + 6]);
-                atomicAdd(&moments[m_offset + 8], local_moments[local_off + 8]);
-                atomicAdd(&moments[m_offset + 9], local_moments[local_off + 9]);
-                atomicAdd(&moments[m_offset + 12], local_moments[local_off + 12]);
-                atomicAdd(&moments[m_offset + 16], local_moments[local_off + 16]);
-                atomicAdd(&moments[m_offset + 17], local_moments[local_off + 17]);
-                atomicAdd(&moments[m_offset + 18], local_moments[local_off + 18]);
-                atomicAdd(&moments[m_offset + 20], local_moments[local_off + 20]);
-                atomicAdd(&moments[m_offset + 21], local_moments[local_off + 21]);
-                atomicAdd(&moments[m_offset + 24], local_moments[local_off + 24]);
-                atomicAdd(&moments[m_offset + 32], local_moments[local_off + 32]);
-                atomicAdd(&moments[m_offset + 33], local_moments[local_off + 33]);
-                atomicAdd(&moments[m_offset + 36], local_moments[local_off + 36]);
-                atomicAdd(&moments[m_offset + 48], local_moments[local_off + 48]);\n"""  # noqa: E501
-    return source_pre, source_operation, source_post
+
+def _get_moments_accum_c_type(shape, order, pixels_per_thread):
+    """C type of the per-run sums of the unweighted moments kernel.
+
+    The local coordinates are smaller than max(shape), so each term of a
+    per-run sum is at most (max(shape) - 1)**order and the sum of at most
+    `pixels_per_thread` terms fits in a 32 or 64-bit unsigned integer for any
+    practical image. Integer arithmetic is exact and much faster than double
+    precision on GPUs with low FP64 throughput.
+    """
+    max_sum = (max(shape) - 1) ** order * pixels_per_thread
+    if max_sum < 2**32:
+        return "unsigned int"
+    elif max_sum < 2**64:
+        return "unsigned long long"
+    return "double"
 
 
 @cp.memoize(for_each_device=True)
@@ -528,10 +531,9 @@ def get_raw_moments_kernel(
     weighted=False,
     num_channels=1,
     pixels_per_thread=8,
+    accum_c_type=None,
 ):
     moments_dtype = cp.dtype(moments_dtype)
-
-    array_size = pixels_per_thread
 
     coord_dtype = cp.dtype(cp.uint32 if int32_coords else cp.uint64)
     if coord_dtype.itemsize <= 4:
@@ -553,64 +555,42 @@ def get_raw_moments_kernel(
         if moments_dtype.kind != "f":
             raise ValueError("moments must have a floating point data type")
 
-    moments_pre, moments_op, moments_post = _get_raw_moments_code(
+    if weighted and accum_c_type not in [None, "double"]:
+        raise ValueError("weighted moments are accumulated in double")
+    pre, start, op, flush, reduce, finish = _get_raw_moments_code(
         coord_c_type=coord_c_type,
         moments_c_type=moments_c_type,
         ndim=ndim,
         order=order,
-        array_size=array_size,
         has_weights=weighted,
         has_spacing=spacing is not None,
         num_channels=num_channels,
+        accum_c_type=accum_c_type,
+        pixels_per_thread=pixels_per_thread,
+    )
+
+    pre += _unravel_loop_index_declarations("labels", ndim, uint_t=coord_c_type)
+    op = (
+        _unravel_loop_index(
+            "labels",
+            ndim=ndim,
+            uint_t=coord_c_type,
+            raveled_index="ii",
+            omit_declarations=True,
+        )
+        + op
     )
 
     # store only counts for label > 0  (label = 0 is the background)
-    source = f"""
-      uint64_t start_index = {pixels_per_thread}*i;
-    """
-    source += moments_pre
-
-    inner_op = ""
-
-    source += _unravel_loop_index_declarations(
-        "labels", ndim, uint_t=coord_c_type
+    source = _get_label_run_loop(
+        pixels_per_thread,
+        pre,
+        start,
+        op,
+        flush,
+        warp_reduce=reduce,
+        finish=finish,
     )
-
-    inner_op += _unravel_loop_index(
-        "labels",
-        ndim=ndim,
-        uint_t=coord_c_type,
-        raveled_index="ii",
-        omit_declarations=True,
-    )
-    inner_op += moments_op
-
-    source += f"""
-      X encountered_labels[{array_size}] = {{0}};
-      X current_label;
-      X prev_label = labels[start_index];
-      int offset = 0;
-      encountered_labels[0] = prev_label;
-      uint64_t ii_max = min(start_index + {pixels_per_thread}, labels_size);
-      for (uint64_t ii = start_index; ii < ii_max; ii++) {{
-        current_label = labels[ii];
-        if (current_label == 0) {{ continue; }}
-        if (current_label != prev_label) {{
-            offset += 1;
-            prev_label = current_label;
-            encountered_labels[offset] = current_label;
-        }}
-        {inner_op}
-      }}"""
-    source += """
-      for (size_t ii = 0; ii <= offset; ii++) {
-        X lab = encountered_labels[ii];
-        if (lab != 0) {"""
-
-    source += moments_post
-    source += """
-        }
-      }\n"""
 
     # print(source)
     inputs = (
@@ -625,8 +605,10 @@ def get_raw_moments_kernel(
     spacing_str = "_sp" if spacing else ""
     name = f"cucim_moments{weighted_str}{spacing_str}_order{order}_{ndim}d"
     name += f"_{coord_dtype.char}_{moments_dtype.char}_batch{pixels_per_thread}"
+    if accum_c_type is not None:
+        name += "_" + accum_c_type.replace(" ", "_")
     return cp.ElementwiseKernel(
-        inputs, outputs, source, preamble=_includes, name=name
+        inputs, outputs, source, preamble=_warp_includes, name=name
     )
 
 
@@ -710,8 +692,7 @@ def regionprops_moments(
         label_image = cp.ascontiguousarray(label_image)
     ndim = label_image.ndim
 
-    int32_coords = max(label_image.shape) < 2**32
-    coord_dtype = cp.dtype(cp.uint32 if int32_coords else cp.uint64)
+    coord_dtype, int32_coords = _get_coord_dtype(label_image.size)
     if "bbox" in props_dict:
         bbox_coords = props_dict["bbox"]
         if bbox_coords.dtype != coord_dtype:
@@ -758,6 +739,12 @@ def regionprops_moments(
 
     # total number of elements in the moments matrix
     moments = cp.zeros(moments_shape, dtype=cp.float64)
+    if weighted:
+        accum_c_type = None
+    else:
+        accum_c_type = _get_moments_accum_c_type(
+            label_image.shape, order, pixels_per_thread
+        )
     moments_kernel = get_raw_moments_kernel(
         ndim=label_image.ndim,
         order=order,
@@ -767,6 +754,7 @@ def regionprops_moments(
         weighted=weighted,
         num_channels=num_channels,
         pixels_per_thread=pixels_per_thread,
+        accum_c_type=accum_c_type,
     )
     input_args = (
         label_image,
@@ -1408,11 +1396,11 @@ def get_inertia_tensor_kernel(moments_dtype, ndim, compute_orientation):
         if compute_orientation:
             source += """
         if (a - c == 0) {
-          // had to use <= 0 to get same result as Python's atan2 with < 0
+          // same convention as scikit-image >= 0.21 for the a == c case
           if (b < 0) {
-            orientation[i] = -M_PI / 4.0;
-          } else {
             orientation[i] = M_PI / 4.0;
+          } else {
+            orientation[i] = -M_PI / 4.0;
           }
         } else {
           orientation[i] = 0.5 * atan2(-2 * b, c - a);
@@ -1562,7 +1550,9 @@ def get_spd_matrix_eigvals_kernel(
             axis_lengths[offset_evals + 1] = 4.0 * sqrt(lam2);\n"""
         if compute_eccentricity:
             source += """
-            eccentricity[i] =  sqrt(1.0 - lam2 / lam1);\n"""
+            // 0 for regions with lam1 == 0 (e.g. a single pixel), as in
+            // scikit-image, instead of 0 / 0 = NaN
+            eccentricity[i] = (lam1 == 0) ? 0.0 : sqrt(1.0 - lam2 / lam1);\n"""
     elif rank == 3:
         if compute_eccentricity:
             raise ValueError("eccentricity only supported for 2D images")
@@ -1751,9 +1741,10 @@ def regionprops_inertia_tensor_eigvals(
         # eigenvectors computed by the kernel are not robust to 0 entries, so
         # use slightly slow cp.linalg.eigh instead
         eigvals, eigvecs = cp.linalg.eigh(inertia_tensor)
-        # swap from ascending to descending order
-        eigvals = eigvals[:, ::-1]
-        eigvecs = eigvecs[:, ::-1]
+        # swap from ascending to descending order (the eigenvectors are the
+        # columns, along the last axis)
+        eigvals = eigvals[..., ::-1]
+        eigvecs = eigvecs[..., ::-1]
     if props_dict is None:
         props_dict = {}
     props_dict["inertia_tensor_eigvals"] = eigvals
@@ -1765,6 +1756,98 @@ def regionprops_inertia_tensor_eigvals(
         props_dict["axis_minor_length"] = axis_lengths[..., -1]
     if compute_eigenvectors:
         props_dict["inertia_tensor_eigenvectors"] = eigvecs
+    return props_dict
+
+
+@cp.memoize(for_each_device=True)
+def get_centroid_from_sums_kernel(
+    ndim, compute_local=True, compute_global=False, unit_spacing=True
+):
+    """Centroid (in global or local coordinates) from coordinate sums"""
+    spc = "" if unit_spacing else " * spacing[d]"
+    source = f"""
+        size_t lab = i / {ndim};
+        int d = i % {ndim};
+        double n = static_cast<double>(counts[lab]);\n"""
+    if compute_global:
+        source += f"""
+        centroid[i] = coordinate_sums[i] / n{spc};\n"""
+    if compute_local:
+        # subtract the bounding box offset from the sums before dividing (an
+        # exact integer operation)
+        source += f"""
+        uint64_t local_sum = coordinate_sums[i]
+            - static_cast<uint64_t>(counts[lab]) * bbox[lab * {2 * ndim} + d];
+        centroid_local[i] = local_sum / n{spc};\n"""
+    inputs = ["raw uint64 coordinate_sums", "raw C counts"]
+    outputs = []
+    name = f"cucim_centroid_from_sums_{ndim}d"
+    if compute_local:
+        inputs.append("raw B bbox")
+    if not unit_spacing:
+        inputs.append("raw float64 spacing")
+        name += "_spacing"
+    if compute_global:
+        outputs.append("raw float64 centroid")
+        name += "_global"
+    if compute_local:
+        outputs.append("raw float64 centroid_local")
+        name += "_local"
+    return cp.ElementwiseKernel(
+        ", ".join(inputs),
+        ", ".join(outputs),
+        source,
+        preamble=_includes,
+        name=name,
+    )
+
+
+def _regionprops_centroid_from_sums(
+    coordinate_sums,
+    num_pixels,
+    bbox=None,
+    compute_local=False,
+    compute_global=True,
+    spacing=None,
+    props_dict=None,
+):
+    """Centroid (in global or local coordinates) from coordinate sums.
+
+    `coordinate_sums` and `num_pixels` are computed by the label-run pass
+    (`_regionprops_label_pass`). `bbox` is needed if `compute_local`.
+
+    if compute_global:
+        writes "centroid" to `props_dict`
+    if compute_local:
+        writes "centroid_local" to `props_dict`
+    """
+    if props_dict is None:
+        props_dict = {}
+    max_label, ndim = coordinate_sums.shape
+    unit_spacing = spacing is None
+    inputs = [coordinate_sums, num_pixels]
+    if compute_local:
+        inputs.append(bbox)
+    if not unit_spacing:
+        inputs.append(cp.asarray(spacing, dtype=cp.float64))
+    outputs = []
+    if compute_global:
+        centroid = cp.empty((max_label, ndim), dtype=cp.float64)
+        outputs.append(centroid)
+    if compute_local:
+        centroid_local = cp.empty((max_label, ndim), dtype=cp.float64)
+        outputs.append(centroid_local)
+    kernel = get_centroid_from_sums_kernel(
+        ndim,
+        compute_local=compute_local,
+        compute_global=compute_global,
+        unit_spacing=unit_spacing,
+    )
+    kernel(*inputs, *outputs, size=max_label * ndim)
+    if compute_global:
+        props_dict["centroid"] = centroid
+    if compute_local:
+        props_dict["centroid_local"] = centroid_local
     return props_dict
 
 
@@ -1925,7 +2008,7 @@ def regionprops_centroid_weighted(
             bbox = cp.ascontiguousarray(bbox)
         inputs = (moments_raw, bbox)
         if not unit_spacing:
-            inputs = inputs + (cp.asarray(spacing),)
+            inputs = inputs + (cp.asarray(spacing, dtype=cp.float64),)
     kernel = get_centroid_weighted_kernel(
         moments_raw.dtype,
         ndim,
