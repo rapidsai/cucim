@@ -25,6 +25,7 @@ _HISTOGRAM_OPS = {
     "bilateral_sum": 13,
     "modal": 14,
     "geometric_mean": 15,
+    "otsu": 16,
 }
 
 # Performance-tuning thresholds derived from benchmarks on an RTX A6000.
@@ -44,6 +45,7 @@ _HISTOGRAM_MIN_FOOTPRINT_AREA = {
     "bilateral_mean": 33 * 33,
     "modal": 15 * 15,
     "geometric_mean": 15 * 15,
+    "otsu": 15 * 15,
     "equalize": 91 * 91,
 }
 
@@ -53,6 +55,7 @@ _INT16_MAX = 32767
 _INT32_MAX = 2147483647
 _MAX_UINT8 = 255
 _WEIGHTED_HISTOGRAM_OPS = {
+    "otsu",
     "mean",
     "sum",
     "subtract_mean",

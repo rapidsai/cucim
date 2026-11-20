@@ -6,13 +6,10 @@
 
 This module provides GPU (CuPy/CUDA) implementations of most of the local
 rank filters from ``skimage.filters.rank``, including generic, percentile, and
-bilateral variants. The only unimplemented functions are:
-
-1. ``otsu`` (local Otsu thresholding via between-class variance maximization)
-2. ``windowed_histogram`` (returns the full local histogram per pixel)
-
-These two operations did not map cleanly to the common patterns shared across
-the other filters implemented here.
+bilateral variants. The only unimplemented function is
+``windowed_histogram`` (it returns the full local histogram per pixel), which
+does not map cleanly to the common patterns shared across the other filters
+implemented here.
 
 Implementation approach
 -----------------------
@@ -64,14 +61,17 @@ expected to match.
 | Feature                  | scikit-image (CPU)                                              | cuCIM (GPU) |
 |--------------------------|-----------------------------------------------------------------|-------------|
 | Dimensions               | 2-D (3-D for generic filters)                                   | N-dimensional |
-| Supported dtypes         | uint8 and uint16 natively; other real inputs are converted to uint8 | Integer and real floating-point dtypes; non-uint8 inputs are converted to uint8 by default |
+| Supported dtypes         | uint8 and uint16 natively; other real inputs are converted to uint8 | uint8 and uint16 natively; other integer and real floating-point inputs are converted to uint8 by default |
 | Output dtype             | Usually the processed input dtype; entropy returns float64      | Usually the processed input dtype; entropy defaults to float32 |
 | Algorithm                | Sliding-window histogram                                        | Streaming reductions, sorted neighborhoods, or uint8 2-D histogram fast path |
 | Boundary handling        | Excludes out-of-bounds pixels (population decreases at borders) | SciPy ``ndimage``-style reflected boundary extension; no boundary-induced population decrease |
 
-By default, non-uint8 inputs are converted to uint8 with
-``img_as_ubyte`` before rank filtering. Set ``cast_to_uint8=False`` to opt
-out of this conversion and use the elementwise kernels on the native dtype.
+By default, uint8 and uint16 inputs are processed natively, matching
+scikit-image. Other input dtypes are converted to uint8 with ``img_as_ubyte``
+before rank filtering. Set ``cast_to_uint8=False`` to opt out of this
+conversion and use the elementwise kernels on the native dtype. Uint16 inputs
+use the elementwise backend; to use the uint8 histogram backend instead,
+convert the image explicitly with ``img_as_ubyte`` before filtering.
 These kernels have the following behavioral differences. The cuCIM behavior is
 generally preferable in these cases.
 
@@ -118,6 +118,7 @@ footprints require the elementwise backend.
 * ``pop_bilateral``
 * ``sum_bilateral``
 * ``entropy``
+* ``otsu``
 
 The compatibility conditions are:
 
@@ -170,6 +171,7 @@ from ._generic import (
     minimum,
     modal,
     noise_filter,
+    otsu,
     pop,
     subtract_mean,
     sum,
@@ -206,6 +208,7 @@ __all__ = [
     'minimum',
     'modal',
     'noise_filter',
+    'otsu',
     'percentile',
     'pop',
     'pop_bilateral',
@@ -218,6 +221,5 @@ __all__ = [
     'threshold',
     'threshold_percentile',
     # --- Not yet implemented ---
-    # 'otsu',
     # 'windowed_histogram',
 ]

@@ -27,6 +27,7 @@ RANK_FILTERS = [
     ("minimum", dict(), dict()),
     ("modal", dict(), dict()),
     ("noise_filter", dict(), dict()),
+    ("otsu", dict(), dict()),
     ("pop", dict(), dict()),
     ("subtract_mean", dict(), dict()),
     ("sum", dict(), dict()),

@@ -380,9 +380,9 @@ def _get_percentile_range_kernel(
         ``'bilateral_mean'``, ``'bilateral_pop'``, ``'bilateral_sum'``,
         ``'enhance_contrast'``, ``'entropy'``, ``'equalize'``,
         ``'geometric_mean'``, ``'gradient'``, ``'maximum'``, ``'mean'``,
-        ``'minimum'``, ``'modal'``, ``'noise_filter'``, ``'percentile'``,
-        ``'pop'``, ``'subtract_mean'``, ``'sum'``, ``'threshold'``, and
-        ``'threshold_mean'``.
+        ``'minimum'``, ``'modal'``, ``'noise_filter'``, ``'otsu'``,
+        ``'percentile'``, ``'pop'``, ``'subtract_mean'``, ``'sum'``,
+        ``'threshold'``, and ``'threshold_mean'``.
     modes : tuple of str
         Boundary handling modes.
     w_shape : tuple of int
@@ -498,7 +498,7 @@ def _get_percentile_range_kernel(
 
     if has_mask:
         # Runtime calculation of indices based on actual count
-        if operation == "pop":
+        if operation in ("pop", "otsu"):
             post = """
                 if (iv == 0) {{
                     y = cast<Y>(0);
@@ -782,6 +782,53 @@ def _get_percentile_range_kernel(
                     y = cast<Y>(0);
                 }}
             """
+    elif operation == "otsu":
+        # Local Otsu threshold, as in scikit-image's _kernel_otsu: walk the
+        # runs of equal values in the sorted neighborhood (the "histogram"),
+        # keep the value that maximizes the between-class variance. Value 0
+        # is never a candidate, a run that holds the whole neighborhood ends
+        # the walk, and the lowest value wins ties (strict >). No fused
+        # multiply-add, so that near ties round as in the reference.
+        n_expr = "iv" if has_mask else str(filter_size)
+        post += f"""
+            const int otsu_n = {n_expr};
+            long long otsu_mu = 0;
+            for (int j = 0; j < otsu_n; j++) {{
+                otsu_mu += static_cast<long long>(values[j]);
+            }}
+            long long otsu_q1 = 0;
+            long long otsu_mu1 = 0;
+            double otsu_max = 0.0;
+            long long otsu_best = 0;
+            int otsu_j = 0;
+            while (otsu_j < otsu_n) {{
+                X otsu_v = values[otsu_j];
+                int otsu_count = 1;
+                while (otsu_j + otsu_count < otsu_n &&
+                       values[otsu_j + otsu_count] == otsu_v)
+                    otsu_count++;
+                otsu_j += otsu_count;
+                otsu_q1 += otsu_count;
+                if (otsu_v == 0) continue;
+                if (otsu_q1 == otsu_n) break;
+                otsu_mu1 += static_cast<long long>(otsu_v) * otsu_count;
+                const long long otsu_mu2 = otsu_mu - otsu_mu1;
+                const double otsu_pop = static_cast<double>(otsu_n);
+                const double otsu_q1d = static_cast<double>(otsu_q1);
+                const double otsu_t = __dsub_rn(
+                    __dmul_rn(otsu_pop - otsu_q1d,
+                              static_cast<double>(otsu_mu1)),
+                    static_cast<double>(otsu_mu2 * otsu_q1));
+                const double otsu_sigma = __ddiv_rn(
+                    __dmul_rn(otsu_t, otsu_t),
+                    __dmul_rn(otsu_q1d, otsu_pop - otsu_q1d));
+                if (otsu_sigma > otsu_max) {{
+                    otsu_max = otsu_sigma;
+                    otsu_best = static_cast<long long>(otsu_v);
+                }}
+            }}
+            y = cast<Y>(otsu_best);
+        """
     elif operation == "modal":
         # Modal: most frequent value (mode) in the neighborhood.
         # Scan sorted array for the longest run of equal values.
@@ -862,7 +909,7 @@ def _get_percentile_range_kernel(
             f"Unsupported operation: {operation}. "
             "Supported sorted operations: 'mean', 'sum', 'gradient', "
             "'subtract_mean', 'enhance_contrast', 'percentile', 'pop', "
-            "'threshold', 'autolevel', 'modal', 'entropy'"
+            "'threshold', 'autolevel', 'modal', 'entropy', 'otsu'"
         )
 
     # Sanitize operation name for kernel name (replace special chars)
@@ -966,9 +1013,9 @@ def _skimage_rank_filter(
         ``'bilateral_mean'``, ``'bilateral_pop'``, ``'bilateral_sum'``,
         ``'enhance_contrast'``, ``'entropy'``, ``'equalize'``,
         ``'geometric_mean'``, ``'gradient'``, ``'maximum'``, ``'mean'``,
-        ``'minimum'``, ``'modal'``, ``'noise_filter'``, ``'percentile'``,
-        ``'pop'``, ``'subtract_mean'``, ``'sum'``, ``'threshold'``, and
-        ``'threshold_mean'``. Default is ``'mean'``.
+        ``'minimum'``, ``'modal'``, ``'noise_filter'``, ``'otsu'``,
+        ``'percentile'``, ``'pop'``, ``'subtract_mean'``, ``'sum'``,
+        ``'threshold'``, and ``'threshold_mean'``. Default is ``'mean'``.
     size : int or sequence of int, optional
         Size of the neighborhood. One of `size` or `footprint` must be provided.
     footprint : cupy.ndarray, optional
@@ -1010,6 +1057,12 @@ def _skimage_rank_filter(
     if backend not in ("auto", "histogram", "elementwise"):
         raise ValueError(
             "backend must be one of 'auto', 'histogram' or 'elementwise'"
+        )
+
+    if operation == "otsu" and input.dtype not in (cp.uint8, cp.uint16):
+        raise ValueError(
+            "otsu requires a uint8 or uint16 image (the threshold is a "
+            "histogram bin index); use cast_to_uint8=True to convert"
         )
 
     ndim = input.ndim
