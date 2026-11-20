@@ -246,6 +246,7 @@ repos:
             ^python/cucim/src/cucim/skimage/segmentation/boundaries[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/morphsnakes[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/random_walker_segmentation[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/slic_superpixels[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/tests/test_boundaries[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/tests/test_chan_vese[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/tests/test_clear_border[.]py$|
@@ -253,6 +254,7 @@ repos:
             ^python/cucim/src/cucim/skimage/segmentation/tests/test_join[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/tests/test_morphsnakes[.]py$|
             ^python/cucim/src/cucim/skimage/segmentation/tests/test_random_walker[.]py$|
+            ^python/cucim/src/cucim/skimage/segmentation/tests/test_slic[.]py$|
             ^python/cucim/src/cucim/skimage/transform/__init__[.]py$|
             ^python/cucim/src/cucim/skimage/transform/__init__[.]pyi$|
             ^python/cucim/src/cucim/skimage/transform/_geometric[.]py$|
@@ -267,6 +269,7 @@ repos:
             ^python/cucim/src/cucim/skimage/util/_invert[.]py$|
             ^python/cucim/src/cucim/skimage/util/_map_array[.]py$|
             ^python/cucim/src/cucim/skimage/util/_montage[.]py$|
+            ^python/cucim/src/cucim/skimage/util/_regular_grid[.]py$|
             ^python/cucim/src/cucim/skimage/util/arraycrop[.]py$|
             ^python/cucim/src/cucim/skimage/util/compare[.]py$|
             ^python/cucim/src/cucim/skimage/util/dtype[.]py$|
@@ -278,6 +281,7 @@ repos:
             ^python/cucim/src/cucim/skimage/util/tests/test_invert[.]py$|
             ^python/cucim/src/cucim/skimage/util/tests/test_map_array[.]py$|
             ^python/cucim/src/cucim/skimage/util/tests/test_montage[.]py$|
+            ^python/cucim/src/cucim/skimage/util/tests/test_regular_grid[.]py$|
             ^python/cucim/src/cucim/skimage/util/tests/test_random_noise[.]py$|
             ^python/cucim/src/cucim/skimage/util/tests/test_shape[.]py$|
             ^cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg2k/libopenjpeg[.]cpp$|
@@ -535,6 +539,7 @@ repos:
             python/cucim/src/cucim/skimage/segmentation/boundaries[.]py$|
             python/cucim/src/cucim/skimage/segmentation/morphsnakes[.]py$|
             python/cucim/src/cucim/skimage/segmentation/random_walker_segmentation[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/slic_superpixels[.]py$|
             python/cucim/src/cucim/skimage/segmentation/tests/test_boundaries[.]py$|
             python/cucim/src/cucim/skimage/segmentation/tests/test_chan_vese[.]py$|
             python/cucim/src/cucim/skimage/segmentation/tests/test_clear_border[.]py$|
@@ -542,6 +547,7 @@ repos:
             python/cucim/src/cucim/skimage/segmentation/tests/test_join[.]py$|
             python/cucim/src/cucim/skimage/segmentation/tests/test_morphsnakes[.]py$|
             python/cucim/src/cucim/skimage/segmentation/tests/test_random_walker[.]py$|
+            python/cucim/src/cucim/skimage/segmentation/tests/test_slic[.]py$|
             python/cucim/src/cucim/skimage/transform/__init__[.]py$|
             python/cucim/src/cucim/skimage/transform/__init__[.]pyi$|
             python/cucim/src/cucim/skimage/transform/_geometric[.]py$|
@@ -556,6 +562,7 @@ repos:
             python/cucim/src/cucim/skimage/util/_invert[.]py$|
             python/cucim/src/cucim/skimage/util/_map_array[.]py$|
             python/cucim/src/cucim/skimage/util/_montage[.]py$|
+            python/cucim/src/cucim/skimage/util/_regular_grid[.]py$|
             python/cucim/src/cucim/skimage/util/arraycrop[.]py$|
             python/cucim/src/cucim/skimage/util/compare[.]py$|
             python/cucim/src/cucim/skimage/util/dtype[.]py$|
@@ -567,6 +574,7 @@ repos:
             python/cucim/src/cucim/skimage/util/tests/test_invert[.]py$|
             python/cucim/src/cucim/skimage/util/tests/test_map_array[.]py$|
             python/cucim/src/cucim/skimage/util/tests/test_montage[.]py$|
+            python/cucim/src/cucim/skimage/util/tests/test_regular_grid[.]py$|
             python/cucim/src/cucim/skimage/util/tests/test_random_noise[.]py$|
             python/cucim/src/cucim/skimage/util/tests/test_shape[.]py$
           )
