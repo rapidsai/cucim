@@ -218,12 +218,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        input-staging: [device, device-verify]
+        input-staging: [device, device-wait]
     with:
       build_type: pull-request
       script: ci/test_python.sh 100 ${{ matrix.input-staging }}
       run_codecov: false
-      # Compare device reads with and without a compressed-byte readback.
+      # Isolate the wait for the input transfer before decode.
       matrix_type: pull-request
       matrix_filter: >-
         map(select(.ARCH == "amd64" and .DEPENDENCIES == "latest"

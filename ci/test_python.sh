@@ -13,10 +13,13 @@ if [[ ! "${repeat_count}" =~ ^[1-9][0-9]*$ ]]; then
   echo "Expected a positive CUDA read test repeat count." >&2
   exit 2
 fi
-if [[ "${input_staging}" != device && "${input_staging}" != device-verify && "${input_staging}" != host ]]; then
-  echo "Expected host, device, or device-verify CUDA read input staging." >&2
-  exit 2
-fi
+case "${input_staging}" in
+  host|device|device-verify|device-wait) ;;
+  *)
+    echo "Expected host, device, device-verify, or device-wait CUDA read input staging." >&2
+    exit 2
+    ;;
+esac
 
 if [[ -n "${nvjpeg_override}" && "${nvjpeg_override}" != 13.2.3.58 ]]; then
   echo "The diagnostic nvJPEG override supports 13.2.3.58." >&2
@@ -168,7 +171,7 @@ if (( EXITCODE != 0 || repeat_count > 1 )); then
     if [[ -f "${trace}" ]]; then
       rapids-logger "CUDA read test trace: ${trace##*/}"
       if (( EXITCODE == 0 )); then
-        awk '$2 == "cufile" || ($2 == "nvjpeg" && $3 ~ /^(input_|device_input_readback_)/)' "${trace}"
+        awk '$2 == "cufile" || ($2 == "nvjpeg" && $3 ~ /^(input_|device_input_)/)' "${trace}"
       else
         tail -n 300 "${trace}"
       fi

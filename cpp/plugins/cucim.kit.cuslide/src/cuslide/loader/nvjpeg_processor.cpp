@@ -226,6 +226,14 @@ NvJpegProcessor::NvJpegProcessor(CuCIMFileHandle* file_handle,
             {
                 verify_device_input(input_size, first_tile, last_tile);
             }
+            else if (staging == "device-wait")
+            {
+                // The POSIX staging copy uses the default stream. Decode uses a nonblocking stream.
+                trace_nvjpeg_phase("device_input_wait_begin");
+                const auto wait_status = cudaStreamSynchronize(nullptr);
+                trace_nvjpeg_phase("device_input_wait_end", wait_status);
+                CUDA_ERROR(wait_status);
+            }
             device_owner.release();
             break;
         }
