@@ -269,6 +269,7 @@ repos:
             ^python/cucim/src/cucim/skimage/util/_invert[.]py$|
             ^python/cucim/src/cucim/skimage/util/_map_array[.]py$|
             ^python/cucim/src/cucim/skimage/util/_montage[.]py$|
+            ^python/cucim/src/cucim/skimage/util/_regular_grid[.]py$|
             ^python/cucim/src/cucim/skimage/util/arraycrop[.]py$|
             ^python/cucim/src/cucim/skimage/util/compare[.]py$|
             ^python/cucim/src/cucim/skimage/util/dtype[.]py$|
@@ -281,6 +282,7 @@ repos:
             ^python/cucim/src/cucim/skimage/util/tests/test_map_array[.]py$|
             ^python/cucim/src/cucim/skimage/util/tests/test_montage[.]py$|
             ^python/cucim/src/cucim/skimage/util/tests/test_random_noise[.]py$|
+            ^python/cucim/src/cucim/skimage/util/tests/test_regular_grid[.]py$|
             ^python/cucim/src/cucim/skimage/util/tests/test_shape[.]py$|
             ^cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg2k/libopenjpeg[.]cpp$|
             ^cpp/plugins/cucim[.]kit[.]cuslide/src/cuslide/jpeg2k/color_conversion[.]cpp$|
@@ -558,6 +560,7 @@ repos:
             python/cucim/src/cucim/skimage/util/_invert[.]py$|
             python/cucim/src/cucim/skimage/util/_map_array[.]py$|
             python/cucim/src/cucim/skimage/util/_montage[.]py$|
+            python/cucim/src/cucim/skimage/util/_regular_grid[.]py$|
             python/cucim/src/cucim/skimage/util/arraycrop[.]py$|
             python/cucim/src/cucim/skimage/util/compare[.]py$|
             python/cucim/src/cucim/skimage/util/dtype[.]py$|
@@ -570,6 +573,7 @@ repos:
             python/cucim/src/cucim/skimage/util/tests/test_map_array[.]py$|
             python/cucim/src/cucim/skimage/util/tests/test_montage[.]py$|
             python/cucim/src/cucim/skimage/util/tests/test_random_noise[.]py$|
+            python/cucim/src/cucim/skimage/util/tests/test_regular_grid[.]py$|
             python/cucim/src/cucim/skimage/util/tests/test_shape[.]py$
           )
       - id: verify-copyright
