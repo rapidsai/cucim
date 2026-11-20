@@ -18,9 +18,18 @@ file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/VERSION VERSION)
 string(REGEX REPLACE "a.*$" "" VERSION ${VERSION})
 set(PROJECT_VERSION_BUILD dev)
 
+# Fetch rapids-cmake (used to obtain the RAPIDS-pinned CCCL version)
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/rapids_config.cmake)
+
+# Build for all RAPIDS-supported GPU architectures unless CMAKE_CUDA_ARCHITECTURES
+# or the CUDAARCHS environment variable is set (e.g. CUDAARCHS=NATIVE for the
+# GPU(s) in the build machine only).
+include(rapids-cuda)
+rapids_cuda_init_architectures(libcucim)
+
 # Append local cmake module path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cpp/cmake/modules")
-project(libcucim VERSION ${VERSION} DESCRIPTION "libcucim" LANGUAGES CXX)
+project(libcucim VERSION ${VERSION} DESCRIPTION "libcucim" LANGUAGES CXX CUDA)
 
 ################################################################################
 # Include utilities
@@ -55,12 +64,17 @@ endif ()
 find_package(CUDAToolkit REQUIRED)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
+set(CMAKE_CUDA_STANDARD ${CMAKE_CXX_STANDARD})
+set(CMAKE_CUDA_STANDARD_REQUIRED YES)
 
 # Include CUDA headers explicitly for VSCode intelli-sense
 include_directories(AFTER SYSTEM ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 
-# Disable visibility to not expose unnecessary symbols
+# Disable visibility to not expose unnecessary symbols. For CUDA sources this
+# also keeps the CUB/libcu++ symbols they instantiate from being exported and
+# interposing with other CUB users loaded in the same process (e.g. CuPy).
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_CUDA_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN YES)
 
 # Set RPATH
@@ -113,6 +127,15 @@ superbuild_depend(libcuckoo)
 superbuild_depend(boost-header-only)
 superbuild_depend(nvtx3)
 superbuild_depend(taskflow)
+
+# Use the CCCL version pinned by rapids-cmake (as other RAPIDS projects do)
+# rather than the one bundled with the CUDA Toolkit. This provides the CCCL::CCCL
+# target; no cuCIM target links it yet.
+include(rapids-cmake)
+include(rapids-cpm)
+rapids_cpm_init()
+include(${rapids-cmake-dir}/cpm/cccl.cmake)
+rapids_cpm_cccl()
 
 ################################################################################
 # Define some names
