@@ -13,6 +13,7 @@
 #include <sys/statvfs.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <chrono>
 
 #include <cuda_runtime.h>
@@ -460,6 +461,27 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
     }
     memory_type = attributes.type;
 
+    bool staged_copy_issued = false;
+    auto copy_to_device = [&](void* dest, const void* src, size_t size) {
+        staged_copy_issued |= size != 0;
+        CUDA_TRY(cudaMemcpy(dest, src, size, cudaMemcpyHostToDevice));
+        return cuda_status == cudaSuccess;
+    };
+    auto finish_read = [&](ssize_t result) -> ssize_t {
+        if (staged_copy_issued)
+        {
+            // Finish default-stream copies even if a later read or copy failed.
+            const int saved_errno = errno;
+            CUDA_TRY(cudaStreamSynchronize(nullptr));
+            errno = saved_errno;
+            if (cuda_status)
+            {
+                return -1;
+            }
+        }
+        return result;
+    };
+
     if (file_type == FileHandleType::kPosix)
     {
         if (memory_type != cudaMemoryTypeUnregistered)
@@ -479,10 +501,9 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                     break;
                 }
                 read_cnt = ::pread(handle_->fd, cache_buf, bytes_to_copy, read_offset);
-                CUDA_TRY(cudaMemcpy(output_buf, cache_buf, bytes_to_copy, cudaMemcpyHostToDevice));
-                if (cuda_status)
+                if (!copy_to_device(output_buf, cache_buf, bytes_to_copy))
                 {
-                    return -1;
+                    return finish_read(-1);
                 }
                 read_offset += read_cnt;
                 output_buf += read_cnt;
@@ -500,11 +521,10 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
     {
         if (memory_type != cudaMemoryTypeUnregistered)
         {
-            CUDA_TRY(cudaMemcpy(reinterpret_cast<char*>(buf) + buf_offset,
-                                reinterpret_cast<char*>(mmap_ptr_) + file_offset, count, cudaMemcpyHostToDevice));
-            if (cuda_status)
+            if (!copy_to_device(reinterpret_cast<char*>(buf) + buf_offset,
+                                reinterpret_cast<char*>(mmap_ptr_) + file_offset, count))
             {
-                return -1;
+                return finish_read(-1);
             }
         }
         else
@@ -548,10 +568,9 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                         }
 
                         read_cnt = ::pread(handle_->fd, cache_buf, bytes_to_copy, read_offset);
-                        CUDA_TRY(cudaMemcpy(input_buf, cache_buf, bytes_to_copy, cudaMemcpyHostToDevice));
-                        if (cuda_status)
+                        if (!copy_to_device(input_buf, cache_buf, bytes_to_copy))
                         {
-                            return -1;
+                            return finish_read(-1);
                         }
                         read_offset += read_cnt;
                         input_buf += read_cnt;
@@ -574,7 +593,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                 if (read_cnt < 0)
                 {
                     fmt::print(stderr, "Cannot read the remaining file content block! ({})\n", std::strerror(errno));
-                    return -1;
+                    return finish_read(-1);
                 }
                 // Copy a buffer to read, from the intermediate remaining block (buf_pos)
                 if (memory_type == cudaMemoryTypeUnregistered)
@@ -583,11 +602,10 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                 }
                 else
                 {
-                    CUDA_TRY(cudaMemcpy(reinterpret_cast<uint8_t*>(buf) + buf_offset + block_read_size, buf_pos,
-                                        remaining, cudaMemcpyHostToDevice));
-                    if (cuda_status)
+                    if (!copy_to_device(reinterpret_cast<uint8_t*>(buf) + buf_offset + block_read_size, buf_pos,
+                                        remaining))
                     {
-                        return -1;
+                        return finish_read(-1);
                     }
                 }
 
@@ -612,7 +630,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                 if (read_cnt < 0)
                 {
                     fmt::print(stderr, "Cannot read the file content block! ({})\n", std::strerror(errno));
-                    return -1;
+                    return finish_read(-1);
                 }
 
                 if (memory_type == cudaMemoryTypeUnregistered)
@@ -621,10 +639,9 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                 }
                 else
                 {
-                    CUDA_TRY(cudaMemcpy(output_buf, cache_buf + page_offset, count, cudaMemcpyHostToDevice));
-                    if (cuda_status)
+                    if (!copy_to_device(output_buf, cache_buf + page_offset, count))
                     {
-                        return -1;
+                        return finish_read(-1);
                     }
                 }
                 total_read_cnt += std::min(static_cast<size_t>(read_cnt - page_offset), count);
@@ -653,7 +670,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                     {
                         fmt::print(stderr, "Cannot read the head part of the file content block! ({})\n",
                                    std::strerror(errno));
-                        return -1;
+                        return finish_read(-1);
                     }
 
                     bytes_to_copy = header_size;
@@ -663,11 +680,9 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                     }
                     else
                     {
-                        CUDA_TRY(cudaMemcpy(
-                            output_buf, internal_buf_pos + page_offset, bytes_to_copy, cudaMemcpyHostToDevice));
-                        if (cuda_status)
+                        if (!copy_to_device(output_buf, internal_buf_pos + page_offset, bytes_to_copy))
                         {
-                            return -1;
+                            return finish_read(-1);
                         }
                     }
 
@@ -694,10 +709,9 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                     }
                     else
                     {
-                        CUDA_TRY(cudaMemcpy(output_buf, cache_buf, bytes_to_copy, cudaMemcpyHostToDevice));
-                        if (cuda_status)
+                        if (!copy_to_device(output_buf, cache_buf, bytes_to_copy))
                         {
-                            return -1;
+                            return finish_read(-1);
                         }
                     }
                     read_offset += read_cnt;
@@ -716,7 +730,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                     {
                         fmt::print(stderr, "Cannot read the tail part of the file content block! ({})\n",
                                    std::strerror(errno));
-                        return -1;
+                        return finish_read(-1);
                     }
                     // Copy the region
                     bytes_to_copy = tail_size;
@@ -726,10 +740,9 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                     }
                     else
                     {
-                        CUDA_TRY(cudaMemcpy(output_buf, internal_buf_pos, bytes_to_copy, cudaMemcpyHostToDevice));
-                        if (cuda_status)
+                        if (!copy_to_device(output_buf, internal_buf_pos, bytes_to_copy))
                         {
-                            return -1;
+                            return finish_read(-1);
                         }
                     }
                     total_read_cnt += tail_size;
@@ -750,17 +763,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
         }
     }
 
-    if (total_read_cnt > 0 && memory_type != cudaMemoryTypeUnregistered && file_type != FileHandleType::kGPUDirect)
-    {
-        // Copies from pageable memory can return before the transfer to the GPU completes.
-        // Finish the default-stream copies before a caller can use the buffer on another stream.
-        CUDA_TRY(cudaStreamSynchronize(nullptr));
-        if (cuda_status)
-        {
-            return -1;
-        }
-    }
-    return total_read_cnt;
+    return finish_read(total_read_cnt);
 }
 ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, off_t buf_offset)
 {
