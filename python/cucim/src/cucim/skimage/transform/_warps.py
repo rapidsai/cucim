@@ -170,6 +170,11 @@ def resize(
     For a similar function that preserves the dtype of the input, consider
     `cucim.scipy.ndimage.zoom`.
 
+    For spline orders above 1, 'constant' and 'edge' use exact boundary
+    extension instead of SciPy's prepadding. Short axes, complex input, and
+    nonfinite constant fill values use prepadding. An axis is short when it
+    has fewer samples than the spline order plus one.
+
     Examples
     --------
     >>> from skimage import data
@@ -520,6 +525,11 @@ def rotate(
     If ``image.ndim > 2``, the rotation occurs for the first two dimensions of
     the array. Unlike the scikit-image implementation, more than one additional
     axis may be present on the array.
+
+    For spline orders above 1, 'constant' and 'edge' use exact boundary
+    extension instead of SciPy's prepadding. Short axes, complex input, and
+    nonfinite constant fill values use prepadding. An axis is short when it
+    has fewer samples than the spline order plus one.
 
     Examples
     --------
@@ -1053,6 +1063,11 @@ def warp(
       `ProjectiveTransform` and `order` in [0, 3] this function uses the
       underlying transformation matrix to warp the image with a much faster
       routine.
+
+    For spline orders above 1, 'constant' and 'edge' use exact boundary
+    extension instead of SciPy's prepadding. Short axes, complex input, and
+    nonfinite constant fill values use prepadding. An axis is short when it
+    has fewer samples than the spline order plus one.
 
     Examples
     --------

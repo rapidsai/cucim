@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 from scipy import ndimage as scipy_ndi
 
+from cucim.skimage import transform
 from cucim.skimage._vendored import (
     _ndimage_interpolation as interpolation,
     _ndimage_spline_prefilter_core as core,
@@ -217,3 +218,39 @@ def test_public_spline_filter_unchanged():
         expected = scipy_ndi.spline_filter(image, 3, mode=mode)
         actual = cndi.spline_filter(cp.asarray(image), 3, mode=mode)
         cp.testing.assert_allclose(actual, expected, rtol=1e-10, atol=1e-10)
+
+
+@pytest.mark.parametrize(
+    "cval", [np.nan, float("nan"), np.float32("nan"), np.inf, -np.inf]
+)
+def test_rotate_with_nonfinite_constant_fill(cval):
+    image = cp.arange(64, dtype=cp.float64).reshape(8, 8)
+    kwargs = dict(order=3, mode="constant", cval=cval, clip=False)
+    # Identity rotation skips all prefilter axes, so it uses no fill values.
+    cp.testing.assert_array_equal(transform.rotate(image, 0, **kwargs), image)
+    # The padded cubic prefilter propagates the nonfinite fill.
+    rotated = transform.rotate(image, 15, **kwargs)
+    assert cp.isnan(rotated).all()
+
+
+@pytest.mark.parametrize("order", [2, 3, 4, 5])
+@pytest.mark.parametrize("mode", ["nearest", "grid-constant"])
+@pytest.mark.parametrize(
+    "dtype, coords_dtype",
+    [
+        (np.float32, np.float32),
+        (np.float32, np.float64),
+        (np.float64, np.float64),
+    ],
+)
+def test_exact_extension_beyond_index_range(order, mode, dtype, coords_dtype):
+    image = cp.arange(8, dtype=dtype)
+    coords = cp.array(
+        [[-1e30, -(2**31), -(2**31) + 1, 2**31 - 1, 2**31, 1e30]],
+        dtype=coords_dtype,
+    )
+    out = cndi.map_coordinates(image, coords, order=order, mode=mode, cval=-3)
+    # All nonconstant tails have decayed to zero. Only the constant
+    # extension of the original samples remains.
+    expected = [0, 0, 0, 7, 7, 7] if mode == "nearest" else [-3] * 6
+    cp.testing.assert_allclose(out, expected, rtol=0, atol=2e-6)
