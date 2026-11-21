@@ -744,10 +744,14 @@ def test_remove_degenerate_faces_merges_every_chain_of_vertices():
     normals = np.zeros_like(verts)
     values = np.zeros(n_vertices, np.float32)
     for _ in range(3):
+        shuffled = faces[rng.permutation(len(faces))]
         out = common._remove_degenerate_faces_gpu(
-            *(cp.asarray(x) for x in (verts, faces, normals, values))
+            *(cp.asarray(x) for x in (verts, shuffled, normals, values))
         )
         assert out[0].shape[0] == n_components
+        cp.testing.assert_array_equal(
+            cp.sort(out[0][:, 0]), cp.arange(n_pos, dtype=cp.float32)
+        )
 
 
 def test_wide_kernels_are_chosen_by_the_volume_size(monkeypatch):

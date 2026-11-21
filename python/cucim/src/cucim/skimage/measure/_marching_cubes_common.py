@@ -650,18 +650,21 @@ def _inclusive_scan_uint8(counts, min_size=_SCAN_MIN_SIZE):
 # code specific to allow_degenerate=False
 _REMOVE_DEGENERATE_KERNEL_CODE = r"""
 
-extern "C" __device__ inline int mc_find_root(int* parent, int x) {
-    int p = parent[x];
-    while (p != parent[p]) {
-        p = parent[p];
+extern "C" __device__ inline int mc_find_root_atomic(int* parent, int x) {
+    // Unsuffixed CUDA atomics have relaxed ordering and device scope. A
+    // zero add reads the link atomically without changing the forest.
+    int p = atomicAdd(parent + x, 0);
+    while (p != x) {
+        x = p;
+        p = atomicAdd(parent + x, 0);
     }
-    return p;
+    return x;
 }
 
 extern "C" __device__ inline void mc_union_vertices(int* parent, int a, int b) {
     while (true) {
-        int ra = mc_find_root(parent, a);
-        int rb = mc_find_root(parent, b);
+        int ra = mc_find_root_atomic(parent, a);
+        int rb = mc_find_root_atomic(parent, b);
         if (ra == rb) {
             return;
         }
@@ -736,21 +739,21 @@ extern "C" __global__ void mc_init_vertex_map(int* parent, mc_idx n_vertices) {
     parent[idx] = (int)idx;
 }
 
-extern "C" __global__ void mc_compress_vertex_roots(int* parent, mc_idx n_vertices) {
+extern "C" __global__ void mc_compress_vertex_roots(
+    const int* parent, int* roots, int* root_flags, mc_idx n_vertices) {
     mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
     if (idx >= n_vertices) {
         return;
     }
-    parent[idx] = mc_find_root(parent, idx);
-}
-
-extern "C" __global__ void mc_mark_vertex_roots(
-    const int* parent, int* root_flags, mc_idx n_vertices) {
-    mc_idx idx = (mc_idx)blockDim.x * blockIdx.x + threadIdx.x;
-    if (idx >= n_vertices) {
-        return;
+    // The union kernel has finished and this pass only reads its forest.
+    int x = (int)idx;
+    int p = parent[x];
+    while (p != x) {
+        x = p;
+        p = parent[x];
     }
-    root_flags[idx] = parent[idx] == idx;
+    roots[idx] = x;
+    root_flags[idx] = x == idx;
 }
 
 extern "C" __global__ void mc_emit_non_degenerate_faces(
@@ -829,18 +832,14 @@ def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
         (threads,),
         (vertices, faces, faces_ok, nf, vertex_map),
     )
+    roots = cp.empty(n_vertices, dtype=cp.int32)
+    root_flags = cp.empty(n_vertices, dtype=cp.int32)
     _get_remove_degen_kernel("mc_compress_vertex_roots", wide)(
         vertex_blocks,
         (threads,),
-        (vertex_map, nv),
+        (vertex_map, roots, root_flags, nv),
     )
-
-    root_flags = cp.empty(n_vertices, dtype=cp.int32)
-    _get_remove_degen_kernel("mc_mark_vertex_roots", wide)(
-        vertex_blocks,
-        (threads,),
-        (vertex_map, root_flags, nv),
-    )
+    del vertex_map
     vertex_scan = cp.cumsum(root_flags, dtype=cp.int32)
     n_vertices2 = int(vertex_scan[-1])
     face_scan = _inclusive_scan_uint8(faces_ok)
@@ -853,7 +852,7 @@ def _remove_degenerate_faces_gpu(vertices, faces, normals, values):
     _get_remove_degen_kernel("mc_emit_non_degenerate_faces", wide)(
         face_blocks,
         (threads,),
-        (faces, faces_ok, face_scan, vertex_map, vertex_scan, nf, faces2),
+        (faces, faces_ok, face_scan, roots, vertex_scan, nf, faces2),
     )
     _get_remove_degen_kernel("mc_compact_root_vertices", wide)(
         vertex_blocks,
