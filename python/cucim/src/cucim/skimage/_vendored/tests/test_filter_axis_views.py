@@ -225,3 +225,60 @@ def test_cached_gaussian_weights_shared_memory(shape, axis, order, dtype):
     cp.testing.assert_array_equal(cp.isnan(result), cp.isnan(expected))
     tol = 1e-5 if dtype == cp.float32 else 1e-12
     cp.testing.assert_allclose(result, expected, rtol=tol, atol=tol)
+
+
+@pytest.mark.parametrize(
+    "shape,axis", [((8, 16, 3), 0), ((8, 16, 3), 1), ((2, 3, 17, 40), 2)]
+)
+@pytest.mark.parametrize(
+    "dtype,cval", [(cp.uint8, 0.5), (cp.uint8, 256), (cp.int16, -0.5)]
+)
+def test_shared_filter_padding_preserves_working_dtype(
+    shape, axis, dtype, cval
+):
+    image = cp.zeros(shape, dtype=dtype)
+    weights = cp.asarray([1, 2, 1], dtype=cp.float32)
+    kwargs = dict(axis=axis, mode="constant", cval=cval, output=cp.float32)
+    actual = filters.correlate1d(image, weights, **kwargs)
+    expected = filters.correlate1d(
+        image, weights, algorithm="elementwise", **kwargs
+    )
+    assert actual[(0,) * image.ndim].item() == cval
+    cp.testing.assert_array_equal(actual, expected)
+
+
+def test_explicit_shared_filter_falls_back_for_fractional_padding():
+    image = cp.zeros((8, 16, 3), dtype=cp.uint8)
+    weights = cp.asarray([1, 2, 1], dtype=cp.float32)
+    with pytest.warns(UserWarning, match="unsupported for algorithm"):
+        actual = filters.correlate1d(
+            image,
+            weights,
+            axis=1,
+            mode="constant",
+            cval=0.5,
+            output=cp.float32,
+            algorithm="shared_memory",
+        )
+    assert actual[0, 0, 0].item() == 0.5
+
+
+@pytest.mark.parametrize("extra", [0, 1])
+def test_axis_zero_view_respects_grid_limit(extra):
+    # Three weights use 32 filtered positions per block of the 2D view.
+    image = cp.ones((32 * 65535 + extra, 1, 1), dtype=cp.float32)
+    weights = cp.asarray([0.25, 0.5, 0.25], dtype=cp.float32)
+    actual = filters.correlate1d(image, weights, axis=0)
+    cp.testing.assert_array_equal(actual, image)
+
+
+def test_axis_zero_shared_memory_with_float16_output():
+    image = cp.ones((2, 3, 16, 2), dtype=cp.float32)
+    output = cp.empty(image.shape, dtype=cp.float16)
+    weights = cp.asarray([1, 2, 1], dtype=cp.float32)
+    # An attempted compile fallback raises a warning, which fails this module.
+    result = filters.correlate1d(
+        image, weights, axis=0, output=output, algorithm="shared_memory"
+    )
+    assert result is output
+    cp.testing.assert_array_equal(result, cp.full_like(output, 4))
