@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 """
@@ -17,6 +17,15 @@ import numpy as np
 
 from .._shared.fft import fftmodule as fft
 from ._masked_phase_cross_correlation import _masked_phase_cross_correlation
+
+# Check all registration statistics in one kernel before a single host decision.
+_phase_stats_have_nan = cp.ElementwiseKernel(
+    "T ccmax, U source_amplitude, V target_amplitude",
+    "bool has_nan",
+    "has_nan = (ccmax != ccmax) || (source_amplitude != source_amplitude) "
+    "|| (target_amplitude != target_amplitude)",
+    "cucim_phase_stats_have_nan",
+)
 
 
 def _upsampled_dft(
@@ -432,7 +441,7 @@ def phase_cross_correlation(
         shift = _disambiguate_shift(reference_image, moving_image, shift)
 
     # Redirect user to masked_phase_cross_correlation if NaNs are observed
-    if cp.isnan(CCmax) or cp.isnan(src_amp) or cp.isnan(target_amp):
+    if _phase_stats_have_nan(CCmax, src_amp, target_amp):
         raise ValueError(
             "NaN values found, please remove NaNs from your "
             "input data or use the `reference_mask`/`moving_mask` "

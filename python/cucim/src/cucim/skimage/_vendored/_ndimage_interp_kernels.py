@@ -1,15 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 from __future__ import annotations
 
-import math
-from typing import NamedTuple
-
 import cupy
 import cupy._core.internal
-import numpy
 
 from cucim.skimage._vendored import (
     _ndimage_spline_kernel_weights as _spline_kernel_weights,
@@ -17,18 +13,7 @@ from cucim.skimage._vendored import (
     _ndimage_util as _util,
 )
 
-
-class KernelInfo(NamedTuple):
-    """Kernel info returned by kernel getter functions."""
-
-    kernel: cupy.ElementwiseKernel
-    size: int | None  # None means use output array size
-
-
-math_constants_preamble = r"""
-// workaround for HIP: line begins with #include
-#include <cupy/math_constants.h>
-"""
+FILL_MODES = ("constant", "grid-constant")
 
 spline_weights_inline = _spline_kernel_weights.spline_weights_inline
 
@@ -485,10 +470,13 @@ def _get_coord_affine(
     ncol = ndim + 1
     # When loop_batch_axis is True, skip the last axis (it's the batch axis)
     axes_to_process = range(ndim - 1) if loop_batch_axis else range(ndim)
-    # When loop_batch_axis is True, skip multiplying by in_coord for batch axis
-    # since it's not initialized yet (it's set in the batch loop)
-    # For batch axes, the matrix column should be 0 for non-batch rows anyway
-    coord_axes = range(ndim - 1) if loop_batch_axis else range(ndim)
+    # Batch-axis detection guarantees that non-batch rows do not depend on
+    # batch coordinate columns, so skip those known-zero matrix terms.
+    coord_axes = [
+        k
+        for k in range(ndim)
+        if k not in batch_axes and not (loop_batch_axis and k == ndim - 1)
+    ]
 
     for j in axes_to_process:
         if j in batch_axes:
@@ -514,20 +502,16 @@ def _get_coord_affine(
     return ops
 
 
-def _unravel_loop_index(shape, uint_t="unsigned int", array_size=None):
+def _unravel_loop_index(ndim, uint_t, array_size):
     """
     declare a multi-index array in_coord and unravel the 1D index, i into it.
     This code assumes that the array is a C-ordered array.
 
     Args:
-        shape: tuple of dimension sizes to unravel
+        ndim: number of dimensions to unravel
         uint_t: unsigned integer type to use
-        array_size: size of in_coord array (defaults to len(shape), but can be
-            larger if additional dimensions will be set separately)
+        array_size: size of in_coord, including the looped batch axis
     """
-    ndim = len(shape)
-    if array_size is None:
-        array_size = ndim
     code = [
         f"""
         {uint_t} in_coord[{array_size}];
@@ -536,7 +520,7 @@ def _unravel_loop_index(shape, uint_t="unsigned int", array_size=None):
     for j in range(ndim - 1, 0, -1):
         code.append(
             f"""
-        s = {shape[j]};
+        s = y.shape()[{j}];
         t = idx / s;
         in_coord[{j}] = idx - t * s;
         idx = t;"""
@@ -562,13 +546,113 @@ def _join_index_terms(terms):
     return " + ".join(terms) if terms else "0"
 
 
+def _exact_boundary_fold_ops(j, order, mode, int_t, float_type):
+    """Fold exterior coefficients into the weights of axis ``j``.
+
+    Used with the exact constant-extension prefilter (no padding). A
+    coefficient at distance ``m`` outside the line equals
+    ``sum_jj E(m, jj) * d[jj]`` over the first (or last) ``J + 1`` in-domain
+    coefficients (see ``exterior_coefficient_terms``), where ``d = c`` for
+    'nearest' and ``d = c - cval`` for 'grid-constant'. Footprints that cross
+    an edge are moved to the window ``[b, b + order]`` inside the line and
+    the exterior weights are added to the window's first or last ``J + 1``
+    weights. All array indices are compile-time constants after unrolling,
+    so the weights stay in registers. Requires at least ``order + 1``
+    samples along the axis.
+
+    The relation between exterior and in-domain coefficients was derived for
+    cuCIM; see ``exterior_coefficient_terms`` and the notes above
+    ``EXACT_CONSTANT_MODES`` in ``_ndimage_spline_prefilter_core``. For
+    'grid-constant' the extended coefficients are ``cval + E (c - cval)``
+    per axis, so the folded sum is completed by
+    ``cval * (1 - prod_j sum(weights_j))`` (``_exact_cval_term``).
+    """
+    roots, U = _spline_prefilter_core.exterior_coefficient_terms(
+        order, mode == "nearest"
+    )
+    J = len(U[0]) - 1
+    F = float_type
+    pows = []
+    for ri, r in enumerate(roots):
+        if r == 1.0:
+            pows.append(None)
+        else:
+            pows.append(f"pr_{ri}")
+    pow_code = "\n".join(
+        f"                    {F} pr_{ri} = pow(({F}){r!r}, m);"
+        for ri, r in enumerate(roots)
+        if r != 1.0
+    )
+
+    def e_expr(jj):
+        terms = []
+        for ri, row in enumerate(U):
+            if pows[ri] is None:
+                terms.append(f"({F}){row[jj]!r}")
+            else:
+                terms.append(f"({F}){row[jj]!r} * {pows[ri]}")
+        return " + ".join(terms)
+
+    left = "\n".join(
+        f"                    nw[{jj}] += w * ({e_expr(jj)});"
+        for jj in range(J + 1)
+    )
+    right = "\n".join(
+        f"                    nw[{order - jj}] += w * ({e_expr(jj)});"
+        for jj in range(J + 1)
+    )
+    inside = "\n".join(
+        f"                    if (k + shift == {t}) nw[{t}] += w;"
+        for t in range(order + 1)
+    )
+    sfw = ""
+    if mode == "grid-constant":
+        sfw = f"""
+                sfw_{j} = {" + ".join(f"nw[{t}]" for t in range(order + 1))};"""
+    return f"""
+            W sfw_{j} = (W)1.0;
+            (void)sfw_{j};
+            if (start < 0 || start > xsize_{j} - {order + 1}) {{
+                // exact constant extension: fold exterior coefficients
+                {int_t} b = start < 0 ? 0 : xsize_{j} - {order + 1};
+                {int_t} shift = start - b;
+                W nw[{order + 1}];
+                #pragma unroll
+                for (int t = 0; t <= {order}; t++) {{ nw[t] = 0; }}
+                #pragma unroll
+                for (int k = 0; k <= {order}; k++) {{
+                    {int_t} idx = start + k;
+                    W w = weights_{j}[k];
+                    if (idx < 0 || idx >= xsize_{j}) {{
+                    {F} m = ({F})(idx < 0 ? -idx : idx - (xsize_{j} - 1));
+{pow_code}
+                    if (idx < 0) {{
+{left}
+                    }} else {{
+{right}
+                    }}
+                    }} else {{
+{inside}
+                    }}
+                }}
+                #pragma unroll
+                for (int t = 0; t <= {order}; t++) {{ weights_{j}[t] = nw[t]; }}{sfw}
+                start = b;
+            }}"""
+
+
+def _exact_cval_term(spatial_axes, cval, internal_dtype):
+    """cval * (1 - prod_j sum(weights_j)) for exact 'grid-constant'."""
+    prod = " * ".join(f"sfw_{j}" for j in spatial_axes)
+    return f"{cval} * ({internal_dtype})((W)1.0 - {prod})"
+
+
 def _generate_interp_custom(
     coord_func,
     ndim,
     large_int,
-    yshape,
+    output_ndim,
     mode,
-    cval,
     order,
     name="",
     integer_output=False,
@@ -576,7 +660,9 @@ def _generate_interp_custom(
     float_dtype=cupy.float64,
     omit_in_coord=False,
     batch_axes=None,
-    loop_batch_axis=False,
+    loop_batch_size=None,
+    exact_boundary=False,
+    nonfinite_integer_fill=None,
 ):
     """
     Args:
@@ -584,10 +670,9 @@ def _generate_interp_custom(
             transformation. See for example, `_get_coord_shift`.
         ndim (int): The number of dimensions.
         large_int (bool): If true use Py_ssize_t instead of int for indexing.
-        yshape (tuple): Shape of the output array. Can be None if not needed
-            in the kernel.
+        output_ndim (int): Number of dimensions in the output. Sizes are
+            read from the output CArray.
         mode (str): Signal extension mode to use at the array boundaries
-        cval (float): constant value used when `mode == 'constant'`.
         name (str): base name for the interpolation kernel
         integer_output (bool): boolean indicating whether the output has an
             integer type.
@@ -602,9 +687,13 @@ def _generate_interp_custom(
             dimensions where no interpolation is needed (zoom == 1 and
             shift == 0). For these axes, the identity transform is used and
             interpolation is skipped.
-        loop_batch_axis (bool): If True, the last axis is a contiguous batch
-            axis and the kernel will loop over it internally. This requires
-            using raw output and reduces kernel launch overhead.
+        loop_batch_size (int or None): Size of the small trailing channel
+            axis when one thread handles all channels for a spatial point.
+        exact_boundary (bool): If True (orders > 1 with mode 'nearest' or
+            'grid-constant'), ``x`` holds unpadded coefficients from the exact
+            constant-extension prefilter. Coefficients outside ``x`` are
+            then evaluated as fixed combinations of the first or last
+            in-domain coefficients and folded into each axis's weights.
 
     Returns:
         operation (str): code body for the ElementwiseKernel
@@ -612,6 +701,8 @@ def _generate_interp_custom(
     """
     if batch_axes is None:
         batch_axes = ()
+
+    loop_batch_axis = loop_batch_size is not None
 
     if large_int:
         uint_t = "size_t"
@@ -631,22 +722,27 @@ def _generate_interp_custom(
     # in a single kernel thread. Spatial coordinates are computed once,
     # and the batch loop is placed as the innermost loop.
     if loop_batch_axis:
-        batch_size = yshape[-1]
         batch_axis = ndim - 1
         outer_batch_axes = [j for j in batch_axes if j != batch_axis]
-        reduced_yshape = yshape[:-1]
+        batch_size = loop_batch_size
         ops.append(f"const {uint_t} batch_size = {batch_size};")
         ops.append(f"const {uint_t} out_base_idx = i * batch_size;")
     else:
         outer_batch_axes = []
-        reduced_yshape = yshape
 
     float_type = cupy._core._scalar.get_typename(float_dtype)
     internal_dtype = float_type if integer_output else "Y"
 
+    # Exact boundaries temporarily use exterior indices. Keep them wide
+    # even when all in-domain indices fit in int.
+    exact = (
+        exact_boundary and order > 1 and mode in ("nearest", "grid-constant")
+    )
+    footprint_t = "ptrdiff_t" if exact else int_t
+
     # determine strides for x along each axis
     for j in range(ndim):
-        ops.append(f"const {int_t} xsize_{j} = x.shape()[{j}];")
+        ops.append(f"const {footprint_t} xsize_{j} = x.shape()[{j}];")
     ops.append(f"const {uint_t} sx_{ndim - 1} = 1;")
     for j in range(ndim - 1, 0, -1):
         ops.append(f"const {uint_t} sx_{j - 1} = sx_{j} * xsize_{j};")
@@ -654,11 +750,22 @@ def _generate_interp_custom(
     if loop_batch_axis:
         # Only unravel to ndim-1 dimensions (spatial only)
         if not omit_in_coord:
-            ops.append(_unravel_loop_index(reduced_yshape, uint_t, ndim))
+            ops.append(_unravel_loop_index(output_ndim - 1, uint_t, ndim))
+        if outer_batch_axes:
+            ops.append(
+                f"const {int_t} batch_base = "
+                + _join_index_terms(
+                    [
+                        f"(({int_t})in_coord[{j}]) * sx_{j}"
+                        for j in outer_batch_axes
+                    ]
+                )
+                + ";"
+            )
         # Don't start batch loop here - it will be the innermost loop
     else:
         if not omit_in_coord:
-            ops.append(_unravel_loop_index(reduced_yshape, uint_t))
+            ops.append("const auto* in_coord = _ind.get();")
 
     if not loop_batch_axis:
         ops.append(f"{internal_dtype} out = 0.0;")
@@ -673,14 +780,12 @@ def _generate_interp_custom(
         loop_batch_axis=loop_batch_axis,
     )
 
-    if cval is numpy.nan:
-        cval = "(Y)CUDART_NAN"
-    elif cval == numpy.inf:
-        cval = "(Y)CUDART_INF"
-    elif cval == -numpy.inf:
-        cval = "(Y)(-CUDART_INF)"
+    if nonfinite_integer_fill is None:
+        cval = f"({internal_dtype})fill_value"
     else:
-        cval = f"({internal_dtype}){cval}"
+        # The padded grid-constant path historically casts these constants
+        # to the output integer type before evaluating the footprint.
+        cval = f"(Y){nonfinite_integer_fill}"
 
     if mode == "constant":
         # use cval if coordinate is outside the bounds of x
@@ -768,7 +873,7 @@ def _generate_interp_custom(
 
         # Compute base index from spatial coords and any non-looped batch axes.
         _base_coord_idx = _join_index_terms(
-            [f"(({int_t})in_coord[{j}]) * sx_{j}" for j in outer_batch_axes]
+            (["batch_base"] if outer_batch_axes else [])
             + [f"ic_{j}" for j in spatial_axes]
         )
 
@@ -925,7 +1030,7 @@ def _generate_interp_custom(
             # Compute spatial weight and base index
             _spatial_weight = " * ".join([f"w_{j}" for j in spatial_axes])
             _base_coord_idx = _join_index_terms(
-                [f"(({int_t})in_coord[{j}]) * sx_{j}" for j in outer_batch_axes]
+                (["batch_base"] if outer_batch_axes else [])
                 + [f"ic_{j}" for j in spatial_axes]
             )
 
@@ -1012,7 +1117,9 @@ def _generate_interp_custom(
                     }}"""
                     )
     elif order > 1:
-        if mode == "grid-constant":
+        if exact:
+            spline_mode = None
+        elif mode == "grid-constant":
             spline_mode = "constant"
         elif mode == "nearest":
             spline_mode = "nearest"
@@ -1026,7 +1133,7 @@ def _generate_interp_custom(
             ops.append(
                 f"""
             W wx, wy;
-            {int_t} start;"""
+            {footprint_t} start;"""
             )
 
         # Compute spline weights and indices for spatial axes (outside batch loop)
@@ -1054,20 +1161,27 @@ def _generate_interp_custom(
             else:
                 coord_var = f"({float_type})c_{j}"
 
-            if order & 1:
-                op_str = """
-                start = ({int_t})floor({coord_var}) - {order_2};"""
-            else:
-                op_str = """
-                start = ({int_t})floor({coord_var} + ({float_type})0.5) - {order_2};"""
-            ops.append(
-                op_str.format(
-                    int_t=int_t,
-                    coord_var=coord_var,
-                    float_type=float_type,
-                    order_2=order // 2,
-                )
+            center = (
+                f"floor({coord_var})"
+                if order & 1
+                else f"floor({coord_var} + ({float_type})0.5)"
             )
+            if exact:
+                # Beyond this distance, even the largest spline pole raised
+                # to any footprint distance rounds to zero in float64. Clamp
+                # before casting. The spline weights still use the original
+                # coordinate, preserving its fractional part.
+                center = (
+                    f"fmin(fmax({center}, ({float_type})-1024), "
+                    f"({float_type})xsize_{j} + ({float_type})1024)"
+                )
+            ops.append(f"start = ({footprint_t}){center} - {order // 2};")
+            if exact:
+                ops.append(
+                    _exact_boundary_fold_ops(
+                        j, order, mode, footprint_t, float_type
+                    )
+                )
 
             # set of coordinate values within spline footprint along axis j
             ops.append(f"""{int_t} ci_{j}[{order + 1}];""")
@@ -1077,11 +1191,12 @@ def _generate_interp_custom(
                     f"""
                 {ixvar} = start + {k};"""
                 )
-                ops.append(
-                    _util._generate_boundary_condition_ops(
-                        spline_mode, ixvar, f"xsize_{j}", int_t
+                if not exact:
+                    ops.append(
+                        _util._generate_boundary_condition_ops(
+                            spline_mode, ixvar, f"xsize_{j}", int_t
+                        )
                     )
-                )
 
         if loop_batch_axis:
             # Optimized path: spatial interpolation loops outside, batch loop innermost
@@ -1108,13 +1223,13 @@ def _generate_interp_custom(
             # Compute spatial weight and base index
             _spatial_weight = " * ".join([f"w_{j}" for j in spatial_axes])
             _base_coord_idx = _join_index_terms(
-                [f"(({int_t})in_coord[{j}]) * sx_{j}" for j in outer_batch_axes]
+                (["batch_base"] if outer_batch_axes else [])
                 + [f"ic_{j}" for j in spatial_axes]
             )
 
             # Innermost batch loop
             # For order > 1, we need bounds check for both constant and grid-constant modes
-            if mode == "grid-constant" or mode == "constant":
+            if (mode == "grid-constant" and not exact) or mode == "constant":
                 _spatial_cond = " || ".join(
                     [f"(ic_{j} < 0)" for j in spatial_axes]
                 )
@@ -1149,6 +1264,12 @@ def _generate_interp_custom(
 
             # Close spatial interpolation loops
             ops.append("}" * len(spatial_axes))
+            if exact and mode == "grid-constant":
+                _cterm = _exact_cval_term(spatial_axes, cval, internal_dtype)
+                ops.append(
+                    f"""
+            for ({uint_t} b = 0; b < batch_size; b++) {{ out_batch[b] += {_cterm}; }}"""
+                )
 
             # Write results for all batch elements
             if integer_output:
@@ -1194,7 +1315,9 @@ def _generate_interp_custom(
     if order > 0 and not (loop_batch_axis and order >= 1):
         _weight = " * ".join([f"w_{j}" for j in range(ndim)])
         _coord_idx = " + ".join([f"ic_{j}" for j in range(ndim)])
-        if mode == "grid-constant" or (order > 1 and mode == "constant"):
+        if (mode == "grid-constant" and not exact) or (
+            order > 1 and mode == "constant"
+        ):
             _cond = " || ".join([f"(ic_{j} < 0)" for j in range(ndim)])
             ops.append(
                 f"""
@@ -1213,6 +1336,9 @@ def _generate_interp_custom(
             )
 
         ops.append("}" * ndim)
+        if exact and mode == "grid-constant" and spatial_axes:
+            _cterm = _exact_cval_term(spatial_axes, cval, internal_dtype)
+            ops.append(f"out += {_cterm};")
 
     if mode == "constant":
         ops.append("}")
@@ -1226,19 +1352,17 @@ def _generate_interp_custom(
     operation = "\n".join(ops)
 
     mode_str = mode.replace("-", "_")  # avoid hyphen in kernel name
-    name = "cupyx_scipy_ndimage_interpolate_{}_order{}_{}_{}d_y{}".format(
-        name,
-        order,
-        mode_str,
-        ndim,
-        "_".join([f"{j}" for j in yshape]),
-    )
+    name = f"cupyx_scipy_ndimage_interpolate_{name}_order{order}_{mode_str}_{ndim}d"
+    if output_ndim != ndim:
+        name += f"_out{output_ndim}d"
     if uint_t == "size_t":
         name += "_i64"
     if batch_axes:
         name += "_batch_" + "_".join([str(j) for j in sorted(batch_axes)])
     if loop_batch_axis:
-        name += "_looped"
+        name += f"_looped{batch_size}"
+    if exact:
+        name += "_exact"
     return operation, name
 
 
@@ -1263,256 +1387,70 @@ def use_loop_batch(batch_axes, ndim, yshape, output_c_contiguous=True):
     )
 
 
-@cupy._util.memoize(for_each_device=True)
-def _get_map_kernel(
-    ndim,
-    large_int,
-    yshape,
-    mode,
-    cval=0.0,
-    order=1,
-    integer_output=False,
-    nprepad=0,
-    float_dtype=cupy.double,
-    batch_axes=None,
-    output_c_contiguous=True,
-):
-    in_params = "raw X x, raw W coords"
-
-    # Optimize for contiguous batch axis at the end
-    # Only enable when there's at least one spatial axis (ndim > 1)
-    loop_batch_axis = use_loop_batch(
-        batch_axes, ndim, yshape, output_c_contiguous
-    )
-    if loop_batch_axis:
-        out_params = "raw Y y"
-        size = math.prod(yshape[:-1])
-    else:
-        out_params = "Y y"
-        size = None
-
-    # if there are batch axes, we need in_coord to be computed
-    # (batch axes use in_coord[j] instead of reading from coords)
-    omit_in_coord = not batch_axes
-    operation, name = _generate_interp_custom(
-        coord_func=_get_coord_map,
-        ndim=ndim,
-        large_int=large_int,
-        yshape=yshape,
-        mode=mode,
-        cval=cval,
-        order=order,
-        name="map",
-        integer_output=integer_output,
-        nprepad=nprepad,
-        float_dtype=float_dtype,
-        omit_in_coord=omit_in_coord,
-        batch_axes=batch_axes,
-        loop_batch_axis=loop_batch_axis,
-    )
-    kernel = cupy.ElementwiseKernel(
-        in_params, out_params, operation, name, preamble=math_constants_preamble
-    )
-    return KernelInfo(kernel, size)
+_COORDINATE_TRANSFORMS = {
+    "map": (_get_coord_map, "raw W coords"),
+    "shift": (_get_coord_shift, "raw W shift"),
+    "zoom": (_get_coord_zoom, "raw W zoom"),
+    "zoom_grid": (_get_coord_zoom_grid, "raw W zoom"),
+    "zoom_shift": (_get_coord_zoom_and_shift, "raw W shift, raw W zoom"),
+    "zoom_shift_grid": (
+        _get_coord_zoom_and_shift_grid,
+        "raw W shift, raw W zoom",
+    ),
+    "affine": (_get_coord_affine, "raw W mat"),
+}
 
 
 @cupy._util.memoize(for_each_device=True)
-def _get_shift_kernel(
+def _get_interp_kernel(
+    name,
     ndim,
+    output_ndim,
     large_int,
-    yshape,
     mode,
-    cval=0.0,
-    order=1,
-    integer_output=False,
-    nprepad=0,
-    float_dtype=cupy.double,
-    batch_axes=None,
-    output_c_contiguous=True,
+    order,
+    integer_output,
+    nprepad,
+    float_dtype,
+    batch_axes,
+    loop_batch_size,
+    exact_boundary,
+    nonfinite_integer_fill,
+    fill_dtype,
 ):
-    in_params = "raw X x, raw W shift"
-
-    # Optimize for contiguous batch axis at the end
-    # Only enable when there's at least one spatial axis (ndim > 1)
-    loop_batch_axis = use_loop_batch(
-        batch_axes, ndim, yshape, output_c_contiguous
-    )
-    if loop_batch_axis:
-        out_params = "raw Y y"
-        size = math.prod(yshape[:-1])
-    else:
-        out_params = "Y y"
-        size = None
-
+    coord_func, transform_params = _COORDINATE_TRANSFORMS[name]
+    in_params = f"raw X x, {transform_params}"
+    if fill_dtype is not None:
+        in_params += f", {fill_dtype} fill_value"
+    out_params = "raw Y y" if loop_batch_size is not None else "Y y"
     operation, name = _generate_interp_custom(
-        coord_func=_get_coord_shift,
-        ndim=ndim,
-        large_int=large_int,
-        yshape=yshape,
-        mode=mode,
-        cval=cval,
+        coord_func,
+        ndim,
+        large_int,
+        output_ndim,
+        mode,
+        name=name,
         order=order,
-        name="shift",
         integer_output=integer_output,
         nprepad=nprepad,
         float_dtype=float_dtype,
+        omit_in_coord=name == "map" and not batch_axes,
         batch_axes=batch_axes,
-        loop_batch_axis=loop_batch_axis,
+        loop_batch_size=loop_batch_size,
+        exact_boundary=exact_boundary,
+        nonfinite_integer_fill=nonfinite_integer_fill,
     )
-    kernel = cupy.ElementwiseKernel(
-        in_params, out_params, operation, name, preamble=math_constants_preamble
+    # The operation uses the multidimensional output index or CArray shape.
+    preamble = (
+        "#include <cupy/math_constants.h>"
+        if nonfinite_integer_fill is not None
+        else ""
     )
-    return KernelInfo(kernel, size)
-
-
-@cupy._util.memoize(for_each_device=True)
-def _get_zoom_shift_kernel(
-    ndim,
-    large_int,
-    yshape,
-    mode,
-    cval=0.0,
-    order=1,
-    integer_output=False,
-    grid_mode=False,
-    nprepad=0,
-    float_dtype=cupy.double,
-    batch_axes=None,
-    output_c_contiguous=True,
-):
-    in_params = "raw X x, raw W shift, raw W zoom"
-
-    # Optimize for contiguous batch axis at the end
-    # Only enable when there's at least one spatial axis (ndim > 1)
-    loop_batch_axis = use_loop_batch(
-        batch_axes, ndim, yshape, output_c_contiguous
+    return cupy.ElementwiseKernel(
+        in_params,
+        out_params,
+        operation,
+        name,
+        preamble=preamble,
+        reduce_dims=False,
     )
-    if loop_batch_axis:
-        out_params = "raw Y y"
-        size = math.prod(yshape[:-1])
-    else:
-        out_params = "Y y"
-        size = None
-
-    if grid_mode:
-        zoom_shift_func = _get_coord_zoom_and_shift_grid
-    else:
-        zoom_shift_func = _get_coord_zoom_and_shift
-    operation, name = _generate_interp_custom(
-        coord_func=zoom_shift_func,
-        ndim=ndim,
-        large_int=large_int,
-        yshape=yshape,
-        mode=mode,
-        cval=cval,
-        order=order,
-        name="zoom_shift_grid" if grid_mode else "zoom_shift",
-        integer_output=integer_output,
-        nprepad=nprepad,
-        float_dtype=float_dtype,
-        batch_axes=batch_axes,
-        loop_batch_axis=loop_batch_axis,
-    )
-    kernel = cupy.ElementwiseKernel(
-        in_params, out_params, operation, name, preamble=math_constants_preamble
-    )
-    return KernelInfo(kernel, size)
-
-
-@cupy._util.memoize(for_each_device=True)
-def _get_zoom_kernel(
-    ndim,
-    large_int,
-    yshape,
-    mode,
-    cval=0.0,
-    order=1,
-    integer_output=False,
-    grid_mode=False,
-    nprepad=0,
-    float_dtype=cupy.double,
-    batch_axes=None,
-    output_c_contiguous=True,
-):
-    in_params = "raw X x, raw W zoom"
-
-    # Optimize for contiguous batch axis at the end
-    # Only enable when there's at least one spatial axis (ndim > 1)
-    loop_batch_axis = use_loop_batch(
-        batch_axes, ndim, yshape, output_c_contiguous
-    )
-    if loop_batch_axis:
-        out_params = "raw Y y"
-        size = math.prod(yshape[:-1])
-    else:
-        out_params = "Y y"
-        size = None
-
-    operation, name = _generate_interp_custom(
-        coord_func=_get_coord_zoom_grid if grid_mode else _get_coord_zoom,
-        ndim=ndim,
-        large_int=large_int,
-        yshape=yshape,
-        mode=mode,
-        cval=cval,
-        order=order,
-        name="zoom_grid" if grid_mode else "zoom",
-        integer_output=integer_output,
-        nprepad=nprepad,
-        float_dtype=float_dtype,
-        batch_axes=batch_axes,
-        loop_batch_axis=loop_batch_axis,
-    )
-    kernel = cupy.ElementwiseKernel(
-        in_params, out_params, operation, name, preamble=math_constants_preamble
-    )
-    return KernelInfo(kernel, size)
-
-
-@cupy._util.memoize(for_each_device=True)
-def _get_affine_kernel(
-    ndim,
-    large_int,
-    yshape,
-    mode,
-    cval=0.0,
-    order=1,
-    integer_output=False,
-    nprepad=0,
-    float_dtype=cupy.double,
-    batch_axes=None,
-    output_c_contiguous=True,
-):
-    in_params = "raw X x, raw W mat"
-
-    # Optimize for contiguous batch axis at the end
-    # Only enable when there's at least one spatial axis (ndim > 1)
-    loop_batch_axis = use_loop_batch(
-        batch_axes, ndim, yshape, output_c_contiguous
-    )
-    if loop_batch_axis:
-        out_params = "raw Y y"
-        size = math.prod(yshape[:-1])
-    else:
-        out_params = "Y y"
-        size = None
-
-    operation, name = _generate_interp_custom(
-        coord_func=_get_coord_affine,
-        ndim=ndim,
-        large_int=large_int,
-        yshape=yshape,
-        mode=mode,
-        cval=cval,
-        order=order,
-        name="affine",
-        integer_output=integer_output,
-        nprepad=nprepad,
-        float_dtype=float_dtype,
-        batch_axes=batch_axes,
-        loop_batch_axis=loop_batch_axis,
-    )
-    kernel = cupy.ElementwiseKernel(
-        in_params, out_params, operation, name, preamble=math_constants_preamble
-    )
-    return KernelInfo(kernel, size)

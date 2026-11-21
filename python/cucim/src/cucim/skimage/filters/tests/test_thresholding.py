@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -409,6 +409,13 @@ def test_li_inf_minus_inf():
 def test_li_constant_image_with_nan():
     image = cp.asarray([8, 8, 8, 8, cp.nan])
     assert threshold_li(image) == 8
+
+
+@pytest.mark.parametrize("guess", [-4, -3, 5, 6])
+def test_li_invalid_initial_guess_range_message(guess):
+    image = cp.asarray([-3, 0, 1, 5], dtype=cp.float32)
+    with pytest.raises(ValueError, match="image min -3.0 and max 5.0"):
+        threshold_li(image, tolerance=0.5, initial_guess=guess)
 
 
 def test_li_arbitrary_start_point():
