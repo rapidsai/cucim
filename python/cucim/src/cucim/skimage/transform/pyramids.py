@@ -8,20 +8,24 @@ from numbers import Real
 
 import cupy as cp
 
-from .._shared.utils import convert_to_float
+from .._shared.utils import _validate_interpolation_order, convert_to_float
 from .._vendored import ndimage as ndi
 from ._pyramid_kernels import _gaussian_decimate
 from ._warps import _validate_assume_finite, resize
 
 
-def _smooth(image, sigma, mode, cval, channel_axis):
-    """Return image with each channel smoothed by the Gaussian filter."""
+def _check_sigma(sigma):
     sigma_msg = "Sigma values less than zero are not valid"
     if not isinstance(sigma, Iterable):
         if sigma < 0:
             raise ValueError(sigma_msg)
     elif any(s < 0 for s in sigma):
         raise ValueError(sigma_msg)
+
+
+def _smooth(image, sigma, mode, cval, channel_axis):
+    """Return image with each channel smoothed by the Gaussian filter."""
+    _check_sigma(sigma)
 
     # apply Gaussian filter to all channels independently
     if channel_axis is not None:
@@ -355,6 +359,12 @@ def pyramid_gaussian(
             for ax, d in enumerate(current_shape)
         )
         if next_shape == current_shape:
+            if layer == 0:
+                # Validate the first requested reduction even when it would
+                # leave the shape unchanged.
+                if sigma is not None:
+                    _check_sigma(sigma)
+                _validate_interpolation_order(image.dtype, order)
             break
 
         layer += 1
