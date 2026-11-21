@@ -61,7 +61,8 @@ def marching_cubes(
         given or None, the average of the min and max of vol is used.
     spacing : length-3 tuple of floats, optional
         Voxel spacing in spatial dimensions corresponding to numpy array
-        indexing dimensions (M, N, P) as in `volume`.
+        indexing dimensions (M, N, P) as in `volume`. The spacing for the
+        sampled grid must be finite and normal in float32.
     gradient_direction : {'descent', 'ascent'}, optional
         Controls if the mesh was generated from an isosurface with gradient
         descent toward objects of interest (the default), or the opposite,

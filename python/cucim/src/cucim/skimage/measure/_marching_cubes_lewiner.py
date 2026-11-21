@@ -577,30 +577,17 @@ extern "C" __global__ void mc_lewiner_generate_center_vertices(
     double py = (w[2] + w[3] + w[6] + w[7]) / total_w;
     double pz = (w[4] + w[5] + w[6] + w[7]) / total_w;
 
-    // the central-difference gradients at the corners, interpolated
-    // trilinearly at the vertex (as the gradients at the two end samples are
-    // interpolated for the vertices on the edges)
-    const int corner_i[8] = {0, 1, 1, 0, 0, 1, 1, 0};
-    const int corner_j[8] = {0, 0, 1, 1, 0, 0, 1, 1};
-    const int corner_k[8] = {0, 0, 0, 0, 1, 1, 1, 1};
-    double nxg = 0.0, nyg = 0.0, nzg = 0.0;
-    for (int n = 0; n < 8; n++) {
-        int ci = i + corner_i[n];
-        int cj = j + corner_j[n];
-        int ck = k + corner_k[n];
-        double weight = (corner_i[n] ? px : 1.0 - px) *
-                        (corner_j[n] ? py : 1.0 - py) *
-                        (corner_k[n] ? pz : 1.0 - pz);
-        // the sign of the normals of scikit-image: towards lower values
-        nxg -= weight * grad_at(volume, ci, cj, ck, 0, nx, ny, nz);
-        nyg -= weight * grad_at(volume, ci, cj, ck, 1, nx, ny, nz);
-        nzg -= weight * grad_at(volume, ci, cj, ck, 2, nx, ny, nz);
-    }
-    // the gradient in physical units
-    nxg /= (double)sx;
-    nyg /= (double)sy;
-    nzg /= (double)sz;
+    // The center uses the same physical gradient as an edge vertex, with
+    // trilinear weights. Accumulate in double as for the position.
+    double nxg, nyg, nzg;
+    mc_center_gradient<double, float, true>(
+        volume, i, j, k, nx, ny, nz, px, py, pz, sx, sy, sz, nxg, nyg, nzg);
     double norm = sqrt(nxg * nxg + nyg * nyg + nzg * nzg);
+    if (!isfinite(norm) || norm == 0.0) {
+        mc_center_gradient_wide<true>(
+            volume, i, j, k, nx, ny, nz, px, py, pz, sx, sy, sz, nxg, nyg, nzg);
+        norm = sqrt(nxg * nxg + nyg * nyg + nzg * nzg);
+    }
     if (norm > 0.0) {
         nxg /= norm;
         nyg /= norm;

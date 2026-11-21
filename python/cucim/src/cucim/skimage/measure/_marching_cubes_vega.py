@@ -505,32 +505,31 @@ extern "C" __global__ void mc_vega_generate_center_vertices(
     int j = (int)((idx / cnz) % cny);
     int i = (int)(idx / ((mc_idx)cny * cnz));
 
-    float gx = 0.0f, gy = 0.0f, gz = 0.0f;
-    float vmax = vol_at(volume, i, j, k, ny, nz);
-    float vmin = vmax;
-    for (int n = 0; n < 8; n++) {
-        int ci = i + (n & 1);
-        int cj = j + ((n >> 1) & 1);
-        int ck = k + ((n >> 2) & 1);
-        gx += grad_at(volume, ci, cj, ck, 0, nx, ny, nz);
-        gy += grad_at(volume, ci, cj, ck, 1, nx, ny, nz);
-        gz += grad_at(volume, ci, cj, ck, 2, nx, ny, nz);
-        float s = vol_at(volume, ci, cj, ck, ny, nz);
-        vmax = fmaxf(vmax, s);
-        vmin = fminf(vmin, s);
-    }
-    // the sign of the normals of scikit-image (towards lower values)
-    gx = -gx;
-    gy = -gy;
-    gz = -gz;
-    gx /= sx;
-    gy /= sy;
-    gz /= sz;
-    float norm = sqrtf(gx * gx + gy * gy + gz * gz);
-    if (norm > 0.0f) {
+    float gx, gy, gz;
+    mc_center_gradient<float, float, false>(
+        volume, i, j, k, nx, ny, nz, 0, 0, 0, sx, sy, sz, gx, gy, gz);
+    float norm2 = gx * gx + gy * gy + gz * gz;
+    if (norm2 >= 1.1754943508222875e-38f && isfinite(norm2)) {
+        float norm = sqrtf(norm2);
         gx /= norm;
         gy /= norm;
         gz /= norm;
+    } else {
+        double dx, dy, dz;
+        mc_center_gradient_wide<false>(
+            volume, i, j, k, nx, ny, nz, 0, 0, 0, sx, sy, sz, dx, dy, dz);
+        double norm = sqrt(dx * dx + dy * dy + dz * dz);
+        gx = norm > 0.0 ? (float)(dx / norm) : (float)dx;
+        gy = norm > 0.0 ? (float)(dy / norm) : (float)dy;
+        gz = norm > 0.0 ? (float)(dz / norm) : (float)dz;
+    }
+    float vmax = vol_at(volume, i, j, k, ny, nz);
+    float vmin = vmax;
+    for (int n = 1; n < 8; n++) {
+        float value = vol_at(volume, i + (n & 1), j + ((n >> 1) & 1),
+                             k + ((n >> 2) & 1), ny, nz);
+        vmax = fmaxf(vmax, value);
+        vmin = fminf(vmin, value);
     }
     int vid = vertex_offset + center_scan[idx] - 1;
     center_vertex_ids[idx] = vid;

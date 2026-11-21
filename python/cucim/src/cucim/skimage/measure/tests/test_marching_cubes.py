@@ -886,3 +886,26 @@ def test_lewiner_resolves_a_face_before_rounding_the_level_difference(use_mask):
     )
     assert expected.shape == faces.shape == (2, 3)
     assert cp.unique(faces).size == 6
+
+
+@pytest.mark.parametrize("method", ["lewiner", "lorensen", "vega"])
+@pytest.mark.parametrize("amplitude", [1e-23, 1e20, 2e38])
+def test_marching_cubes_plane_is_invariant_to_extreme_field_scale(
+    method, amplitude
+):
+    volume = cp.full((2, 2, 2), -amplitude, dtype=cp.float32)
+    volume[1] = amplitude
+    vertices, _, normals, _ = marching_cubes(volume, 0.0, method=method)
+    cp.testing.assert_array_equal(vertices[:, 0], cp.full(4, 0.5))
+    expected = cp.broadcast_to(cp.array([-1.0, 0.0, 0.0]), (4, 3))
+    cp.testing.assert_array_equal(normals, expected)
+
+
+@pytest.mark.parametrize(
+    "bad_spacing", [0.0, 1e-60, 1e-40, 1e60, np.inf, np.nan]
+)
+def test_marching_cubes_requires_normal_float32_spacing(bad_spacing):
+    with pytest.raises(ValueError, match="finite, normal float32"):
+        marching_cubes(
+            _single_voxel_volume(), 0.5, spacing=(1.0, bad_spacing, 1.0)
+        )

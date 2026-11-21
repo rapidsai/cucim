@@ -331,3 +331,17 @@ def test_vega_scales_the_shared_face_of_two_different_cells(exponent):
     edges = edges[(vertices[edges, 0] == 1).all(axis=1)]
     _, counts = np.unique(edges, axis=0, return_counts=True)
     np.testing.assert_array_equal(counts, [2, 2])
+
+
+@pytest.mark.parametrize("method", ["lewiner", "vega"])
+def test_center_normal_is_invariant_to_field_scale(method):
+    # Start with a center-vertex cell, then perturb one sample to give its
+    # central-difference interpolation a nonzero normal.
+    volume = _cell_volume([-4, -9, 5, 8, 8, 5, -9, -3])
+    v0, _, n0, _ = marching_cubes(cp.asarray(volume), 0.0, method=method)
+    v1, _, n1, _ = marching_cubes(
+        cp.asarray(np.ldexp(volume, 70)), 0.0, method=method
+    )
+    assert v0.shape == v1.shape == (9, 3)
+    cp.testing.assert_allclose(cp.linalg.norm(n1[-1]), 1.0, atol=1e-6)
+    cp.testing.assert_allclose(n1[-1], n0[-1], atol=1e-6)

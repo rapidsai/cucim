@@ -67,6 +67,8 @@ def _validate_marching_cubes_inputs(
     if len(spacing) != 3:
         raise ValueError("`spacing` must consist of three floats.")
     spacing = tuple(float(s) for s in spacing)
+    if spacing != (1.0, 1.0, 1.0):
+        _validate_spacing(spacing)
 
     step_size = int(step_size)
     if step_size < 1:
@@ -124,6 +126,20 @@ def _idx_arg(wide, value):
     return np.int64(value) if wide else np.int32(value)
 
 
+def _validate_spacing(spacing):
+    # The kernels use float32 for the coordinate scale. Reject singular scales
+    # before the physical gradient is divided by them.
+    with np.errstate(over="ignore", under="ignore"):
+        spacing32 = np.asarray(spacing, dtype=np.float32)
+    if not np.all(
+        np.isfinite(spacing32)
+        & (np.abs(spacing32) >= np.finfo(np.float32).tiny)
+    ):
+        raise ValueError(
+            "`spacing` must contain finite, normal float32 values."
+        )
+
+
 def _apply_step_size(volume, spacing, step_size, mask):
     if step_size == 1:
         return volume, spacing, mask
@@ -134,6 +150,7 @@ def _apply_step_size(volume, spacing, step_size, mask):
     if volume.shape[0] < 2 or volume.shape[1] < 2 or volume.shape[2] < 2:
         raise RuntimeError("No surface found at the given iso value.")
     spacing = tuple(s * step_size for s in spacing)
+    _validate_spacing(spacing)
     return volume, spacing, mask
 
 
@@ -185,33 +202,66 @@ extern "C" __device__ inline bool mc_edge_has_active_masked_cell(
            mc_mask_cell_active(mask, i, j, k, nx, ny, nz);
 }
 
-extern "C" __device__ inline float grad_at(
+template <typename T>
+__device__ inline T grad_at(
     const float* volume, int i, int j, int k, int axis, int nx, int ny, int nz) {
     if (axis == 0) {
         if (i == 0) {
-            return vol_at(volume, 1, j, k, ny, nz) - vol_at(volume, 0, j, k, ny, nz);
+            return T(vol_at(volume, 1, j, k, ny, nz)) - T(vol_at(volume, 0, j, k, ny, nz));
         }
         if (i == nx - 1) {
-            return vol_at(volume, i, j, k, ny, nz) - vol_at(volume, i - 1, j, k, ny, nz);
+            return T(vol_at(volume, i, j, k, ny, nz)) - T(vol_at(volume, i - 1, j, k, ny, nz));
         }
-        return 0.5f * (vol_at(volume, i + 1, j, k, ny, nz) - vol_at(volume, i - 1, j, k, ny, nz));
+        return 0.5f * (T(vol_at(volume, i + 1, j, k, ny, nz)) - T(vol_at(volume, i - 1, j, k, ny, nz)));
     }
     if (axis == 1) {
         if (j == 0) {
-            return vol_at(volume, i, 1, k, ny, nz) - vol_at(volume, i, 0, k, ny, nz);
+            return T(vol_at(volume, i, 1, k, ny, nz)) - T(vol_at(volume, i, 0, k, ny, nz));
         }
         if (j == ny - 1) {
-            return vol_at(volume, i, j, k, ny, nz) - vol_at(volume, i, j - 1, k, ny, nz);
+            return T(vol_at(volume, i, j, k, ny, nz)) - T(vol_at(volume, i, j - 1, k, ny, nz));
         }
-        return 0.5f * (vol_at(volume, i, j + 1, k, ny, nz) - vol_at(volume, i, j - 1, k, ny, nz));
+        return 0.5f * (T(vol_at(volume, i, j + 1, k, ny, nz)) - T(vol_at(volume, i, j - 1, k, ny, nz)));
     }
     if (k == 0) {
-        return vol_at(volume, i, j, 1, ny, nz) - vol_at(volume, i, j, 0, ny, nz);
+        return T(vol_at(volume, i, j, 1, ny, nz)) - T(vol_at(volume, i, j, 0, ny, nz));
     }
     if (k == nz - 1) {
-        return vol_at(volume, i, j, k, ny, nz) - vol_at(volume, i, j, k - 1, ny, nz);
+        return T(vol_at(volume, i, j, k, ny, nz)) - T(vol_at(volume, i, j, k - 1, ny, nz));
     }
-    return 0.5f * (vol_at(volume, i, j, k + 1, ny, nz) - vol_at(volume, i, j, k - 1, ny, nz));
+    return 0.5f * (T(vol_at(volume, i, j, k + 1, ny, nz)) - T(vol_at(volume, i, j, k - 1, ny, nz)));
+}
+
+// Interpolate the corner gradients for a cell vertex. Vega uses the
+// midpoint, so the equal weights can be omitted before normalization.
+template <typename T, typename Grad, bool weighted>
+__device__ inline void mc_center_gradient(
+    const float* volume, int i, int j, int k, int nx, int ny, int nz,
+    T px, T py, T pz, float sx, float sy, float sz, T& gx, T& gy, T& gz) {
+    gx = gy = gz = T(0);
+    for (int n = 0; n < 8; n++) {
+        int di = n & 1;
+        int dj = (n >> 1) & 1;
+        int dk = (n >> 2) & 1;
+        T weight = weighted ? (di ? px : 1 - px) *
+                              (dj ? py : 1 - py) *
+                              (dk ? pz : 1 - pz) : T(1);
+        gx -= weight * grad_at<Grad>(volume, i + di, j + dj, k + dk, 0, nx, ny, nz);
+        gy -= weight * grad_at<Grad>(volume, i + di, j + dj, k + dk, 1, nx, ny, nz);
+        gz -= weight * grad_at<Grad>(volume, i + di, j + dj, k + dk, 2, nx, ny, nz);
+    }
+    gx /= sx;
+    gy /= sy;
+    gz /= sz;
+}
+
+template <bool weighted>
+__device__ __noinline__ void mc_center_gradient_wide(
+    const float* volume, int i, int j, int k, int nx, int ny, int nz,
+    double px, double py, double pz, float sx, float sy, float sz,
+    double& gx, double& gy, double& gz) {
+    mc_center_gradient<double, double, weighted>(
+        volume, i, j, k, nx, ny, nz, px, py, pz, sx, sy, sz, gx, gy, gz);
 }
 
 // Crossed edges are numbered in the order of (node, side). edge_mask holds one
@@ -320,6 +370,30 @@ extern "C" __global__ void mc_classify_edges_masked(
     edge_count[node] = __popc(bits);
 }
 
+// Recompute from the samples. Scaling the float gradient alone cannot
+// recover a difference that overflowed or underflowed before normalization.
+__device__ __noinline__ void mc_edge_normal_wide(
+    const float* volume, int i, int j, int k, int i2, int j2, int k2,
+    int nx, int ny, int nz, float t, float sx, float sy, float sz,
+    float& gx, float& gy, float& gz) {
+    double g[3];
+    const float spacing[3] = {sx, sy, sz};
+    for (int axis = 0; axis < 3; axis++) {
+        double g0 = grad_at<double>(volume, i, j, k, axis, nx, ny, nz);
+        double g1 = grad_at<double>(volume, i2, j2, k2, axis, nx, ny, nz);
+        g[axis] = -((1.0 - t) * g0 + t * g1) / spacing[axis];
+    }
+    double norm = sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]);
+    if (norm > 0.0) {
+        g[0] /= norm;
+        g[1] /= norm;
+        g[2] /= norm;
+    }
+    gx = (float)g[0];
+    gy = (float)g[1];
+    gz = (float)g[2];
+}
+
 extern "C" __global__ void mc_generate_vertices(
     const float* volume, const mc_idx* edge_idx, mc_idx n_vertices,
     const unsigned char* tri_counts,
@@ -344,7 +418,11 @@ extern "C" __global__ void mc_generate_vertices(
     float a = vol_at(volume, i, j, k, ny, nz);
     float b = vol_at(volume, i2, j2, k2, ny, nz);
 
-    float t = (level - a) / (b - a);
+    float d = b - a;
+    // A finite crossed edge can span more than FLT_MAX. The level lies
+    // between the samples, so a finite d also bounds the numerator.
+    float t = isfinite(d) ? (level - a) / d :
+        (float)(((double)level - a) / ((double)b - a));
     t = fminf(1.0f, fmaxf(0.0f, t));
     float x = (float)i;
     float y = (float)j;
@@ -391,12 +469,12 @@ extern "C" __global__ void mc_generate_vertices(
     }
     values[vid] = value;
 
-    float gx0 = grad_at(volume, i, j, k, 0, nx, ny, nz);
-    float gy0 = grad_at(volume, i, j, k, 1, nx, ny, nz);
-    float gz0 = grad_at(volume, i, j, k, 2, nx, ny, nz);
-    float gx1 = grad_at(volume, i2, j2, k2, 0, nx, ny, nz);
-    float gy1 = grad_at(volume, i2, j2, k2, 1, nx, ny, nz);
-    float gz1 = grad_at(volume, i2, j2, k2, 2, nx, ny, nz);
+    float gx0 = grad_at<float>(volume, i, j, k, 0, nx, ny, nz);
+    float gy0 = grad_at<float>(volume, i, j, k, 1, nx, ny, nz);
+    float gz0 = grad_at<float>(volume, i, j, k, 2, nx, ny, nz);
+    float gx1 = grad_at<float>(volume, i2, j2, k2, 0, nx, ny, nz);
+    float gy1 = grad_at<float>(volume, i2, j2, k2, 1, nx, ny, nz);
+    float gz1 = grad_at<float>(volume, i2, j2, k2, 2, nx, ny, nz);
     // the sign of the normals of scikit-image: they point to lower values
     // (the center vertices of the Lewiner methods use the same sign)
     float gx = -((1.0f - t) * gx0 + t * gx1);
@@ -407,11 +485,15 @@ extern "C" __global__ void mc_generate_vertices(
     gx /= sx;
     gy /= sy;
     gz /= sz;
-    float norm = sqrtf(gx * gx + gy * gy + gz * gz);
-    if (norm > 0.0f) {
+    float norm2 = gx * gx + gy * gy + gz * gz;
+    if (norm2 >= 1.1754943508222875e-38f && isfinite(norm2)) {
+        float norm = sqrtf(norm2);
         gx /= norm;
         gy /= norm;
         gz /= norm;
+    } else {
+        mc_edge_normal_wide(volume, i, j, k, i2, j2, k2, nx, ny, nz,
+                            t, sx, sy, sz, gx, gy, gz);
     }
     normals[out] = gx;
     normals[out + 1] = gy;
