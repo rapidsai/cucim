@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
 import numpy as np
 import pytest
+from scipy import ndimage as ndi
 
 from cucim.skimage.filters._gaussian import difference_of_gaussians, gaussian
 
@@ -122,6 +123,47 @@ def test_preserve_output(dtype):
     out = cp.zeros_like(image, dtype=dtype)
     gaussian_image = gaussian(image, sigma=1, out=out, preserve_range=True)
     assert gaussian_image is out
+
+
+def test_gaussian_fortran_input():
+    image = np.random.default_rng(0).random((17, 23))
+    expected = ndi.gaussian_filter(image, sigma=1, mode="nearest")
+
+    actual = gaussian(cp.asarray(image, order="F"), sigma=1)
+
+    cp.testing.assert_allclose(actual, expected, rtol=1e-14, atol=1e-14)
+
+
+@pytest.mark.parametrize("layout", ["fortran", "strided"])
+def test_gaussian_noncontiguous_output(layout):
+    image = np.random.default_rng(0).random((17, 23))
+    expected = ndi.gaussian_filter(image, sigma=1, mode="nearest")
+    if layout == "fortran":
+        out = cp.empty(image.shape, dtype=image.dtype, order="F")
+    else:
+        storage = cp.full((17, 46), -1.0, dtype=image.dtype)
+        out = storage[:, ::2]
+
+    actual = gaussian(cp.asarray(image), sigma=1, out=out)
+
+    assert actual is out
+    cp.testing.assert_allclose(actual, expected, rtol=1e-14, atol=1e-14)
+    if layout == "strided":
+        cp.testing.assert_array_equal(storage[:, 1::2], -1.0)
+
+
+@pytest.mark.parametrize("order", ["C", "F"])
+def test_gaussian_overlapping_output(order):
+    image = np.random.default_rng(0).random((17, 23))
+    sigma = (1, 0)
+    expected = ndi.gaussian_filter(image, sigma=sigma, mode="nearest")
+    gpu_image = cp.asarray(image, order=order)
+    out = gpu_image[:]
+
+    actual = gaussian(gpu_image, sigma=sigma, out=out)
+
+    assert actual is out
+    cp.testing.assert_allclose(actual, expected, rtol=1e-14, atol=1e-14)
 
 
 def test_output_error():
