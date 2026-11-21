@@ -845,3 +845,24 @@ def test_normals_account_for_spacing(method, spacing):
     inward /= np.linalg.norm(inward, axis=1, keepdims=True)
     cosine = (cp.asnumpy(normals) * inward).sum(axis=1)
     assert cosine.min() > np.cos(np.deg2rad(2.0))
+
+
+def test_mesh_surface_area_negative_indices_use_the_vertex_view():
+    # A prefix row in the allocation has a different area from the last row
+    # of this view and would be used by an unadjusted negative offset.
+    verts = cp.array(
+        [[0, 4, 0], [0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=cp.float32
+    )[1:]
+    faces = cp.array([[0, 1, -1], [-3, -2, -1]], dtype=cp.int64)
+    expected = skimage_mesh_surface_area(verts.get(), faces.get())
+    cp.testing.assert_array_equal(mesh_surface_area(verts, faces), expected)
+
+
+@pytest.mark.parametrize(
+    "index,dtype", [(-4, cp.int32), (3, cp.int64), (2**64 - 1, cp.uint64)]
+)
+def test_mesh_surface_area_rejects_out_of_bounds_indices(index, dtype):
+    verts = cp.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=cp.float64)
+    faces = cp.array([[0, 1, 2], [0, 1, index]], dtype=dtype)
+    with pytest.raises(IndexError, match="out of bounds"):
+        mesh_surface_area(verts, faces)

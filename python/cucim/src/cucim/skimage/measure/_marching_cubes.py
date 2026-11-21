@@ -261,13 +261,24 @@ def marching_cubes(
 
 
 _mesh_surface_area_kernel = cp.ReductionKernel(
-    "raw T verts, I f0, I f1, I f2",
+    "raw T verts, I f0, I f1, I f2, uint64 n_vertices",
     "T area",
     r"""[&]() {
         // 64-bit offsets: 3 * f overflows 32 bits for 715,827,883 vertices
-        long long o0 = 3LL * (long long)f0;
-        long long o1 = 3LL * (long long)f1;
-        long long o2 = 3LL * (long long)f2;
+        auto offset = [n_vertices](I index) -> long long {
+            // Unsigned addition also handles the most negative signed index.
+            unsigned long long id = (unsigned long long)index;
+            if (index < I(0)) {
+                id += n_vertices;
+            }
+            return id < n_vertices ? 3LL * (long long)id : -1LL;
+        };
+        long long o0 = offset(f0);
+        long long o1 = offset(f1);
+        long long o2 = offset(f2);
+        if (o0 < 0 || o1 < 0 || o2 < 0) {
+            return T(-1);
+        }
         T ax = verts[o0 + 0] - verts[o1 + 0];
         T ay = verts[o0 + 1] - verts[o1 + 1];
         T az = verts[o0 + 2] - verts[o1 + 2];
@@ -279,7 +290,7 @@ _mesh_surface_area_kernel = cp.ReductionKernel(
         T cz = ax * by - ay * bx;
         return sqrt(cx * cx + cy * cy + cz * cz) * T(0.5);
     }()""",
-    "a + b",
+    "a < T(0) || b < T(0) ? T(-1) : a + b",
     "area = a",
     "0",
     "cucim_skimage_measure_mesh_surface_area",
@@ -295,7 +306,8 @@ def mesh_surface_area(verts, faces):
         Array containing coordinates for V unique mesh vertices.
     faces : (F, 3) array of ints
         List of length-3 lists of integers, referencing vertex coordinates as
-        provided in ``verts``.
+        provided in ``verts``. Negative indices count from the end.
+        An index outside the vertex array raises ``IndexError``.
 
     Returns
     -------
@@ -309,7 +321,8 @@ def mesh_surface_area(verts, faces):
     correct ``spacing`` was passed to ``marching_cubes``.
 
     The result is a device scalar. The areas of the triangles are summed in
-    the floating point type of ``verts`` (at least float32).
+    the floating point type of ``verts`` (at least float32). The call waits for
+    the reduction to check for invalid indices.
 
     This algorithm works properly only if the ``faces`` provided are all
     triangles.
@@ -322,12 +335,27 @@ def mesh_surface_area(verts, faces):
     if not isinstance(verts, cp.ndarray) or not isinstance(faces, cp.ndarray):
         raise TypeError("verts and faces must have type cupy.ndarray")
 
+    if (
+        verts.ndim != 2
+        or verts.shape[1] != 3
+        or faces.ndim != 2
+        or faces.shape[1] != 3
+    ):
+        raise ValueError("verts and faces must have shape (N, 3)")
+    if faces.dtype.kind not in "iu":
+        raise IndexError("faces must contain integer indices")
+
     float_dtype = cp.promote_types(verts.dtype, cp.float32)
     if verts.dtype != float_dtype:
         verts = verts.astype(float_dtype)
     if faces.shape[0] == 0:
         return cp.zeros((), dtype=float_dtype)
 
-    return _mesh_surface_area_kernel(
-        verts.ravel(), faces[:, 0], faces[:, 1], faces[:, 2]
+    area = _mesh_surface_area_kernel(
+        verts.ravel(), faces[:, 0], faces[:, 1], faces[:, 2], verts.shape[0]
     )
+    # Triangle areas are nonnegative. The reduction propagates the sentinel
+    # even if another triangle contains nonfinite coordinates.
+    if float(area) < 0:
+        raise IndexError("face index is out of bounds for the vertex array")
+    return area
