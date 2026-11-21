@@ -626,6 +626,14 @@ def white_tophat(image, footprint=None, out=None, *, mode="reflect", cval=0.0):
            [0, 0, 0, 0, 0]], dtype=uint8)
 
     """
+    if (
+        out is not None
+        and out is not image
+        and cp.shares_memory(image, out, "MAY_SHARE_BOUNDS")
+    ):
+        # Preserve the input before opening writes into an overlapping view.
+        # A copy also makes the final subtraction safe for reversed views.
+        image = image.copy()
     if out is image:
         # We need a temporary image
         opened = opening(image, footprint, mode=mode, cval=cval)
