@@ -152,6 +152,23 @@ def test_gaussian_pyramid_skips_terminal_reduction(
     assert layers[0].shape == shape
 
 
+@pytest.mark.parametrize(
+    "kwargs, error",
+    [
+        (dict(sigma=-1), "Sigma values less than zero"),
+        (dict(order=6), "Spline interpolation order"),
+    ],
+)
+def test_gaussian_pyramid_checks_arguments_for_terminal_input(kwargs, error):
+    image = cp.ones((1, 1))
+    with pytest.raises(ValueError, match=error):
+        list(pyramids.pyramid_gaussian(image, **kwargs))
+    # Requesting just the input layer does not attempt a reduction.
+    layers = list(pyramids.pyramid_gaussian(image, max_layer=0, **kwargs))
+    assert len(layers) == 1
+    assert_array_equal(layers[0], image)
+
+
 @pytest.mark.parametrize("channel_axis", [0, 1, 2, -1, -2, -3])
 def test_build_laplacian_pyramid_rgb(channel_axis):
     image = cp.array(data.astronaut())
