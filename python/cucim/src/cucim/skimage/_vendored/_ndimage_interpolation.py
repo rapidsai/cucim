@@ -27,11 +27,14 @@ _MAX_CACHED_ZOOM_FACTORS = 128
 
 
 def _cached_zoom_factors(zoom, dtype):
+    caller = _util._coefficient_cache_stream()
+    if caller is None:
+        return cupy.asarray(zoom, dtype=dtype)
     device_id = runtime.getDevice()
     factors = _cached_zoom_factors_for_device(
         device_id, tuple(zoom), cupy.dtype(dtype).str
     )
-    return _util._record_cache_array_use(factors)
+    return _util._record_cache_array_use(factors, caller)
 
 
 @lru_cache(maxsize=_MAX_CACHED_ZOOM_FACTORS)

@@ -104,6 +104,8 @@ def pyramid_reduce(
     Eligible even-sized float inputs with ``downscale=2`` and ``order=1``
     combine smoothing and downsampling in separable strided correlations.
     Reassociated arithmetic can change the last bits of floating-point results.
+    Direct CUDA Graph capture is unsupported for pyramid reductions that
+    need Gaussian or zoom coefficients.
 
     References
     ----------

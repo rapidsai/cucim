@@ -1,14 +1,20 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+
 import cupy as cp
 import numpy as np
 import pytest
 from cupyx import allow_synchronize
 
-from cucim.skimage._vendored import _ndimage_filters as filters
-from cucim.skimage._vendored import _ndimage_interpolation as interpolation
-from cucim.skimage._vendored import _ndimage_util as util
+from cucim.skimage._vendored import (
+    _ndimage_filters as filters,
+    _ndimage_interpolation as interpolation,
+    _ndimage_util as util,
+)
+from cucim.skimage.transform import resize
 
 
 @pytest.fixture
@@ -180,3 +186,95 @@ def test_nonzero_cache_arrays():
     assert util._is_nonzero_cache_array(smooth)
     diff = util._cached_filter_weights((-1, 0, 1), cp.float32)
     assert not util._is_nonzero_cache_array(diff)
+
+
+_COEFFICIENT_CASES = [
+    (
+        filters._cached_gaussian_kernel1d,
+        filters._cached_gaussian_kernel1d_for_device,
+        (1.25, 0, 5, "<f4"),
+    ),
+    (
+        interpolation._cached_zoom_factors,
+        interpolation._cached_zoom_factors_for_device,
+        ((0.5, 0.25), "float32"),
+    ),
+    (
+        util._cached_filter_weights,
+        util._cached_filter_weights_for_device,
+        ((1, 2, 1), "float32", 2),
+    ),
+]
+
+
+@pytest.mark.skipif(cp.cuda.runtime.is_hip, reason="CUDA per-thread stream")
+@pytest.mark.parametrize("get,cache,args", _COEFFICIENT_CASES)
+def test_per_thread_stream_uses_local_coefficients(get, cache, args):
+    expected = get(*args)
+    cp.cuda.get_current_stream().synchronize()
+    before = cache.cache_info()
+    with cp.cuda.Stream.ptds:
+        first = get(*args)
+        second = get(*args)
+        assert first is not second
+        cp.testing.assert_array_equal(first, expected)
+        cp.testing.assert_array_equal(second, expected)
+    assert cache.cache_info() == before
+
+
+@pytest.mark.skipif(cp.cuda.runtime.is_hip, reason="CUDA per-thread stream")
+def test_resize_per_thread_stream_survives_cache_clear(delay_kernel):
+    caller = cp.cuda.Stream(non_blocking=True)
+    cache = interpolation._cached_zoom_factors_for_device
+    cache.cache_clear()
+    with caller:
+        image = cp.arange(64, dtype=cp.float32).reshape(8, 8)
+        expected = resize(image, (4, 4), anti_aliasing=False)
+    caller.synchronize()
+
+    submitted = Event()
+    resume = Event()
+
+    device_id = cp.cuda.runtime.getDevice()
+
+    def consume():
+        with cp.cuda.Device(device_id):
+            stream = cp.cuda.Stream.ptds
+            with stream:
+                delay_kernel((1,), (1,), (np.uint64(500_000_000),))
+                result = resize(image, (4, 4), anti_aliasing=False)
+                submitted.set()
+                resume.wait(timeout=5)
+            stream.synchronize()
+            return result
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        output = executor.submit(consume)
+        try:
+            assert submitted.wait(timeout=5)
+            with caller:
+                cache.cache_clear()
+                cp.cuda.Stream.ptds.synchronize()
+                util._release_completed_cache_allocations(device_id)
+                # The new cache entry may reuse the evicted allocation.
+                interpolation._cached_zoom_factors((3.0, 3.0), "float32")
+        finally:
+            resume.set()
+        cp.testing.assert_array_equal(output.result(), expected)
+
+
+@pytest.mark.skipif(cp.cuda.runtime.is_hip, reason="CUDA Graph capture")
+@pytest.mark.parametrize("get,cache,args", _COEFFICIENT_CASES)
+@pytest.mark.parametrize("warm", [False, True])
+def test_coefficient_cache_rejects_direct_graph_capture(get, cache, args, warm):
+    cache.cache_clear()
+    stream = cp.cuda.Stream(non_blocking=True)
+    with stream:
+        if warm:
+            get(*args)
+        stream.begin_capture()
+        try:
+            with pytest.raises(RuntimeError, match="Direct CUDA Graph capture"):
+                get(*args)
+        finally:
+            stream.end_capture()
