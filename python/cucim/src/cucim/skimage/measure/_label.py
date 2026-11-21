@@ -16,13 +16,17 @@ def _label_dtype_for_size(size):
     return cp.int64 if size >= _INT32_LABEL_SIZE_LIMIT else cp.int32
 
 
-@functools.cache
+_cached_binary_structure = functools.cache(cpu_ndi.generate_binary_structure)
+
+
 def _get_structure(ndim, connectivity):
     if connectivity is None:
         # use the full connectivity by default
         connectivity = ndim
     if not 1 <= connectivity <= ndim:
         raise ValueError(f"Connectivity below 1 or above {ndim} is illegal.")
+    if type(connectivity) is int:
+        return _cached_binary_structure(ndim, connectivity)
     return cpu_ndi.generate_binary_structure(ndim, connectivity)
 
 
@@ -120,19 +124,18 @@ def label(label_image, background=None, return_num=False, connectivity=None):
     For the best performance, pass a boolean image and use full connectivity
     (the default, ``connectivity=None``, or ``connectivity=label_image.ndim``)
     in 2D or 3D. In that case each 2 x 2 (or 2 x 2 x 2) block of pixels is
-    handled as a single node, which is typically 2 to 6 times faster than the
-    general implementation (the gain is largest for dense images and in 3D).
+    handled as a single node to reduce the number of unions and label lookups.
     The general implementation is used for integer images (also if they only
     contain 0 and 1, so convert those with ``label_image.astype(bool)``), for a
     ``connectivity`` below ``label_image.ndim``, for 1D and for 4D or higher
     dimensional images, and when ``background`` is neither 0 nor, for a boolean
-    image, 1 (``True``). The labels are the
-    same for both implementations.
+    image, 1 (``True``). The general implementation is also used if the
+    block implementation runs out of device memory.
 
     Known differences from scikit-image:
 
-    - The label array is ``int32`` (``int64`` for very large images), not
-      ``intp``.
+    - The label array is ``int32`` (``int64`` for very large images).
+      scikit-image uses ``intp`` for non-boolean input.
     - For ``background`` other than 0, the background value is subtracted from
       the image before a floating point image is converted to integers, while
       scikit-image converts first. For example, ``background=1`` on
@@ -141,8 +144,8 @@ def label(label_image, background=None, return_num=False, connectivity=None):
     - For a boolean image and a ``background`` that is neither 0 nor 1, the
       background value is subtracted, which labels both ``False`` and
       ``True`` pixels, while scikit-image labels only the ``True`` pixels.
-    - Images with 4 or more dimensions are supported (scikit-image raises
-      ``NotImplementedError`` for them).
+    - Integer images with 4 or more dimensions are supported here.
+      scikit-image supports those dimensions for boolean images.
 
     Examples
     --------

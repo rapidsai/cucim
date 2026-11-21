@@ -52,13 +52,13 @@ def _connect(x, structure, y, greyscale_mode=False):
     background pixels); the trees are not flattened yet.
     """
     dirs = _half_structure_dirs(structure)
-    y_shape = cupy.array(y.shape, dtype=numpy.int32)
+    y_shape = cupy.array(y.shape, dtype=y.dtype)
     dirs_key = tuple(map(tuple, dirs.tolist()))
     _kernel_init_link(greyscale_mode, x.ndim, dirs_key)(
         x, y_shape, y, size=y.size
     )
     _kernel_connect(greyscale_mode, x.ndim, dirs_key)(
-        *((x,) if greyscale_mode else ()), y_shape, y, size=y.size
+        x, y_shape, y, size=y.size
     )
 
 
@@ -112,7 +112,12 @@ def _label_blocks(x, y):
 
 def _label(x, structure, y, greyscale_mode=False):
     if _use_blocks(x, structure, greyscale_mode):
-        return _label_blocks(x, y)
+        try:
+            return _label_blocks(x, y)
+        except cupy.cuda.memory.OutOfMemoryError:
+            # The pixel path reinitializes y on the same stream. Leaving the
+            # exception handler releases the block path's temporary arrays.
+            pass
     count = cupy.zeros(2, dtype=y.dtype)
     _connect(x, structure, y, greyscale_mode)
     _kernel_count()(y, count, size=y.size)
@@ -137,46 +142,53 @@ def _kernel_init():
     )
 
 
-# The union of the trees of the nodes j and k of the forest y, which is shared
-# by the connect kernels. The roots are found with path halving; only roots are
-# relinked (with a compare-and-swap) and always to a smaller index. On exit j
-# and k are scratch values.
-_ATOMIC_T_CODE = """
-using atomic_t = typename cupy::type_traits::conditional<
-    cupy::type_traits::is_same<Y, long long>::value,
-    unsigned long long,
-    Y
->::type;
+# Parent slots shared within a launch need device-scope atomics. Relaxed
+# ordering suffices because each update publishes just one parent index.
+_PARENT_ATOMICS = """
+template <typename T>
+__device__ T load_parent(T* address) {
+    return __nv_atomic_load_n(address, __NV_ATOMIC_RELAXED, __NV_THREAD_SCOPE_DEVICE);
+}
+
+template <typename T>
+__device__ void store_parent(T* address, T parent) {
+    __nv_atomic_store_n(address, parent, __NV_ATOMIC_RELAXED, __NV_THREAD_SCOPE_DEVICE);
+}
+
+template <typename T>
+__device__ T link_root(T* address, T root, T target) {
+    __nv_atomic_compare_exchange_n(address, &root, target, false, __NV_ATOMIC_RELAXED,
+                                  __NV_ATOMIC_RELAXED, __NV_THREAD_SCOPE_DEVICE);
+    return root;
+}
 """
 
+# Advance the larger index until the paths meet or it is still a root.
+# A successful CAS links that root to the smaller node, which cannot be
+# in its tree. Path halving only redirects non-roots to smaller indices
+# in the same tree. On exit j belongs to both endpoints' component and
+# can be reused for the next neighbor.
 _UNION_CODE = """
-while (1) {
-    // find the roots, halving the paths on the way
-    while (1) {
-        Y p = y[j];
-        if (p == j) break;
-        Y gp = y[p];
-        if (gp != p) y[j] = gp;
-        j = gp;
-    }
-    while (1) {
-        Y p = y[k];
-        if (p == k) break;
-        Y gp = y[p];
-        if (gp != p) y[k] = gp;
-        k = gp;
-    }
-    if (j == k) break;
+while (j != k) {
     if (j < k) {
-        Y old = atomicCAS((atomic_t*)&y[k], k, j);
-        if (old == k) break;
-        k = old;
+        Y smaller = j;
+        j = k;
+        k = smaller;
     }
-    else {
-        Y old = atomicCAS((atomic_t*)&y[j], j, k);
-        if (old == j) break;
-        j = old;
+    Y parent = load_parent(&y[j]);
+    if (parent == j) {
+        parent = link_root(&y[j], j, k);
+        if (parent == j) {
+            j = k;
+            break;
+        }
     }
+    if (parent > k) {
+        Y grandparent = load_parent(&y[parent]);
+        if (grandparent != parent) store_parent(&y[j], grandparent);
+        parent = grandparent;
+    }
+    j = parent;
 }
 """
 
@@ -238,7 +250,7 @@ def _kernel_init_link(greyscale_mode, ndim, dirs):
         y[i] = link;
         """
     return cupy.ElementwiseKernel(
-        "raw X x, raw int32 shape",
+        "raw X x, raw Y shape",
         "raw Y y",
         code,
         "cucim_skimage_measure_label_init_link",
@@ -257,41 +269,34 @@ def _kernel_connect(greyscale_mode, ndim, dirs):
     (Implementation assumes a centro-symmetric structure). The offsets are
     compiled into the kernel as constants.
 
-    The coordinates of the pixel are computed once. In the dirs loop, j is the
-    current pixel and k the current neighbor.
+    The original pixel's coordinates and value are loaded once. After each
+    union, j remains in that pixel's component for the next neighbor.
     """
     ndirs = len(dirs)
-    in_params = "raw int32 shape"
-    if greyscale_mode:
-        # greyscale mode -> different values receive different labels
-        x_condition = "if (x[k] != x[j]) continue;"
-        in_params = "raw X x, " + in_params
-    else:
-        # binary mode -> all non-background voxels treated the same
-        x_condition = ""
+    condition = "x[k] != value" if greyscale_mode else "x[k] == 0"
 
     declaration, coords, outside, offset = _neighbor_code(ndim, dirs)
 
     code = f"""
-        {_ATOMIC_T_CODE}
         {declaration}
-        if (y[i] < 0) continue;
+        X value = x[i];
+        if (value == 0) continue;
         {coords}
+        Y j = i;
         for (int dr = 0; dr < {ndirs}; dr++) {{
             if ({outside}) continue;
-            Y j = i;
             Y k = i + {offset};
-            if (y[k] < 0) continue;
-            {x_condition}
+            if ({condition}) continue;
             {_UNION_CODE}
         }}
         """
 
     return cupy.ElementwiseKernel(
-        in_params,
+        "raw X x, raw Y shape",
         "raw Y y",
         code,
         "cucim_skimage_measure_label_connect",
+        preamble=_PARENT_ATOMICS,
     )
 
 
@@ -321,6 +326,19 @@ def _local_offset(ndim, bit):
     )
 
 
+def _block_pixel_indices(ndim):
+    """Bounds and index expressions for the local coordinates of a block."""
+    for bit in range(2**ndim):
+        local = [(bit >> (ndim - 1 - d)) & 1 for d in range(ndim)]
+        inside = " && ".join(
+            f"2 * b{d} + {lc} < shape{d}" for d, lc in enumerate(local)
+        )
+        index = " + ".join(
+            [f"{lc} * s{d}" for d, lc in enumerate(local) if lc] + ["origin"]
+        )
+        yield bit, inside, index
+
+
 @functools.cache
 def _kernel_block_init(ndim):
     """Make each block a tree and store which of its pixels are foreground.
@@ -330,18 +348,9 @@ def _kernel_block_init(ndim):
     of the block, one bit per pixel, is written to ``occupancy``.
     """
     coords, origin = _block_code(ndim)
-    pixels = []
-    for c in range(2**ndim):
-        local = [(c >> (ndim - 1 - d)) & 1 for d in range(ndim)]
-        inside = " && ".join(
-            f"2 * b{d} + {lc} < shape{d}" for d, lc in enumerate(local)
-        )
-        index = " + ".join(
-            [f"{lc} * s{d}" for d, lc in enumerate(local)] + ["origin"]
-        )
-        pixels.append((c, inside, index))
+    pixels = list(_block_pixel_indices(ndim))
     load = "\n        ".join(
-        f"Y i{c} = {index}; bool in{c} = {inside}; "
+        f"bool in{c} = {inside}; Y i{c} = in{c} ? {index} : 0; "
         f"bool f{c} = in{c} && x[i{c}] != 0;"
         for c, inside, index in pixels
     )
@@ -361,10 +370,7 @@ def _kernel_block_init(ndim):
         occupancy[i] = {occ};
         """
     return cupy.ElementwiseKernel(
-        "raw X x, "
-        + ", ".join(f"int32 shape{d}" for d in range(ndim))
-        + ", "
-        + ", ".join(f"int32 bshape{d}" for d in range(ndim)),
+        "raw X x, " + _block_shape_params(ndim),
         "raw Y y, raw uint8 occupancy",
         code,
         "cucim_skimage_measure_label_block_init",
@@ -379,7 +385,9 @@ def _kernel_block_connect(ndim):
     block in raster order, the blocks are joined if both have a foreground
     pixel on the sides that face each other: the pixels with local coordinate
     1 along the axes where the neighbor is at +1, 0 where it is at -1, and
-    any along the axes where it is at 0. (Any two such pixels are neighbors.)
+    any along the axes where it is at 0. The facing pixels establish the edge.
+    The union can start from each block's first foreground pixel because all
+    foreground pixels within a block are already connected.
     """
     coords, origin = _block_code(ndim)
     deltas = _half_structure_dirs(numpy.ones((3,) * ndim, dtype=bool))
@@ -416,7 +424,6 @@ def _kernel_block_connect(ndim):
         f"2 * deltas[dr * {ndim} + {d}] * s{d}" for d in range(ndim)
     )
     code = f"""
-        {_ATOMIC_T_CODE}
         static const int deltas[{ndeltas * ndim}] = {{{delta_table}}};
         static const unsigned char own_faces[{ndeltas}] = {{{own_table}}};
         static const unsigned char other_faces[{ndeltas}] = {{{other_table}}};
@@ -424,15 +431,14 @@ def _kernel_block_connect(ndim):
         if (mine == 0) continue;
         {coords}
         Y origin = {origin};
+        int bit = __ffs(mine) - 1;
+        Y j = origin + {_local_offset(ndim, "bit")};
         for (int dr = 0; dr < {ndeltas}; dr++) {{
-            unsigned int a = mine & own_faces[dr];
-            if (a == 0) continue;
+            if ((mine & own_faces[dr]) == 0) continue;
             if ({outside}) continue;
-            unsigned int c = occupancy[i + {neighbor_block}] & other_faces[dr];
-            if (c == 0) continue;
-            int abit = __ffs(a) - 1;
-            int cbit = __ffs(c) - 1;
-            Y j = origin + {_local_offset(ndim, "abit")};
+            unsigned int other = occupancy[i + {neighbor_block}];
+            if ((other & other_faces[dr]) == 0) continue;
+            int cbit = __ffs(other) - 1;
             Y k = origin + {neighbor_origin} + {_local_offset(ndim, "cbit")};
             {_UNION_CODE}
         }}
@@ -442,57 +448,40 @@ def _kernel_block_connect(ndim):
         "raw Y y",
         code,
         "cucim_skimage_measure_label_block_connect",
+        preamble=_PARENT_ATOMICS,
     )
 
 
-def _block_pixels(ndim):
-    """Statements that give, for each pixel c of a block, its index i<c>, whether
-    it is inside the image (in<c>) and whether it is foreground (f<c>, from the
-    occupancy byte ``occ``)."""
-    out = []
-    for c in range(2**ndim):
-        local = [(c >> (ndim - 1 - d)) & 1 for d in range(ndim)]
-        inside = " && ".join(
-            f"2 * b{d} + {lc} < shape{d}" for d, lc in enumerate(local)
-        )
-        index = " + ".join(
-            [f"{lc} * s{d}" for d, lc in enumerate(local)] + ["origin"]
-        )
-        out.append(
-            f"Y i{c} = {index}; bool in{c} = {inside}; "
-            f"bool f{c} = (occ >> {c}) & 1;"
-        )
-    return "\n        ".join(out)
+def _block_shape_params(ndim):
+    return ", ".join(
+        f"Y {prefix}{d}" for prefix in ("shape", "bshape") for d in range(ndim)
+    )
 
 
 def _block_params(ndim):
     """Parameters of the block kernels: the shapes as scalars (no copy to the
     device) and the occupancy bytes."""
-    return (
-        ", ".join(f"int32 shape{d}" for d in range(ndim))
-        + ", "
-        + ", ".join(f"int32 bshape{d}" for d in range(ndim))
-        + ", raw uint8 occupancy"
-    )
+    return _block_shape_params(ndim) + ", raw uint8 occupancy"
 
 
 @functools.cache
 def _kernel_block_flatten(ndim):
     """Find the root of each block and count the roots (one thread per block).
 
-    ``block_root[i]`` is the root of the tree of the block (-1 for an empty
-    block). A block is a root if its first foreground pixel is one.
+    Store roots in a separate array so traversal can read a stable forest.
+    The collect and finalize kernels read entries for occupied blocks only.
     """
     coords, origin = _block_code(ndim)
     rep = f"origin + {_local_offset(ndim, '(__ffs(occ) - 1)')}"
     code = f"""
         unsigned int occ = occupancy[i];
-        if (occ == 0) {{ block_root[i] = -1; continue; }}
+        if (occ == 0) continue;
         {coords}
         Y origin = {origin};
         Y rep = {rep};
         Y root = rep;
-        while (root != y[root]) {{ root = y[root]; }}
+        Y parent;
+        while ((parent = y[root]) != root) {{ root = parent; }}
         block_root[i] = root;
         if (root == rep) atomicAdd(&count[0], 1);
         """
@@ -531,26 +520,25 @@ def _kernel_block_collect(ndim):
 def _kernel_block_finalize(ndim):
     """Write the labels (the rank of the root + 1, 0 for the background)."""
     coords, origin = _block_code(ndim)
-    pixels = _block_pixels(ndim)
     store = "\n        ".join(
-        f"if (in{c}) y[i{c}] = f{c} ? label : 0;" for c in range(2**ndim)
+        f"if ({inside}) y[{index}] = ((occ >> {bit}) & 1) ? label : 0;"
+        for bit, inside, index in _block_pixel_indices(ndim)
     )
     code = f"""
         unsigned int occ = occupancy[i];
         {coords}
         Y origin = {origin};
-        {pixels}
         Y label = 0;
         if (occ != 0) {{
             Y yi = block_root[i];
             Y j_min = 0;
             Y j_max = maxlabel - 1;
-            Y j = (j_min + j_max) / 2;
+            Y j = j_min + (j_max - j_min) / 2;
             while (j_min < j_max) {{
                 if (yi == labels[j]) break;
                 if (yi < labels[j]) j_max = j - 1;
                 else j_min = j + 1;
-                j = (j_min + j_max) / 2;
+                j = j_min + (j_max - j_min) / 2;
             }}
             label = j + 1;
         }}
@@ -569,13 +557,18 @@ def _kernel_count():
         "",
         "raw Y y, raw Y count",
         """
-        if (y[i] < 0) continue;
         Y j = i;
-        while (j != y[j]) { j = y[j]; }
-        if (j != i) y[i] = j;
+        Y parent = load_parent(&y[j]);
+        if (parent < 0) continue;
+        while (parent != j) {
+            j = parent;
+            parent = load_parent(&y[j]);
+        }
+        if (j != i) store_parent(&y[i], j);
         else atomicAdd(&count[0], 1);
         """,
         "cucim_skimage_measure_label_count",
+        preamble=_PARENT_ATOMICS,
     )
 
 
@@ -604,12 +597,12 @@ def _kernel_finalize():
         Y yi = y[i];
         Y j_min = 0;
         Y j_max = maxlabel - 1;
-        Y j = (j_min + j_max) / 2;
+        Y j = j_min + (j_max - j_min) / 2;
         while (j_min < j_max) {
             if (yi == labels[j]) break;
             if (yi < labels[j]) j_max = j - 1;
             else j_min = j + 1;
-            j = (j_min + j_max) / 2;
+            j = j_min + (j_max - j_min) / 2;
         }
         y[i] = j + 1;
         """,
