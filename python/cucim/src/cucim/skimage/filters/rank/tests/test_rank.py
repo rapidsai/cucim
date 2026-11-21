@@ -4,6 +4,7 @@
 
 import functools
 import warnings
+from types import SimpleNamespace
 
 import cupy as cp
 import numpy as np
@@ -18,6 +19,7 @@ from cucim.skimage.filters.rank import (
     subtract_mean,
 )
 from cucim.skimage.filters.rank._histogram import (
+    _can_use_rank_histogram,
     _get_histogram_counter_dtype,
     _get_histogram_weighted_sum_dtype,
     _get_rank_histogram_partitions,
@@ -1466,6 +1468,30 @@ def test_rank_histogram_auto_cutoffs():
     assert _should_use_rank_histogram("modal", (15, 15))
     assert not _should_use_rank_histogram("equalize", (71, 71))
     assert _should_use_rank_histogram("equalize", (91, 91))
+
+
+@pytest.mark.parametrize("extra_rows, expected", [(0, True), (1, False)])
+def test_rank_histogram_padded_image_index_limit(extra_rows, expected):
+    # With a 15x15 footprint, the base padded shape has exactly 2**31
+    # elements. Its last offset fits in signed int, unlike the next row.
+    image = SimpleNamespace(
+        ndim=2, dtype=cp.dtype(cp.uint8), shape=(32754 + extra_rows, 65522)
+    )
+    assert (
+        _can_use_rank_histogram(
+            image,
+            (15, 15),
+            None,
+            None,
+            ("reflect", "reflect"),
+            (0, 0),
+            has_weights=False,
+            operation="otsu",
+            p0=0,
+            p1=100,
+        )
+        is expected
+    )
 
 
 # Reference data are loaded once per module, and only by the tests that use

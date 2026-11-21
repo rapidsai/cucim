@@ -137,6 +137,7 @@ The compatibility conditions are:
   from scikit-image rank filters, which do not extend the image and therefore
   use smaller cropped neighborhoods near edges and corners.
 * footprint half-width does not exceed the corresponding image extent
+* the padded image fits within the histogram kernel's signed 32-bit indexing
 
 With ``backend='auto'``, any unsupported case falls back to the generic
 elementwise GPU implementation. For compatible calls, automatic dispatch also

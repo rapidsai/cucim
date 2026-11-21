@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import math
 import os
 
 import cupy as cp
@@ -140,7 +141,11 @@ def _can_use_rank_histogram(
     radii = tuple(size // 2 for size in footprint_shape)
     if any(radius > size for radius, size in zip(radii, image.shape)):
         return False
-    return True
+    # The last padded pixel must be addressable with signed int offsets.
+    padded_size = math.prod(
+        size + 2 * radius for size, radius in zip(image.shape, radii)
+    )
+    return padded_size - 1 <= _INT32_MAX
 
 
 def _should_use_rank_histogram(operation, footprint_shape):
