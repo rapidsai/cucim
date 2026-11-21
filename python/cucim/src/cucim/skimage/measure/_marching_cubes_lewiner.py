@@ -402,13 +402,8 @@ extern "C" __device__ inline int lewiner_resolve(
     return table < 0 ? 0 : lewiner_row(table, config, sub);
 }
 
-extern "C" __device__ inline void load_lewiner_values(
-    const float* volume, int i, int j, int k, int ny, int nz, float level,
-    double* v);
-
-extern "C" __device__ inline void load_lewiner_values_float(
-    const float* volume, int i, int j, int k, int ny, int nz, float level,
-    float* v);
+extern "C" __device__ inline void load_lewiner_samples(
+    const float* volume, int i, int j, int k, int ny, int nz, float* samples);
 
 extern "C" __device__ inline bool lewiner_count_case_needs_values(
     int case_id) {
@@ -434,17 +429,17 @@ extern "C" __global__ void mc_lewiner_count_cells(
     int j = (int)((idx / cnz) % cny);
     int i = (int)(idx / ((mc_idx)cny * cnz));
     float vf[8];
-    load_lewiner_values_float(volume, i, j, k, ny, nz, level, vf);
+    load_lewiner_samples(volume, i, j, k, ny, nz, vf);
 
     int code = 0;
-    if (vf[0] > 0.0f) code |= 1;
-    if (vf[1] > 0.0f) code |= 2;
-    if (vf[2] > 0.0f) code |= 4;
-    if (vf[3] > 0.0f) code |= 8;
-    if (vf[4] > 0.0f) code |= 16;
-    if (vf[5] > 0.0f) code |= 32;
-    if (vf[6] > 0.0f) code |= 64;
-    if (vf[7] > 0.0f) code |= 128;
+    if (vf[0] > level) code |= 1;
+    if (vf[1] > level) code |= 2;
+    if (vf[2] > level) code |= 4;
+    if (vf[3] > level) code |= 8;
+    if (vf[4] > level) code |= 16;
+    if (vf[5] > level) code |= 32;
+    if (vf[6] > level) code |= 64;
+    if (vf[7] > level) code |= 128;
 
     int case_id = (int)lut_cases[code * 2];
     int config = (int)lut_cases[code * 2 + 1];
@@ -457,7 +452,7 @@ extern "C" __global__ void mc_lewiner_count_cells(
         double v[8];
         if (lewiner_count_case_needs_values(case_id)) {
             for (int n = 0; n < 8; n++) {
-                v[n] = (double)vf[n];
+                v[n] = (double)vf[n] - (double)level;
             }
         }
         int table;
@@ -498,17 +493,17 @@ extern "C" __global__ void mc_lewiner_count_cells_masked(
     }
 
     float vf[8];
-    load_lewiner_values_float(volume, i, j, k, ny, nz, level, vf);
+    load_lewiner_samples(volume, i, j, k, ny, nz, vf);
 
     int code = 0;
-    if (vf[0] > 0.0f) code |= 1;
-    if (vf[1] > 0.0f) code |= 2;
-    if (vf[2] > 0.0f) code |= 4;
-    if (vf[3] > 0.0f) code |= 8;
-    if (vf[4] > 0.0f) code |= 16;
-    if (vf[5] > 0.0f) code |= 32;
-    if (vf[6] > 0.0f) code |= 64;
-    if (vf[7] > 0.0f) code |= 128;
+    if (vf[0] > level) code |= 1;
+    if (vf[1] > level) code |= 2;
+    if (vf[2] > level) code |= 4;
+    if (vf[3] > level) code |= 8;
+    if (vf[4] > level) code |= 16;
+    if (vf[5] > level) code |= 32;
+    if (vf[6] > level) code |= 64;
+    if (vf[7] > level) code |= 128;
 
     int case_id = (int)lut_cases[code * 2];
     int config = (int)lut_cases[code * 2 + 1];
@@ -521,7 +516,7 @@ extern "C" __global__ void mc_lewiner_count_cells_masked(
         double v[8];
         if (lewiner_count_case_needs_values(case_id)) {
             for (int n = 0; n < 8; n++) {
-                v[n] = (double)vf[n];
+                v[n] = (double)vf[n] - (double)level;
             }
         }
         int table;
@@ -631,37 +626,18 @@ extern "C" __global__ void mc_lewiner_generate_center_vertices(
     values_out[vid] = (float)(vmax - vmin);
 }
 
-extern "C" __device__ inline void load_lewiner_values_float(
-    const float* volume, int i, int j, int k, int ny, int nz, float level,
-    float* v) {
-    float local[8];
-    local[0] = vol_at(volume, i, j, k, ny, nz) - level;
-    local[1] = vol_at(volume, i + 1, j, k, ny, nz) - level;
-    local[2] = vol_at(volume, i + 1, j + 1, k, ny, nz) - level;
-    local[3] = vol_at(volume, i, j + 1, k, ny, nz) - level;
-    local[4] = vol_at(volume, i, j, k + 1, ny, nz) - level;
-    local[5] = vol_at(volume, i + 1, j, k + 1, ny, nz) - level;
-    local[6] = vol_at(volume, i + 1, j + 1, k + 1, ny, nz) - level;
-    local[7] = vol_at(volume, i, j + 1, k + 1, ny, nz) - level;
-
-    v[0] = local[0];
-    v[1] = local[4];
-    v[2] = local[7];
-    v[3] = local[3];
-    v[4] = local[1];
-    v[5] = local[5];
-    v[6] = local[6];
-    v[7] = local[2];
-}
-
-extern "C" __device__ inline void load_lewiner_values(
-    const float* volume, int i, int j, int k, int ny, int nz, float level,
-    double* v) {
-    float vf[8];
-    load_lewiner_values_float(volume, i, j, k, ny, nz, level, vf);
-    for (int n = 0; n < 8; n++) {
-        v[n] = (double)vf[n];
-    }
+// Read samples in scikit-image's corner order. Only ambiguous cases
+// subtract the level, with both operands promoted before subtraction.
+extern "C" __device__ inline void load_lewiner_samples(
+    const float* volume, int i, int j, int k, int ny, int nz, float* samples) {
+    samples[0] = vol_at(volume, i, j, k, ny, nz);
+    samples[1] = vol_at(volume, i, j, k + 1, ny, nz);
+    samples[2] = vol_at(volume, i, j + 1, k + 1, ny, nz);
+    samples[3] = vol_at(volume, i, j + 1, k, ny, nz);
+    samples[4] = vol_at(volume, i + 1, j, k, ny, nz);
+    samples[5] = vol_at(volume, i + 1, j, k + 1, ny, nz);
+    samples[6] = vol_at(volume, i + 1, j + 1, k + 1, ny, nz);
+    samples[7] = vol_at(volume, i + 1, j + 1, k, ny, nz);
 }
 
 extern "C" __global__ void mc_lewiner_generate_faces_direct(

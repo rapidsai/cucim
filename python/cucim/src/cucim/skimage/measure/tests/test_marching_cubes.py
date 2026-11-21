@@ -870,3 +870,19 @@ def test_mesh_surface_area_rejects_out_of_bounds_indices(index, dtype):
     faces = cp.array([[0, 1, 2], [0, 1, index]], dtype=dtype)
     with pytest.raises(IndexError, match="out of bounds"):
         mesh_surface_area(verts, faces)
+
+
+@pytest.mark.parametrize("use_mask", [False, True])
+def test_lewiner_resolves_a_face_before_rounding_the_level_difference(use_mask):
+    # The two positive corners have product 1 and the two negative corners
+    # have product 1 + 2**-25 at level 1. They form two separate patches.
+    volume = np.array(
+        [[[2, -(2**-25)], [0, 2]], [[0, 0], [0, 0]]], dtype=np.float32
+    )
+    mask = np.ones_like(volume, dtype=bool) if use_mask else None
+    _, expected, _, _ = skimage_marching_cubes(volume, 1.0, mask=mask)
+    _, faces, _, _ = marching_cubes(
+        cp.asarray(volume), 1.0, mask=cp.asarray(mask) if use_mask else None
+    )
+    assert expected.shape == faces.shape == (2, 3)
+    assert cp.unique(faces).size == 6
