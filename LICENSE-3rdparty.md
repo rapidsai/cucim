@@ -157,6 +157,52 @@ CuPy
   - Preferred Infrastructure, Inc.
   - Preferred Networks, Inc.
 
+CuMCubes
+- License: BSD-3-Clause License
+  - https://github.com/lzhnb/CuMCubes/blob/main/LICENSE
+- Copyright:
+  - P. M. Neila
+- Files:
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_common.py : Design reference only (a per-node, three-axis vertex-id grid with count, vertex and face passes); no CuMCubes code was copied. The kernels were written independently.
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_lewiner.py : Derived from the scikit-image implementation and its tables; CuMCubes has no Lewiner implementation.
+
+NVIDIA Warp
+- License: Apache-2.0 License
+  - https://github.com/NVIDIA/warp/blob/main/LICENSE.md
+- Copyright:
+  - NVIDIA Corporation & Affiliates
+- Files:
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_common.py : Design reference only (allocating the output from prefix scans rather than atomic appends), as in the legacy native CUDA marching cubes (`warp/native/marching.cu`) of Warp versions 1.6.2 to 1.7.2, the releases under Apache-2.0 (Warp was relicensed on 2025-03-06; this implementation was replaced in version 1.8.0); no Warp code was copied.
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_lewiner.py : Derived from the scikit-image implementation and its tables; the scan-based allocation is shared with the Lorensen kernels above.
+
+MC33 C library (Marching Cubes 33)
+- License: MIT License
+  - https://github.com/dvega68/MC33_c_library
+- Copyright:
+  - Copyright (c) 2019 David E. Vega M. and Javier E. Abache R.
+- Files:
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_vega.py : The case selection (vega_find_case and the face and interior tests) is a port of MC33_findCase of this library, made with the help of the CUDA port of the isoext project (below).
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_vega_luts.py : The MC33 lookup table of this library, as converted by the isoext project (below).
+  - python/cucim/src/cucim/skimage/measure/tests/_vega_reference_cells.py : Test data generated with that case selection.
+
+isoext
+- License: MIT License
+  - https://github.com/GuangyanCai/isoext/blob/main/LICENSE
+- Copyright:
+  - Copyright (c) 2023 Guangyan Cai
+- Files:
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_vega.py : The CUDA port of the MC33 case selection of the MC33 C library (src/mc/vega.cu) was used as the reference for the port.
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_vega_luts.py : The values of the lookup table were extracted from include/mc/vega_luts.cuh.
+  - python/cucim/src/cucim/skimage/measure/tests/test_marching_cubes_vega.py : The cells with a mirror-dependent topology and the checks of the symmetries follow tests/test_vega.py.
+
+VTK (Visualization Toolkit)
+- License: BSD-3-Clause License
+  - https://gitlab.kitware.com/vtk/vtk/-/blob/master/Copyright.txt
+- Copyright:
+  - Copyright (c) 1993-2015 Ken Martin, Will Schroeder, Bill Lorensen
+- Files:
+  - python/cucim/src/cucim/skimage/measure/_marching_cubes_common.py : Design reference only for the normals of the vertices on grid edges (the central-difference gradient at the two samples of the edge, interpolated with the position of the vertex, negated and normalized, as in `vtkMarchingCubes` and `vtkFlyingEdges3D`); no VTK code was copied. Unlike VTK, the gradient is divided by the voxel spacing.
+
 OpenSlide
 - License: GNU Lesser General Public License v2.1
   - https://github.com/openslide/openslide/blob/master/LICENSE.txt
