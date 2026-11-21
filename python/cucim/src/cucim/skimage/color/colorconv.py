@@ -53,6 +53,7 @@ References
 .. [4] https://en.wikipedia.org/wiki/CIE_1931_color_space
 """
 
+from functools import lru_cache
 from warnings import warn
 
 import cupy as cp
@@ -1052,6 +1053,7 @@ def _luv_white_point_uv(xyz_ref_white):
     return u0, v0
 
 
+@lru_cache(maxsize=16)
 def _xyz2luv_post(xyz_ref_white, dtype):
     """Code and preamble that convert the pixel ``w`` from XYZ to CIE-LUV."""
     eps = np.finfo(dtype).eps
@@ -1086,6 +1088,7 @@ def _xyz2luv_post(xyz_ref_white, dtype):
     return code, preamble
 
 
+@lru_cache(maxsize=16)
 def _luv2xyz_pre(xyz_ref_white, dtype):
     """Code that converts the pixel ``v`` from CIE-LUV to XYZ in place."""
     eps = np.finfo(dtype).eps
