@@ -2684,6 +2684,22 @@ def test_otsu_empty_footprint_rejects_histogram():
         rank.otsu(image, footprint, backend="histogram")
 
 
+def test_otsu_auto_falls_back_if_histogram_allocation_fails(monkeypatch):
+    monkeypatch.setenv("CUCIM_RANK_HISTOGRAM_PARTITIONS", "64")
+    image = cp.arange(128 * 128, dtype=cp.uint8).reshape(128, 128)
+    footprint = cp.ones((15, 15), dtype=bool)
+    expected = rank.otsu(image, footprint, backend="elementwise")
+    out = cp.empty_like(image)
+    pool = cp.cuda.MemoryPool()
+    pool.set_limit(size=512 * 1024)
+    with cp.cuda.using_allocator(pool.malloc):
+        with pytest.raises(cp.cuda.memory.OutOfMemoryError):
+            rank.otsu(image, footprint, out=out, backend="histogram")
+        assert rank.otsu(image, footprint, out=out) is out
+
+    cp.testing.assert_array_equal(out, expected)
+
+
 def test_otsu_histogram_and_elementwise_agree_on_large_window():
     image = cp.asarray(
         np.random.default_rng(7).integers(0, 256, (150, 130), dtype=np.uint8)

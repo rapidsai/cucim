@@ -143,7 +143,8 @@ With ``backend='auto'``, any unsupported case falls back to the generic
 elementwise GPU implementation. For compatible calls, automatic dispatch also
 requires a benchmark-derived minimum footprint area. Smaller footprints stay
 on the generic per-output-pixel backend unless ``backend='histogram'`` is
-requested explicitly.
+requested explicitly. If histogram allocation fails in automatic mode, the
+filter retries with the elementwise backend.
 
 The automatic selection can be overridden with the keyword-only ``backend``
 parameter accepted by rank filters:

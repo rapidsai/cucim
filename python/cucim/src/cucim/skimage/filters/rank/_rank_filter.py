@@ -1209,19 +1209,23 @@ def _skimage_rank_filter(
         and can_use_histogram
         and _should_use_rank_histogram(operation, footprint_shape)
     ):
-        return _rank_histogram(
-            input,
-            footprint_shape,
-            operation,
-            output=output,
-            mode=modes[0],
-            cval=cval,
-            p0=p0,
-            p1=p1,
-            s0=s0,
-            s1=s1,
-            dtype_max=_dtype_max,
-        )
+        try:
+            return _rank_histogram(
+                input,
+                footprint_shape,
+                operation,
+                output=output,
+                mode=modes[0],
+                cval=cval,
+                p0=p0,
+                p1=p1,
+                s0=s0,
+                s1=s1,
+                dtype_max=_dtype_max,
+            )
+        except cp.cuda.memory.OutOfMemoryError:
+            if backend == "histogram":
+                raise
 
     kernel = _get_percentile_range_kernel(
         filter_size,
