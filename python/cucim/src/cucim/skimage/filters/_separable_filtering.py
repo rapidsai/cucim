@@ -875,6 +875,8 @@ def _get_separable_conv_kernel_src(
     #include "cupy/carray.cuh"  // for float16
     #include "cupy/complex.cuh"  // for complex<float>
     """
+    if "float16" in (image_c_type, kernel_c_type, output_c_type):
+        code += '#include "cupy/float16.cuh"\n'
 
     # SciPy-style float -> unsigned integer casting for the output
     # (use cast<D>(sum) instead of static_cast<D>(sum) for the output)
@@ -1101,7 +1103,13 @@ def _get_grid(shape, block, axis, patch_per_block):
             raise ValueError(f"invalid axis: {axis}")
     else:
         raise NotImplementedError(f"unsupported ndim: {ndim}")
+    _check_shmem_grid(grid)
     return grid
+
+
+def _check_shmem_grid(grid):
+    if 0 in grid or max(grid[1:]) > 65535:
+        raise ResourceLimitError("shared memory filter grid is out of range")
 
 
 def _shmem_convolve1d(
@@ -1122,6 +1130,9 @@ def _shmem_convolve1d(
     if weights.size == 0:
         return cp.zeros_like(input)
     util._check_mode(mode)
+    if not 0 < image.size < (1 << 30):
+        # The generated filters use int for offsets and reflection periods.
+        raise ResourceLimitError("shared memory filter index is out of range")
 
     if convolution:
         # use flip_kernel to avoid cp.ascontiguousarray(weights[::-1]))
@@ -1199,6 +1210,7 @@ def _shmem_convolve1d(
             min(row_blocks, 65535),
             math.ceil(row_blocks / 65535),
         )
+        _check_shmem_grid(grid)
         kernel(grid, block, (image, output, weights, rows, length))
         if needs_temp:
             temp[:] = output

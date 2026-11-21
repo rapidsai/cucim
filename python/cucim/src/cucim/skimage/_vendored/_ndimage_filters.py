@@ -261,15 +261,28 @@ def _correlate_or_convolve(
     return output
 
 
-def _unsupported_shmem_cval(cval, dtype):
-    """returns True if the cval + dtype combination is unsupported for the
-    shared memory kernels."""
-    return (
-        # shared_memory kernels fail to compile for non-finite cval
-        not numpy.isfinite(cval)
-        # incorrect output for negative cval and unsigned integer input
-        or (cval < 0 and dtype.kind == "u")
+def _unsupported_shmem_cval(cval, image, weights):
+    """Whether storing a fill in the input tile changes the accumulation."""
+    if cval == 0:
+        return False
+    if not numpy.isfinite(cval):
+        # Shared memory kernels cannot compile nonfinite fill literals.
+        return True
+    dtype = image.dtype
+    if dtype.kind == "b":
+        return cval not in (0, 1)
+    if dtype.kind in "iu":
+        limits = numpy.iinfo(dtype)
+        integral = int(cval)
+        return cval != integral or not limits.min <= integral <= limits.max
+    working_dtype = _util._get_weights_dtype(
+        image, weights, use_cucim_casting=True
     )
+    with numpy.errstate(over="ignore"):
+        staged = dtype.type(cval)
+        return not numpy.isfinite(staged) or (
+            working_dtype.type(staged) != working_dtype.type(cval)
+        )
 
 
 def _correlate_or_convolve1d(
@@ -352,15 +365,16 @@ def _correlate_or_convolve1d(
             and weights.size <= 256
             and not (
                 mode in ("constant", "grid-constant")
-                and _unsupported_shmem_cval(cval, input.dtype)
+                and _unsupported_shmem_cval(cval, input, weights)
             )
         ):
             algorithm = "shared_memory"
         else:
             algorithm = "elementwise"
     elif algorithm == "shared_memory":
-        if mode == "constant" and _unsupported_shmem_cval(cval, input.dtype):
-            # shared_memory case can fail to compile on NaN cval and
+        if mode in ("constant", "grid-constant") and _unsupported_shmem_cval(
+            cval, input, weights
+        ):
             warnings.warn(
                 f"{cval=} and {input.dtype=} is unsupported for algorithm "
                 "'shared_memory', falling back to elementwise"
