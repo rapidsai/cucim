@@ -19,9 +19,8 @@ Dtype notes
 Some operations use a ``dtype_max`` value based on the output dtype that
 affects output scaling (``autolevel_percentile``, ``threshold_percentile``,
 ``subtract_mean_percentile``). With the default ``cast_to_uint8=True``,
-uint8 and uint16 inputs are processed natively; other inputs are converted
-before filtering and their default output dtype is uint8. When processing
-other dtypes natively with ``cast_to_uint8=False``:
+non-uint8 inputs are converted before filtering and the default output dtype
+is uint8. When processing other dtypes natively with ``cast_to_uint8=False``:
 
 - **Unsigned integers** (uint8, uint16, etc.): ``dtype_max`` is the type
   maximum (255, 65535, ...). This matches scikit-image's behavior.
@@ -121,12 +120,9 @@ _doc_boundary_note = """
 
 _doc_cast_to_uint8_param = """
     cast_to_uint8 : bool, optional (keyword-only)
-        If True, image inputs other than uint8 and uint16 are converted to
-        uint8 with ``img_as_ubyte`` before backend selection, matching
-        scikit-image. Uint8 and uint16 inputs are always processed natively.
-        Set this to False to process a wider input dtype natively. Default is
-        True. To use the uint8 histogram backend with a uint16 image, convert
-        it explicitly with ``img_as_ubyte`` before calling the filter."""
+        If True (default), non-uint8 inputs are converted with
+        ``img_as_ubyte`` before backend selection. Set this to False to process
+        a wider input dtype natively."""
 
 _doc_returns = """
     Returns
@@ -163,6 +159,8 @@ def _preprocess_input(
     out_dtype=None,
     shifts=None,
     cast_to_uint8=True,
+    *,
+    operation,
 ):
     """Preprocess and verify input for filters.rank methods (GPU version)."""
     if not isinstance(image, cp.ndarray):
@@ -177,7 +175,8 @@ def _preprocess_input(
     if input_dtype == bool or out_dtype == bool:
         raise ValueError("dtype cannot be bool.")
 
-    if cast_to_uint8 and image.dtype not in (cp.uint8, cp.uint16):
+    preserve_uint16 = operation == "otsu" and image.dtype == cp.uint16
+    if cast_to_uint8 and image.dtype != cp.uint8 and not preserve_uint16:
         if image.dtype.kind == "f":
             warnings.warn(
                 f"Possible precision loss converting image of type "
@@ -198,7 +197,6 @@ def _preprocess_input(
                     category=UserWarning,
                 )
                 image = img_as_ubyte(image)
-        input_dtype = image.dtype
 
     # Convert footprint to boolean CuPy array
     if footprint is not None:
@@ -303,6 +301,7 @@ def _apply(
         out_dtype,
         shifts=shifts,
         cast_to_uint8=cast_to_uint8,
+        operation=operation,
     )
 
     if (

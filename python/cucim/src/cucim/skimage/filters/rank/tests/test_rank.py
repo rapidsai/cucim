@@ -1242,8 +1242,7 @@ def test_rank_default_cast_to_uint8_matches_explicit_float_conversion():
         ("otsu", {}),
     ],
 )
-@pytest.mark.parametrize("cast_kwargs", [{}, {"cast_to_uint8": False}])
-def test_rank_preserves_uint16_by_default(filter_name, kwargs, cast_kwargs):
+def test_rank_processes_uint16_without_cast(filter_name, kwargs):
     from skimage.filters import rank as rank_cpu
 
     image = np.tile(
@@ -1256,7 +1255,10 @@ def test_rank_preserves_uint16_by_default(filter_name, kwargs, cast_kwargs):
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
         result = getattr(rank, filter_name)(
-            cp.asarray(image), cp.asarray(footprint), **kwargs, **cast_kwargs
+            cp.asarray(image),
+            cp.asarray(footprint),
+            cast_to_uint8=False,
+            **kwargs,
         )
     assert not record
     assert result.dtype == cp.uint16
@@ -1265,7 +1267,27 @@ def test_rank_preserves_uint16_by_default(filter_name, kwargs, cast_kwargs):
     assert int(result[2, 2]) > 255
 
 
-def test_rank_uint16_histogram_requires_explicit_conversion():
+@pytest.mark.parametrize(
+    "filter_name, backend, center",
+    [
+        ("autolevel", "auto", 85),
+        ("equalize", "auto", 170),
+        ("subtract_mean", "auto", 126),
+        ("equalize", "histogram", 170),
+    ],
+)
+def test_rank_default_uint16_casting(filter_name, backend, center):
+    image = cp.tile(cp.array([1000, 1000, 2000, 4000, 4000], cp.uint16), (5, 1))
+    footprint = cp.ones((3, 3), dtype=bool)
+    func = getattr(rank, filter_name)
+    result = func(image, footprint, backend=backend)
+    expected = func(img_as_ubyte(image), footprint, backend=backend)
+    assert result.dtype == cp.uint8
+    assert int(result[2, 2]) == center
+    cp.testing.assert_array_equal(result, expected)
+
+
+def test_otsu_uint16_histogram_requires_explicit_conversion():
     image = cp.arange(25, dtype=cp.uint16).reshape(5, 5) * 1000
     footprint = cp.ones((3, 3), dtype=bool)
     with pytest.raises(ValueError, match="backend='histogram' requires"):
@@ -2033,7 +2055,7 @@ class TestRank:
 
         disk3 = disk(3, decomposition=None)
         f8 = func(image8, disk3)
-        f16 = func(image16, disk3, out=cp.empty_like(f8))
+        f16 = func(image16, disk3, out=cp.empty_like(f8), cast_to_uint8=False)
         cp.testing.assert_array_equal(f8, f16)
 
     @pytest.mark.parametrize(
@@ -2072,7 +2094,7 @@ class TestRank:
         ball3 = ball(3, decomposition=None)
         f8 = func(volume8, ball3)
         # Match output dtypes so scaling and overflow semantics also match.
-        f16 = func(volume16, ball3, out=cp.empty_like(f8))
+        f16 = func(volume16, ball3, out=cp.empty_like(f8), cast_to_uint8=False)
         cp.testing.assert_array_equal(f8, f16)
 
     @pytest.mark.parametrize("dtype", [cp.uint8, cp.uint16])

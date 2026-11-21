@@ -61,17 +61,15 @@ expected to match.
 | Feature                  | scikit-image (CPU)                                              | cuCIM (GPU) |
 |--------------------------|-----------------------------------------------------------------|-------------|
 | Dimensions               | 2-D (3-D for generic filters)                                   | N-dimensional |
-| Supported dtypes         | uint8 and uint16 natively; other real inputs are converted to uint8 | uint8 and uint16 natively; other integer and real floating-point inputs are converted to uint8 by default |
+| Supported dtypes         | uint8 and uint16 natively; other real inputs are converted to uint8 | Integer and real floating-point inputs; native uint8 and, for Otsu, native uint16 by default |
 | Output dtype             | Usually the processed input dtype; entropy returns float64      | Usually the processed input dtype; entropy defaults to float32 |
 | Algorithm                | Sliding-window histogram                                        | Streaming reductions, sorted neighborhoods, or uint8 2-D histogram fast path |
 | Boundary handling        | Excludes out-of-bounds pixels (population decreases at borders) | SciPy ``ndimage``-style reflected boundary extension; no boundary-induced population decrease |
 
-By default, uint8 and uint16 inputs are processed natively, matching
-scikit-image. Other input dtypes are converted to uint8 with ``img_as_ubyte``
-before rank filtering. Set ``cast_to_uint8=False`` to opt out of this
-conversion and use the elementwise kernels on the native dtype. Uint16 inputs
-use the elementwise backend; to use the uint8 histogram backend instead,
-convert the image explicitly with ``img_as_ubyte`` before filtering.
+Rank filters convert non-uint8 inputs with ``img_as_ubyte`` by default.
+Otsu also processes uint16 images natively, preserving the input intensity
+scale. For other filters, use ``cast_to_uint8=False`` to opt out of conversion
+and use the elementwise kernels on the native dtype.
 These kernels have the following behavioral differences. The cuCIM behavior is
 generally preferable in these cases.
 

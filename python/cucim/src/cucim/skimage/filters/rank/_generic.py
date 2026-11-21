@@ -36,6 +36,7 @@ __all__ = [
     "minimum",
     "modal",
     "noise_filter",
+    "otsu",
     "pop",
     "subtract_mean",
     "sum",
@@ -93,7 +94,9 @@ _doc_common_params_median = _doc_common_params_generic.replace(
 )
 
 
-def _build_generic_docstring(summary):
+def _build_generic_docstring(
+    summary, *, cast_to_uint8_param=_doc_cast_to_uint8_param
+):
     """Build a docstring for a generic (no p0/p1) rank filter."""
     return (
         summary
@@ -101,7 +104,7 @@ def _build_generic_docstring(summary):
         + _doc_common_params_generic
         + _doc_shifts_param_generic
         + _doc_backend_param
-        + _doc_cast_to_uint8_param
+        + cast_to_uint8_param
         + "\n"
         + _doc_returns
         + _doc_boundary_note
@@ -911,12 +914,14 @@ otsu.__doc__ = (
     The threshold is the gray level that maximizes the between-class variance
     of the local histogram [1]_. It is computed as in scikit-image: gray level
     0 is never selected, only gray levels present in the neighborhood are
-    candidates, and the lowest gray level wins ties. A neighborhood with a
-    single gray level (or no pixels) gives 0.
-
-    Uint8 and uint16 images are processed natively, matching scikit-image.
-    Other dtypes are converted to uint8 unless ``cast_to_uint8=False``, which
-    raises an error for them."""
+    candidates, and the lowest gray level wins when the computed scores are
+    equal. A neighborhood with a single gray level (or no pixels) gives 0.""",
+        cast_to_uint8_param="""
+    cast_to_uint8 : bool, optional (keyword-only)
+        Uint8 and uint16 images are processed natively. If True (default),
+        other supported dtypes are converted with ``img_as_ubyte``. If False,
+        those dtypes raise ``ValueError``. To use the histogram backend with a
+        uint16 image, explicitly convert it with ``img_as_ubyte`` first.""",
     )
     + """
     References
