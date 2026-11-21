@@ -915,7 +915,10 @@ otsu.__doc__ = (
     of the local histogram [1]_. It is computed as in scikit-image: gray level
     0 is never selected, only gray levels present in the neighborhood are
     candidates, and the lowest gray level wins when the computed scores are
-    equal. A neighborhood with a single gray level (or no pixels) gives 0.""",
+    equal. A neighborhood with a single gray level (or no pixels) gives 0.
+
+    As in scikit-image, numeric masks are converted with ``img_as_ubyte``
+    before testing for nonzero values.""",
         cast_to_uint8_param="""
     cast_to_uint8 : bool, optional (keyword-only)
         Uint8 and uint16 images are processed natively. If True (default),

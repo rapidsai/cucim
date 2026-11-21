@@ -2536,7 +2536,7 @@ def _otsu_test_images():
         "camera": camera,
         "noise": rng.integers(0, 256, (40, 44), dtype=np.uint8),
         "few_levels": (camera // 32).astype(np.uint8),
-        "binary": (camera > 128).astype(np.uint8) * 255,
+        "binary": np.tile(np.array([0, 255], dtype=np.uint8), (30, 15)),
         "constant": np.full((30, 30), 7, dtype=np.uint8),
         "zeros": np.zeros((30, 30), dtype=np.uint8),
     }
@@ -2607,6 +2607,23 @@ def test_otsu_empty_neighborhoods_are_zero():
     assert int((expected == 0).sum()) > 0
     cp.testing.assert_array_equal(result, cp.asarray(expected))
     assert int(rank.otsu(cp.asarray(image), cp.zeros((3, 3), bool)).max()) == 0
+
+
+def test_otsu_numeric_mask_matches_skimage_quantization():
+    from skimage.filters import rank as rank_cpu
+
+    image = np.tile(np.array([10, 50, 90], dtype=np.uint8), (3, 1))
+    footprint = np.ones((3, 3), dtype=bool)
+    mask = np.tile([0.001, 1.0, 1.0], (3, 1))
+    image_gpu = cp.asarray(image)
+    footprint_gpu = cp.asarray(footprint)
+    expected = rank_cpu.otsu(image, footprint, mask=mask)
+    result = rank.otsu(image_gpu, footprint_gpu, mask=cp.asarray(mask))
+    assert int(result[1, 1]) == expected[1, 1] == 50
+    boolean_mask = cp.asarray(np.tile([False, True, True], (3, 1)))
+    cp.testing.assert_array_equal(
+        result, rank.otsu(image_gpu, footprint_gpu, mask=boolean_mask)
+    )
 
 
 def test_otsu_histogram_and_elementwise_agree_on_large_window():

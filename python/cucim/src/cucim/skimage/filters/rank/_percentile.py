@@ -216,9 +216,11 @@ def _preprocess_input(
     if mask is not None:
         if not isinstance(mask, cp.ndarray):
             raise ValueError("mask must be a CuPy array")
-        mask = cp.ascontiguousarray(mask > 0, dtype=bool)
         if mask.shape != image.shape:
             raise ValueError("Mask shape must match image shape")
+        if operation == "otsu" and mask.dtype != cp.bool_:
+            mask = img_as_ubyte(mask)
+        mask = cp.ascontiguousarray(mask > 0, dtype=bool)
 
     # Handle output array
     if out is None:
