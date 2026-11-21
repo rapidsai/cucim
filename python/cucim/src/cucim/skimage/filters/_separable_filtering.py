@@ -1180,8 +1180,10 @@ def _shmem_convolve1d(
     complex_output = complex_output or weights.dtype.kind == "c"
     output = util._get_output(output, image, None, complex_output)
 
-    # handle potential overlap between input and output arrays
-    needs_temp = cp.shares_memory(output, image, "MAY_SHARE_BOUNDS")
+    # The kernels write C-contiguous output and require separate input/output.
+    needs_temp = not output.flags.c_contiguous or cp.shares_memory(
+        output, image, "MAY_SHARE_BOUNDS"
+    )
     if needs_temp:
         output, temp = util._get_output(output.dtype, image), output
 
