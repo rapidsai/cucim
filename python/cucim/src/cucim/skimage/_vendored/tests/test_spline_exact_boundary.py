@@ -16,6 +16,7 @@ from scipy import ndimage as scipy_ndi
 
 from cucim.skimage import transform
 from cucim.skimage._vendored import (
+    _ndimage_interp_kernels as kernels,
     _ndimage_interpolation as interpolation,
     _ndimage_spline_prefilter_core as core,
     ndimage as cndi,
@@ -254,3 +255,139 @@ def test_exact_extension_beyond_index_range(order, mode, dtype, coords_dtype):
     # extension of the original samples remains.
     expected = [0, 0, 0, 7, 7, 7] if mode == "nearest" else [-3] * 6
     cp.testing.assert_allclose(out, expected, rtol=0, atol=2e-6)
+
+
+@pytest.mark.parametrize("channels", [None, 3])
+@pytest.mark.parametrize("force_serial", [False, True])
+def test_zoom_reuses_interpolation_and_prefilter_kernels(
+    channels, force_serial, monkeypatch
+):
+    if force_serial:
+        monkeypatch.setattr(core, "supports_warp_spline1d", lambda *args: False)
+        monkeypatch.setattr(
+            core, "supports_segmented_spline1d", lambda *args: False
+        )
+
+    def record_getter(module, name):
+        records = []
+        original = getattr(module, name)
+
+        def record(*args, **kwargs):
+            kernel = original(*args, **kwargs)
+            records.append(kernel)
+            return kernel
+
+        monkeypatch.setattr(module, name, record)
+        return records
+
+    interpolation_kernels = record_getter(kernels, "_get_interp_kernel")
+    prefilter_kernels = [
+        record_getter(core, name)
+        for name in (
+            "get_raw_spline1d_kernel",
+            "get_segmented_spline1d_kernel",
+            "get_warp_spline1d_kernel",
+        )
+    ]
+
+    rng = np.random.default_rng(531)
+    spatial_shape = (40, 70)
+    batch_shape = () if channels is None else (channels,)
+    image = rng.normal(size=spatial_shape + batch_shape).astype(np.float32)
+    image_gpu = cp.asarray(image)
+    for shape, cval in [((53, 91), -0.375), ((61, 111), 0.625)]:
+        factors = tuple(out / src for src, out in zip(spatial_shape, shape))
+        actual = cndi.zoom(
+            image_gpu,
+            factors + (1,) * len(batch_shape),
+            order=3,
+            grid_mode=True,
+            mode="grid-constant",
+            cval=cval,
+        )
+        coords = np.stack(
+            [
+                (grid + 0.5) * (src / out) - 0.5
+                for grid, src, out in zip(
+                    np.indices(shape), spatial_shape, shape
+                )
+            ]
+        )
+        if channels is None:
+            expected = _exact_map_coordinates(
+                image, coords, 3, "grid-constant", cval
+            )
+        else:
+            expected = np.stack(
+                [
+                    _exact_map_coordinates(
+                        image[..., j], coords, 3, "grid-constant", cval
+                    )
+                    for j in range(channels)
+                ],
+                axis=-1,
+            )
+        cp.testing.assert_allclose(actual, expected, atol=2e-5, rtol=1e-5)
+
+    assert len(interpolation_kernels) == 2
+    assert interpolation_kernels[0] is interpolation_kernels[1]
+    assert sum(map(len, prefilter_kernels)) == 4
+    for records in prefilter_kernels:
+        midpoint = len(records) // 2
+        assert records[:midpoint] == records[midpoint:]
+
+
+@pytest.mark.parametrize(
+    "dtype, cval, expected",
+    [
+        (cp.float32, 1.0 + 2.0**-30, 1.0),
+        (cp.float64, 1.0 + 2.0**-30, 1.0 + 2.0**-30),
+        (cp.float32, 1e40, np.inf),
+        (cp.float64, 1e40, 1e40),
+    ],
+)
+def test_sampler_fill_output_precision(dtype, cval, expected):
+    with np.errstate(over="raise"):
+        actual = cndi.map_coordinates(
+            cp.zeros(2, dtype=cp.float32),
+            cp.asarray([[-0.5]]),
+            order=1,
+            mode="constant",
+            cval=cval,
+            output=dtype,
+            prefilter=False,
+        )
+    cp.testing.assert_array_equal(actual, cp.asarray([expected], dtype=dtype))
+
+
+@pytest.mark.parametrize("dtype", [cp.uint8, cp.int16])
+@pytest.mark.parametrize(
+    "cval, literal",
+    [
+        (np.nan, "CUDART_NAN"),
+        (np.inf, "CUDART_INF"),
+        (-np.inf, "(-CUDART_INF)"),
+    ],
+)
+def test_grid_constant_nonfinite_integer_fill(dtype, cval, literal):
+    # Reproduce the old output-type conversion on the running CUDA compiler.
+    legacy_cast = cp.ElementwiseKernel(
+        "",
+        "Y out",
+        f"out = (Y){literal};",
+        "test_interp_legacy_integer_fill",
+        preamble="#include <cupy/math_constants.h>",
+    )
+    fill = cp.empty(1, dtype=dtype)
+    legacy_cast(fill)
+    expected = cp.rint(fill.astype(cp.float64) * 0.5).astype(dtype)
+    actual = cndi.map_coordinates(
+        cp.zeros(2, dtype=cp.float64),
+        cp.asarray([[-0.5]]),
+        order=1,
+        mode="grid-constant",
+        cval=cval,
+        output=dtype,
+        prefilter=False,
+    )
+    cp.testing.assert_array_equal(actual, expected)
