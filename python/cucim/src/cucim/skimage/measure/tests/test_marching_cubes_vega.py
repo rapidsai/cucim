@@ -296,3 +296,38 @@ def test_vega_allow_degenerate_false_removes_the_degenerate_faces():
         )
         > 0
     )
+
+
+@pytest.mark.parametrize("exponent", [-100, 100])
+@pytest.mark.parametrize("reflect", [False, True])
+def test_vega_face_decision_is_invariant_to_field_scale(exponent, reflect):
+    # The negative product is four times the positive product. The two
+    # positive corners are disconnected at level zero.
+    volume = np.array([[[1, -2], [-2, 1]], [[-1, -1], [-1, -1]]], np.float32)
+    if reflect:
+        volume = volume[:, ::-1, :]
+    _, faces = _mesh(np.ldexp(volume, exponent), "vega")
+    assert _patch_topology(faces) == (2, 2)
+
+
+@pytest.mark.parametrize("exponent", [-100, 100])
+def test_vega_interior_decision_is_invariant_to_field_scale(exponent):
+    # Opposite positive corners with no ambiguous face. The trilinear field
+    # along their diagonal has minimum (4 + 4 - 6) / 8 > 0 at the center.
+    volume = np.full((2, 2, 2), -1, dtype=np.float32)
+    volume[0, 0, 0] = volume[1, 1, 1] = 4
+    _, faces = _mesh(np.ldexp(volume, exponent), "vega")
+    assert _patch_topology(faces) == (0, 1)
+
+
+@pytest.mark.parametrize("exponent", [-100, 100])
+def test_vega_scales_the_shared_face_of_two_different_cells(exponent):
+    volume = np.array(
+        [[[-8, -8], [-8, -8]], [[1, -2], [-2, 1]], [[-1, -1], [-1, -1]]],
+        dtype=np.float32,
+    )
+    vertices, faces = _mesh(np.ldexp(volume, exponent), "vega")
+    edges = np.sort(faces[:, [[0, 1], [1, 2], [2, 0]]].reshape(-1, 2), axis=1)
+    edges = edges[(vertices[edges, 0] == 1).all(axis=1)]
+    _, counts = np.unique(edges, axis=0, return_counts=True)
+    np.testing.assert_array_equal(counts, [2, 2])

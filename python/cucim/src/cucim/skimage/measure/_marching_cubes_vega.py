@@ -132,60 +132,72 @@ _VEGA_KERNEL_CODE = (
     + _COMMON_KERNEL_CODE
     + r"""
 
-// level minus the value of each corner, in the Vega corner order
-extern "C" __device__ inline void vega_load_values(
-    const float* volume, int i, int j, int k, int ny, int nz, float level,
-    float* v) {
-    v[0] = level - vol_at(volume, i, j, k, ny, nz);
-    v[1] = level - vol_at(volume, i, j + 1, k, ny, nz);
-    v[2] = level - vol_at(volume, i, j + 1, k + 1, ny, nz);
-    v[3] = level - vol_at(volume, i, j, k + 1, ny, nz);
-    v[4] = level - vol_at(volume, i + 1, j, k, ny, nz);
-    v[5] = level - vol_at(volume, i + 1, j + 1, k, ny, nz);
-    v[6] = level - vol_at(volume, i + 1, j + 1, k + 1, ny, nz);
-    v[7] = level - vol_at(volume, i + 1, j, k + 1, ny, nz);
-    // a value equal to the level is +0 (not -0) whatever the sign of the level
-    for (int n = 0; n < 8; n++) {
-        v[n] += 0.0f;
+// Sample values, in the Vega corner order
+extern "C" __device__ inline void vega_load_samples(
+    const float* volume, int i, int j, int k, int ny, int nz, float* v) {
+    v[0] = vol_at(volume, i, j, k, ny, nz);
+    v[1] = vol_at(volume, i, j + 1, k, ny, nz);
+    v[2] = vol_at(volume, i, j + 1, k + 1, ny, nz);
+    v[3] = vol_at(volume, i, j, k + 1, ny, nz);
+    v[4] = vol_at(volume, i + 1, j, k, ny, nz);
+    v[5] = vol_at(volume, i + 1, j + 1, k, ny, nz);
+    v[6] = vol_at(volume, i + 1, j + 1, k + 1, ny, nz);
+    v[7] = vol_at(volume, i + 1, j, k + 1, ny, nz);
+}
+
+// At level zero, rounding two products preserves their order if both
+// remain nonzero and distinct. For a tie, underflow, or a nonzero level,
+// compare the original deviations in double. The same four samples and
+// level give the same comparison in the two cells of a shared face.
+extern "C" __device__ inline bool vega_product_less(
+    float a, float b, float c, float d, float level) {
+    if (level == 0.0f) {
+        float ab = a * b;
+        float cd = c * d;
+        if (ab != cd && ab != 0.0f && cd != 0.0f) {
+            return ab < cd;
+        }
     }
+    return ((double)level - a) * ((double)level - b) <
+           ((double)level - c) * ((double)level - d);
 }
 
 // Sign of the bilinear interpolant at the saddle point of each face whose
 // four corner signs alternate: 1 joins the positive vertices, -1 the negative
 // ones, 0 means the face is not ambiguous. Returns the sum over the six faces.
 extern "C" __device__ inline int vega_face_tests(
-    const float* v, int* face, int ind) {
+    const float* v, float level, int* face, int ind) {
     if (ind & 0x80) {
-        face[0] = ((ind & 0xCC) == 0x84 ? (v[0] * v[5] < v[1] * v[4] ? -1 : 1) : 0);
-        face[3] = ((ind & 0x99) == 0x81 ? (v[0] * v[7] < v[3] * v[4] ? -1 : 1) : 0);
-        face[4] = ((ind & 0xF0) == 0xA0 ? (v[0] * v[2] < v[1] * v[3] ? -1 : 1) : 0);
+        face[0] = ((ind & 0xCC) == 0x84 ? (vega_product_less(v[0], v[5], v[1], v[4], level) ? -1 : 1) : 0);
+        face[3] = ((ind & 0x99) == 0x81 ? (vega_product_less(v[0], v[7], v[3], v[4], level) ? -1 : 1) : 0);
+        face[4] = ((ind & 0xF0) == 0xA0 ? (vega_product_less(v[0], v[2], v[1], v[3], level) ? -1 : 1) : 0);
     } else {
-        face[0] = ((ind & 0xCC) == 0x48 ? (v[0] * v[5] < v[1] * v[4] ? 1 : -1) : 0);
-        face[3] = ((ind & 0x99) == 0x18 ? (v[0] * v[7] < v[3] * v[4] ? 1 : -1) : 0);
-        face[4] = ((ind & 0xF0) == 0x50 ? (v[0] * v[2] < v[1] * v[3] ? 1 : -1) : 0);
+        face[0] = ((ind & 0xCC) == 0x48 ? (vega_product_less(v[0], v[5], v[1], v[4], level) ? 1 : -1) : 0);
+        face[3] = ((ind & 0x99) == 0x18 ? (vega_product_less(v[0], v[7], v[3], v[4], level) ? 1 : -1) : 0);
+        face[4] = ((ind & 0xF0) == 0x50 ? (vega_product_less(v[0], v[2], v[1], v[3], level) ? 1 : -1) : 0);
     }
     if (ind & 0x02) {
-        face[1] = ((ind & 0x66) == 0x42 ? (v[1] * v[6] < v[2] * v[5] ? -1 : 1) : 0);
-        face[2] = ((ind & 0x33) == 0x12 ? (v[3] * v[6] < v[2] * v[7] ? -1 : 1) : 0);
-        face[5] = ((ind & 0x0F) == 0x0A ? (v[4] * v[6] < v[5] * v[7] ? -1 : 1) : 0);
+        face[1] = ((ind & 0x66) == 0x42 ? (vega_product_less(v[1], v[6], v[2], v[5], level) ? -1 : 1) : 0);
+        face[2] = ((ind & 0x33) == 0x12 ? (vega_product_less(v[3], v[6], v[2], v[7], level) ? -1 : 1) : 0);
+        face[5] = ((ind & 0x0F) == 0x0A ? (vega_product_less(v[4], v[6], v[5], v[7], level) ? -1 : 1) : 0);
     } else {
-        face[1] = ((ind & 0x66) == 0x24 ? (v[1] * v[6] < v[2] * v[5] ? 1 : -1) : 0);
-        face[2] = ((ind & 0x33) == 0x21 ? (v[3] * v[6] < v[2] * v[7] ? 1 : -1) : 0);
-        face[5] = ((ind & 0x0F) == 0x05 ? (v[4] * v[6] < v[5] * v[7] ? 1 : -1) : 0);
+        face[1] = ((ind & 0x66) == 0x24 ? (vega_product_less(v[1], v[6], v[2], v[5], level) ? 1 : -1) : 0);
+        face[2] = ((ind & 0x33) == 0x21 ? (vega_product_less(v[3], v[6], v[2], v[7], level) ? 1 : -1) : 0);
+        face[5] = ((ind & 0x0F) == 0x05 ? (vega_product_less(v[4], v[6], v[5], v[7], level) ? 1 : -1) : 0);
     }
     return face[0] + face[1] + face[2] + face[3] + face[4] + face[5];
 }
 
 // The same test for one face; returns the mask of the joined vertices (cases
 // 3 and 6).
-extern "C" __device__ inline int vega_face_test1(const float* v, int face) {
+extern "C" __device__ inline int vega_face_test1(const float* v, float level, int face) {
     switch (face) {
-        case 0: return v[0] * v[5] < v[1] * v[4] ? 0x48 : 0x84;
-        case 1: return v[1] * v[6] < v[2] * v[5] ? 0x24 : 0x42;
-        case 2: return v[3] * v[6] < v[2] * v[7] ? 0x21 : 0x12;
-        case 3: return v[0] * v[7] < v[3] * v[4] ? 0x18 : 0x81;
-        case 4: return v[0] * v[2] < v[1] * v[3] ? 0x50 : 0xA0;
-        default: return v[4] * v[6] < v[5] * v[7] ? 0x05 : 0x0A;
+        case 0: return vega_product_less(v[0], v[5], v[1], v[4], level) ? 0x48 : 0x84;
+        case 1: return vega_product_less(v[1], v[6], v[2], v[5], level) ? 0x24 : 0x42;
+        case 2: return vega_product_less(v[3], v[6], v[2], v[7], level) ? 0x21 : 0x12;
+        case 3: return vega_product_less(v[0], v[7], v[3], v[4], level) ? 0x18 : 0x81;
+        case 4: return vega_product_less(v[0], v[2], v[1], v[3], level) ? 0x50 : 0xA0;
+        default: return vega_product_less(v[4], v[6], v[5], v[7], level) ? 0x05 : 0x0A;
     }
 }
 
@@ -195,34 +207,51 @@ extern "C" __device__ inline int vega_face_test1(const float* v, int face) {
 // set (case 13 only) it returns 2 if one of the vertices 0 to 3 joins the
 // center of the cell and 1 if one of the vertices 4 to 7 does.
 extern "C" __device__ inline int vega_interior_test(
-    const float* v, int i, int flag13) {
-    float at = v[4] - v[0], bt = v[5] - v[1];
-    float ct = v[6] - v[2], dt = v[7] - v[3];
-    float t = at * ct - bt * dt;
+    const float* samples, float level, int i, int flag13) {
+    // The determinant and its numerator can overflow or underflow in
+    // float32 even though each sample and the level are finite.
+    double v0 = (double)level - samples[0];
+    double v1 = (double)level - samples[1];
+    double v2 = (double)level - samples[2];
+    double v3 = (double)level - samples[3];
+    double v4 = (double)level - samples[4];
+    double v5 = (double)level - samples[5];
+    double v6 = (double)level - samples[6];
+    double v7 = (double)level - samples[7];
+    double at = v4 - v0, bt = v5 - v1;
+    double ct = v6 - v2, dt = v7 - v3;
+    double t = at * ct - bt * dt;
     if (signbit(t)) {
         if (i & 0x01) {
             return 0;
         }
     } else {
-        if (!(i & 0x01) || t == 0.0f) {
+        if (!(i & 0x01) || t == 0.0) {
             return 0;
         }
     }
-    t = 0.5f * (v[3] * bt - v[2] * at + v[1] * dt - v[0] * ct) / t;
-    if (t > 0.0f && t < 1.0f) {
-        at = v[0] + at * t;
-        bt = v[1] + bt * t;
-        ct = v[2] + ct * t;
-        dt = v[3] + dt * t;
+    double num = 0.5 * (v3 * bt - v2 * at + v1 * dt - v0 * ct);
+    // Most candidate planes are outside the cube. Compare before dividing
+    // and retain the strict bounds on the rounded plane coordinate too.
+    if (!(t > 0.0 ? 0.0 < num && num < t : t < num && num < 0.0)) {
+        return 0;
+    }
+    t = num / t;
+    bool corner_sign = signbit(i < 2 ? (i == 0 ? v0 : v1) : (i == 2 ? v2 : v3));
+    if (t > 0.0 && t < 1.0) {
+        at = v0 + at * t;
+        bt = v1 + bt * t;
+        ct = v2 + ct * t;
+        dt = v3 + dt * t;
         ct *= at;
         dt *= bt;
         if (i & 0x01) {
             if (ct < dt && !signbit(dt)) {
-                return (signbit(bt) == signbit(v[i])) + flag13;
+                return (signbit(bt) == corner_sign) + flag13;
             }
         } else {
             if (ct > dt && !signbit(ct)) {
-                return (signbit(at) == signbit(v[i])) + flag13;
+                return (signbit(at) == corner_sign) + flag13;
             }
         }
     }
@@ -234,7 +263,7 @@ extern "C" __device__ inline int vega_interior_test(
 // is above the level), and whether its triangles are reversed. The first
 // triangle is the entry after the offset.
 extern "C" __device__ inline int vega_find_case(
-    const float* v, unsigned int ind, int* reversed) {
+    const float* samples, float level, unsigned int ind, int* reversed) {
     int f[6];
     unsigned int c, m;
     if (ind & 0x80) {
@@ -247,27 +276,28 @@ extern "C" __device__ inline int vega_find_case(
     *reversed = (int)m;
     unsigned int mi = m ? ind : (ind ^ 0xFF);
     int k = c & 0x7FF;
+    int table_case = c >> 12;
+    if (table_case == 0) {  // cases 1, 2, 5, 8, 9, 11 and 14
+        return k;
+    }
     int offset = 0;
-    switch (c >> 12) {
-        case 0:  // cases 1, 2, 5, 8, 9, 11 and 14
-            offset = k;
-            break;
+    switch (table_case) {
         case 1:  // case 3
-            offset = (mi & vega_face_test1(v, k >> 2)) ? 183 + 2 * k : 159 + k;
+            offset = (mi & vega_face_test1(samples, level, k >> 2)) ? 183 + 2 * k : 159 + k;
             break;
         case 2:  // case 4
-            offset = vega_interior_test(v, k, 0) ? 239 + 6 * k : 231 + 2 * k;
+            offset = vega_interior_test(samples, level, k, 0) ? 239 + 6 * k : 231 + 2 * k;
             break;
         case 3:  // case 6
-            if (mi & vega_face_test1(v, k % 6)) {
+            if (mi & vega_face_test1(samples, level, k % 6)) {
                 offset = 575 + 5 * k;  // 6.2
             } else {
-                offset = vega_interior_test(v, k / 6, 0) ? 407 + 7 * k
+                offset = vega_interior_test(samples, level, k / 6, 0) ? 407 + 7 * k
                                                           : 335 + 3 * k;  // 6.1
             }
             break;
         case 4:  // case 7
-            switch (vega_face_tests(v, f, mi)) {
+            switch (vega_face_tests(samples, level, f, mi)) {
                 case -3:
                     offset = 695 + 3 * k;  // 7.1
                     break;
@@ -281,16 +311,16 @@ extern "C" __device__ inline int vega_find_case(
                              + 9 * k;
                     break;
                 default:  // 7.4
-                    offset = vega_interior_test(v, k >> 1, 0) ? 1095 + 9 * k
+                    offset = vega_interior_test(samples, level, k >> 1, 0) ? 1095 + 9 * k
                                                                : 1055 + 5 * k;
             }
             break;
         case 5:  // case 10
-            switch (vega_face_tests(v, f, mi)) {
+            switch (vega_face_tests(samples, level, f, mi)) {
                 case -2:
-                    if (k == 2 ? vega_interior_test(v, 0, 0)
-                               : (vega_interior_test(v, 0, 0) ||
-                                  vega_interior_test(v, k ? 1 : 3, 0))) {
+                    if (k == 2 ? vega_interior_test(samples, level, 0, 0)
+                               : (vega_interior_test(samples, level, 0, 0) ||
+                                  vega_interior_test(samples, level, k ? 1 : 3, 0))) {
                         offset = 1213 + 8 * k;  // 10.1.2
                     } else {
                         offset = 1189 + 4 * k;  // 10.1.1
@@ -300,9 +330,9 @@ extern "C" __device__ inline int vega_find_case(
                     offset = (f[2 + k] < 0 ? 1261 : 1285) + 8 * k;
                     break;
                 default:
-                    if (k == 2 ? vega_interior_test(v, 1, 0)
-                               : (vega_interior_test(v, 2, 0) ||
-                                  vega_interior_test(v, k ? 3 : 1, 0))) {
+                    if (k == 2 ? vega_interior_test(samples, level, 1, 0)
+                               : (vega_interior_test(samples, level, 2, 0) ||
+                                  vega_interior_test(samples, level, k ? 3 : 1, 0))) {
                         offset = 1237 + 8 * k;  // 10.1.2
                     } else {
                         offset = 1201 + 4 * k;  // 10.1.1
@@ -310,27 +340,27 @@ extern "C" __device__ inline int vega_find_case(
             }
             break;
         case 6:  // case 12
-            switch (vega_face_tests(v, f, mi)) {
+            switch (vega_face_tests(samples, level, f, mi)) {
                 case -2:  // 12.1
-                    offset = vega_interior_test(v, (0xDA010C >> (k << 1)) & 3, 0)
+                    offset = vega_interior_test(samples, level, (0xDA010C >> (k << 1)) & 3, 0)
                                  ? 1453 + 8 * k : 1357 + 4 * k;
                     break;
                 case 0:  // 12.2
                     offset = (f[k >> 1] < 0 ? 1645 : 1741) + 8 * k;
                     break;
                 default:  // 12.1
-                    offset = vega_interior_test(v, (0xA7B7E5 >> (k << 1)) & 3, 0)
+                    offset = vega_interior_test(samples, level, (0xA7B7E5 >> (k << 1)) & 3, 0)
                                  ? 1549 + 8 * k : 1405 + 4 * k;
             }
             break;
         default:  // case 13
-            switch (abs(vega_face_tests(v, f, 165))) {
+            switch (abs(vega_face_tests(samples, level, f, 165))) {
                 case 0: {
                     k = ((f[1] < 0) << 1) | (f[5] < 0);
                     if (f[0] * f[1] == f[5]) {  // 13.4
                         offset = 2157 + 12 * k;
                     } else {  // 13.5.1 if joined == 0, else 13.5.2
-                        int joined = vega_interior_test(v, k, 1);
+                        int joined = vega_interior_test(samples, level, k, 1);
                         offset = 2285 + (joined ? 10 * k - 40 * joined : 6 * k);
                     }
                     break;
@@ -378,11 +408,11 @@ extern "C" __device__ inline int vega_pattern(
 extern "C" __device__ inline void vega_resolve_cell(
     const float* volume, int i, int j, int k, int ny, int nz, float level,
     int* tri_count, int* center_flag, int* row) {
-    float v[8];
-    vega_load_values(volume, i, j, k, ny, nz, level, v);
+    float samples[8];
+    vega_load_samples(volume, i, j, k, ny, nz, samples);
     unsigned int index = 0;
     for (int n = 0; n < 8; n++) {
-        if (signbit(v[n])) {
+        if (samples[n] > level) {
             index |= 0x80 >> n;
         }
     }
@@ -391,7 +421,7 @@ extern "C" __device__ inline void vega_resolve_cell(
     *row = 0;
     if (index != 0 && index != 0xFF) {
         int reversed;
-        int offset = vega_find_case(v, index, &reversed);
+        int offset = vega_find_case(samples, level, index, &reversed);
         *tri_count = vega_pattern(offset, center_flag);
         *row = offset | (reversed << 15);
     }
