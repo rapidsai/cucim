@@ -125,12 +125,11 @@ def label(label_image, background=None, return_num=False, connectivity=None):
     (the default, ``connectivity=None``, or ``connectivity=label_image.ndim``)
     in 2D or 3D. In that case each 2 x 2 (or 2 x 2 x 2) block of pixels is
     handled as a single node to reduce the number of unions and label lookups.
-    The general implementation is used for integer images (also if they only
-    contain 0 and 1, so convert those with ``label_image.astype(bool)``), for a
-    ``connectivity`` below ``label_image.ndim``, for 1D and for 4D or higher
-    dimensional images, and when ``background`` is neither 0 nor, for a boolean
-    image, 1 (``True``). The general implementation is also used if the
-    block implementation runs out of device memory.
+    With ``connectivity=1``, C-contiguous 3D boolean images with at least 32
+    columns and 32-bit labels use runs of consecutive foreground voxels
+    within each row. Other inputs use the general pixel implementation.
+    If the block implementation runs out of device memory, the general
+    implementation retries with the same output array.
 
     Known differences from scikit-image:
 

@@ -14,6 +14,9 @@ import functools
 import cupy
 import numpy
 
+_FACE_STRUCTURE_3D = numpy.abs(numpy.indices((3, 3, 3)) - 1).sum(axis=0) <= 1
+_RUN_WIDTH = 128
+
 
 def _half_structure_dirs(structure):
     """Offsets of the neighbors that precede each pixel in raster order.
@@ -118,6 +121,8 @@ def _label(x, structure, y, greyscale_mode=False):
             # The pixel path reinitializes y on the same stream. Leaving the
             # exception handler releases the block path's temporary arrays.
             pass
+    if _use_face_connected_runs(x, structure, y):
+        return _label_face_connected_runs(x, y)
     count = cupy.zeros(2, dtype=y.dtype)
     _connect(x, structure, y, greyscale_mode)
     _kernel_count()(y, count, size=y.size)
@@ -125,6 +130,47 @@ def _label(x, structure, y, greyscale_mode=False):
     labels = cupy.empty(maxlabel, dtype=y.dtype)
     _kernel_labels()(y, count, labels, size=y.size)
     _kernel_finalize()(maxlabel, cupy.sort(labels), y, size=y.size)
+    return maxlabel
+
+
+def _use_face_connected_runs(x, structure, y):
+    return (
+        x.ndim == 3
+        and x.dtype == numpy.bool_
+        and isinstance(x, cupy.ndarray)
+        and x.shape[-1] >= 32
+        and 0 < x.size < 2**31 - 2
+        and y.dtype == numpy.int32
+        and x.flags.c_contiguous
+        and y.flags.c_contiguous
+        and x.device == y.device
+        and numpy.array_equal(structure, _FACE_STRUCTURE_3D)
+    )
+
+
+def _label_face_connected_runs(x, y):
+    height, cols = x.shape[-2:]
+    tiles_per_row = (cols + _RUN_WIDTH - 1) // _RUN_WIDTH
+    _kernel_run_init()(
+        (x.shape[0] * height * tiles_per_row,),
+        (_RUN_WIDTH,),
+        (x, numpy.int32(cols), numpy.int32(tiles_per_row), y),
+    )
+    _kernel_run_connect()(x, cols, height, y, size=y.size)
+
+    count = cupy.zeros(2, dtype=y.dtype)
+    _kernel_count_roots()(y, count, size=y.size)
+    maxlabel = int(count[0])  # synchronize
+    if maxlabel <= 1:
+        # With at most one component the mask already gives the final labels.
+        cupy.copyto(y, x)
+        return maxlabel
+    roots = cupy.empty(maxlabel, dtype=y.dtype)
+    _kernel_labels()(y, count, roots, size=y.size)
+    roots.sort()
+    _kernel_encode_ranks()(roots, y, size=maxlabel)
+    _kernel_propagate_ranks()(y, size=y.size)
+    _kernel_decode_ranks()(y)
     return maxlabel
 
 
@@ -297,6 +343,135 @@ def _kernel_connect(greyscale_mode, ndim, dirs):
         code,
         "cucim_skimage_measure_label_connect",
         preamble=_PARENT_ATOMICS,
+    )
+
+
+@functools.cache
+def _kernel_run_init():
+    """Link each foreground pixel to the start of its run in a row tile."""
+    code = f"""
+    extern "C" __global__ void cucim_label_run_init(
+        const bool* image, int cols, int tiles_per_row, int* forest
+    ) {{
+        const int row = blockIdx.x / tiles_per_row;
+        const int first_col = (blockIdx.x % tiles_per_row) * {_RUN_WIDTH};
+        const int col = first_col + threadIdx.x;
+        const bool inside = col < cols;
+        const int i = inside ? row * cols + col : 0;
+        const bool foreground = inside && image[i];
+        const int lane = threadIdx.x % 32;
+        int warp = threadIdx.x / 32;
+
+        const unsigned int mask = __ballot_sync(0xffffffffu, foreground);
+        __shared__ unsigned int masks[{_RUN_WIDTH} / 32];
+        if (lane == 0) masks[warp] = mask;
+        __syncthreads();
+
+        if (!inside) return;
+        if (!foreground) {{
+            forest[i] = -1;
+            return;
+        }}
+        unsigned int zeros = ~mask & ((1u << lane) - 1u);
+        while (zeros == 0 && warp > 0) zeros = ~masks[--warp];
+        const int start = warp * 32 + 32 - __clz(zeros);
+        forest[i] = row * cols + first_col + start;
+    }}
+    """
+    return cupy.RawKernel(
+        code, "cucim_label_run_init", options=("--std=c++17",)
+    )
+
+
+@functools.cache
+def _kernel_run_connect():
+    # Within each tile all x edges are already represented. Keep y and z
+    # contacts unless the same two runs touch one voxel earlier in x.
+    # This represents all y/z edges within each tile. At an x tile boundary,
+    # two y or two z contacts can therefore replace a cross-tile edge with
+    # one in an earlier row or plane. The replacement strictly decreases
+    # the raster index of the right endpoint and cannot remove an entire path.
+    return cupy.ElementwiseKernel(
+        "raw bool x, Y width, Y height",
+        "raw Y y",
+        f"""
+        if (!x[i]) continue;
+        Y row = static_cast<Y>(i) / width;
+        Y col = i - row * width;
+        bool tile_start = (col % {_RUN_WIDTH}) == 0;
+        bool has_prev_row = (row % height) != 0;
+        bool has_prev_plane = row >= height;
+        Y plane = width * height;
+        Y j = i;
+        if (col != 0 && tile_start) {{
+            Y k = i - 1;
+            if (x[k] &&
+                (!has_prev_row || !x[i - width] || !x[k - width]) &&
+                (!has_prev_plane || !x[i - plane] || !x[k - plane])) {{
+                {_UNION_CODE}
+            }}
+        }}
+        if (has_prev_row) {{
+            Y k = i - width;
+            if (x[k] && (tile_start || !x[i - 1] || !x[k - 1])) {{
+                {_UNION_CODE}
+            }}
+        }}
+        if (has_prev_plane) {{
+            Y k = i - plane;
+            if (x[k] && (tile_start || !x[i - 1] || !x[k - 1])) {{
+                {_UNION_CODE}
+            }}
+        }}
+        """,
+        "cucim_label_run_connect",
+        preamble=_PARENT_ATOMICS,
+    )
+
+
+@functools.cache
+def _kernel_count_roots():
+    return cupy.ElementwiseKernel(
+        "raw Y y",
+        "raw Y count",
+        "if (y[i] == i) atomicAdd(&count[0], 1);",
+        "cucim_label_count_roots",
+    )
+
+
+@functools.cache
+def _kernel_encode_ranks():
+    return cupy.ElementwiseKernel(
+        "raw Y roots",
+        "raw Y y",
+        "y[roots[i]] = -static_cast<Y>(i) - 2;",
+        "cucim_label_encode_ranks",
+    )
+
+
+@functools.cache
+def _kernel_propagate_ranks():
+    # Roots now contain -(rank + 1), background is -1, and unfinished
+    # foreground pixels still contain nonnegative parent indices. Each slot
+    # has one writer. Followers can stop at any peer that already has a rank.
+    return cupy.ElementwiseKernel(
+        "",
+        "raw Y y",
+        """
+        Y parent = y[i];
+        if (parent < 0) continue;
+        do { parent = load_parent(&y[parent]); } while (parent >= 0);
+        store_parent(&y[i], parent);
+        """,
+        "cucim_label_propagate_ranks",
+        preamble=_PARENT_ATOMICS,
+    )
+
+
+@functools.cache
+def _kernel_decode_ranks():
+    return cupy.ElementwiseKernel(
+        "", "Y y", "y = -(y + 1);", "cucim_label_decode_ranks"
     )
 
 
