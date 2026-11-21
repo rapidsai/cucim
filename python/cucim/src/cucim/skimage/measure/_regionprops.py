@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import inspect
@@ -123,7 +123,7 @@ COL_DTYPES = {
     "inertia_tensor_eigvals": float,
     "intensity_max": float,
     "intensity_mean": float,
-    # 'intensity_median': float,  # TODO: uncomment once supported
+    "intensity_median": float,
     "intensity_min": float,
     "intensity_std": float,
     "label": int,
@@ -1078,6 +1078,7 @@ def regionprops_table(
     batch_processing=True,
     to_table=True,
     copy_output_to_host=False,
+    disable_nan_check=False,
 ):
     """Compute region properties and return them as a pandas-compatible table.
 
@@ -1155,6 +1156,10 @@ def regionprops_table(
         to the host. This is desired if planning to do host-side analysis of
         the properties. Leave this False if further handling of the outputs is
         planned on the GPU.
+    disable_nan_check : bool, optional
+        If False, batch-computed intensity medians are set to NaN for regions
+        and channels containing a NaN intensity. Set to True to skip this
+        additional check. Ignored when ``batch_processing=False``.
 
     Returns
     -------
@@ -1268,6 +1273,7 @@ def regionprops_table(
             to_table=to_table,
             table_separator=separator,
             table_on_host=copy_output_to_host,
+            disable_nan_check=disable_nan_check,
         )
         if copy_output_to_host and not to_table:
             for key, value in table.items():

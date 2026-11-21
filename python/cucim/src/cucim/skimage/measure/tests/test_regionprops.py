@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -1483,9 +1483,6 @@ def test_all_documented_items_in_col_dtypes():
         re.search(pattern, property_line).group("property_name")
         for property_line in property_lines
     }
-
-    # TODO(grelee): remove next line once `intensity_median` is fully enabled
-    property_names.remove("intensity_median")
 
     column_keys = set(COL_DTYPES.keys())
     assert column_keys == property_names

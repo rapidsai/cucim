@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import functools
@@ -17,6 +17,7 @@ from cupy.testing import (
 from scipy.ndimage import find_objects as cpu_find_objects
 from skimage import measure as measure_cpu
 
+import cucim.skimage.measure._regionprops_gpu_intensity_kernels as intensity_kernels
 from cucim.skimage import data, measure
 from cucim.skimage._vendored import ndimage as ndi
 from cucim.skimage.measure._regionprops import PROPS
@@ -41,6 +42,7 @@ from cucim.skimage.measure._regionprops_gpu import (
     regionprops_inertia_tensor,
     regionprops_inertia_tensor_eigvals,
     regionprops_intensity_mean,
+    regionprops_intensity_median,
     regionprops_intensity_min_max,
     regionprops_intensity_std,
     regionprops_moments,
@@ -274,7 +276,9 @@ def test_extent(ndim, area_dtype, spacing):
 
 @pytest.mark.parametrize("precompute_max", [False, True])
 @pytest.mark.parametrize("ndim", [2, 3])
-@pytest.mark.parametrize("image_dtype", [cp.uint16, cp.uint8, cp.float32])
+@pytest.mark.parametrize(
+    "image_dtype", [cp.uint16, cp.uint8, cp.float16, cp.float32]
+)
 @pytest.mark.parametrize("mean_dtype", [cp.float32, cp.float64])
 @pytest.mark.parametrize("num_channels", [1, 4])
 def test_mean_intensity(
@@ -285,6 +289,7 @@ def test_mean_intensity(
     intensity_image = get_intensity_image(
         shape, dtype=image_dtype, num_channels=num_channels
     )
+    intensity_image = intensity_image.astype(image_dtype, copy=False)
 
     max_label = int(cp.max(labels)) if precompute_max else None
     props_dict = regionprops_intensity_mean(
@@ -307,6 +312,182 @@ def test_mean_intensity(
                 expected[f"intensity_mean-{c}"],
                 rtol=1e-3,
             )
+
+
+@pytest.mark.parametrize("precompute_max", [False, True])
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("image_dtype", [cp.uint16, cp.uint8, cp.float32])
+@pytest.mark.parametrize("num_channels", [1, 4])
+def test_median_intensity(precompute_max, ndim, image_dtype, num_channels):
+    shape = (128, 256) if ndim == 2 else (15, 31, 23)
+    labels = get_labels_nd(shape)
+    intensity_image = get_intensity_image(
+        shape, dtype=image_dtype, num_channels=num_channels
+    )
+
+    max_label = int(cp.max(labels)) if precompute_max else None
+    props_dict = regionprops_intensity_median(
+        labels, intensity_image, max_label=max_label
+    )
+    median_dtype = cp.promote_types(intensity_image.dtype, cp.float32)
+    assert props_dict["intensity_median"].dtype == median_dtype
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        intensity_image=cp.asnumpy(intensity_image),
+        properties=["num_pixels", "intensity_median"],
+    )
+    assert_array_equal(props_dict["num_pixels"], expected["num_pixels"])
+    if num_channels == 1:
+        assert_allclose(
+            props_dict["intensity_median"], expected["intensity_median"]
+        )
+    else:
+        for c in range(num_channels):
+            assert_allclose(
+                props_dict["intensity_median"][..., c],
+                expected[f"intensity_median-{c}"],
+            )
+
+
+def test_median_intensity_hybrid_threshold_monkeypatch(monkeypatch):
+    labels = cp.array(
+        [[1, 1, 0, 2], [1, 0, 2, 2], [3, 3, 3, 3]], dtype=cp.uint8
+    )
+    intensity_image = cp.arange(labels.size, dtype=cp.float32).reshape(
+        labels.shape
+    )
+
+    monkeypatch.setattr(intensity_kernels, "hybrid_size_threshold", 0)
+    fallback = regionprops_intensity_median(labels, intensity_image)[
+        "intensity_median"
+    ]
+
+    monkeypatch.setattr(intensity_kernels, "hybrid_size_threshold", 4)
+    hybrid = regionprops_intensity_median(labels, intensity_image)[
+        "intensity_median"
+    ]
+
+    assert_allclose(hybrid, fallback)
+
+
+@pytest.mark.parametrize("image_dtype", [cp.uint8, cp.uint16])
+def test_median_intensity_segmented_sort_preserves_integer_dtype(
+    monkeypatch, image_dtype
+):
+    extension = intensity_kernels._skimage_cpp_ext
+    if extension is None:
+        pytest.skip("cucim.skimage C++ extension is unavailable")
+
+    function_name = f"segmented_sort_keys_ranges_{cp.dtype(image_dtype).name}"
+    if not hasattr(extension, function_name):
+        pytest.skip(f"C++ extension does not provide {function_name}")
+
+    calls = []
+    sort_func = getattr(extension, function_name)
+
+    def wrapped_sort(*args, **kwargs):
+        calls.append(True)
+        return sort_func(*args, **kwargs)
+
+    monkeypatch.setattr(extension, function_name, wrapped_sort)
+    labels = cp.asarray([[1, 1, 1, 0], [2, 2, 2, 2]], dtype=cp.uint8)
+    intensity = cp.asarray([[7, 1, 3, 0], [8, 2, 6, 4]], dtype=image_dtype)
+
+    result = regionprops_intensity_median(labels, intensity)["intensity_median"]
+
+    assert calls
+    assert result.dtype == cp.float32
+    assert_array_equal(result, cp.asarray([3, 5], dtype=cp.float32))
+
+
+@pytest.mark.parametrize("region_size", [3, 4])
+@pytest.mark.parametrize("num_channels", [1, 2])
+def test_median_intensity_nan_propagation(num_channels, region_size):
+    labels = cp.stack(
+        (
+            cp.ones(region_size, dtype=cp.uint8),
+            cp.full(region_size, 2, dtype=cp.uint8),
+        )
+    )
+    intensity = cp.arange(2 * region_size, dtype=cp.float32).reshape(2, -1)
+    intensity[0, -1] = cp.nan
+    finite_median = (3 * region_size - 1) / 2
+    expected = cp.asarray([cp.nan, finite_median], dtype=cp.float32)
+    if num_channels == 2:
+        intensity = cp.stack((intensity, intensity[::-1]), axis=-1)
+        expected = cp.asarray(
+            [
+                [cp.nan, finite_median],
+                [finite_median, cp.nan],
+            ],
+            dtype=cp.float32,
+        )
+
+    result = regionprops_intensity_median(labels, intensity)["intensity_median"]
+
+    assert_array_equal(result, expected)
+
+
+def test_median_intensity_disable_nan_check(monkeypatch):
+    labels = cp.asarray([[1, 1, 1]], dtype=cp.uint8)
+    intensity = cp.asarray([[1, 2, cp.nan]], dtype=cp.float32)
+
+    pack_intensities = intensity_kernels._pack_intensities_by_label
+
+    def check_nan_flag(*args, **kwargs):
+        assert kwargs["check_nans"] is False
+        return pack_intensities(*args, **kwargs)
+
+    monkeypatch.setattr(
+        intensity_kernels, "_pack_intensities_by_label", check_nan_flag
+    )
+
+    result = measure.regionprops_table(
+        labels,
+        intensity,
+        properties=["intensity_median"],
+        disable_nan_check=True,
+    )
+
+    assert result["intensity_median"].shape == (1,)
+
+
+@pytest.mark.parametrize(
+    "image_dtype", [cp.uint8, cp.uint16, cp.int16, cp.float16, cp.float64]
+)
+@pytest.mark.parametrize("num_channels", [1, 3])
+def test_median_intensity_atomic_pack_noncontiguous(image_dtype, num_channels):
+    labels = cp.asarray(
+        [[1, 0, 3, 3], [1, 1, 0, 3], [0, 1, 3, 3]], dtype=cp.uint16
+    ).T
+    intensity = cp.arange(labels.size * num_channels).astype(image_dtype)
+    if num_channels == 1:
+        intensity = intensity.reshape(labels.shape[::-1]).T
+    else:
+        intensity = intensity.reshape(
+            (num_channels,) + labels.shape[::-1]
+        ).transpose(2, 1, 0)
+    assert not labels.flags.c_contiguous
+    assert not intensity.flags.c_contiguous
+
+    result = regionprops_intensity_median(labels, intensity)["intensity_median"]
+
+    expected_shape = (3,) if num_channels == 1 else (3, num_channels)
+    assert result.shape == expected_shape
+    assert cp.all(cp.isnan(result[1]))
+    for label in (1, 3):
+        expected = cp.median(intensity[labels == label], axis=0).astype(
+            result.dtype
+        )
+        assert_array_equal(result[label - 1], expected)
+
+
+def test_median_intensity_nan_check_is_keyword_only():
+    labels = cp.asarray([[1]], dtype=cp.uint8)
+    intensity = cp.asarray([[1]], dtype=cp.float32)
+
+    with pytest.raises(TypeError):
+        regionprops_intensity_median(labels, intensity, None, None, False)
 
 
 @pytest.mark.parametrize("precompute_max", [False, True])

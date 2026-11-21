@@ -379,6 +379,7 @@ build_local_cucim_() {
         -DCMAKE_INSTALL_PREFIX="${source_folder}/install" \
         -DPython_EXECUTABLE="$(which python3)"
     ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target cucim -- -j "$(nproc)"
+    ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target cucim_skimage_cpp -- -j "$(nproc)"
     ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target install -- -j "$(nproc)"
 
     popd
@@ -449,6 +450,9 @@ build_local() {
     fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cucim" ]; then
+        # Remove stale compiled cucim.skimage extension modules; the install
+        # step of the build puts the current ones into the cucim.skimage package
+        rm -f "${TOP}"/python/cucim/src/cucim/skimage/_cucim_skimage_*.so
         build_local_cucim_ "${TOP}"/python "${build_type}" ${build_type_str} "${prefix}"
     fi
 
