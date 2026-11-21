@@ -1128,6 +1128,8 @@ def get_warp_spline1d_kernel(
     warps_per_block=4,
     channels=1,
     cval=0.0,
+    *,
+    opt_in_shared_memory=False,
 ):
     """Generate a warp-parallel spline prefilter for contiguous 1D lines.
 
@@ -1178,4 +1180,9 @@ def get_warp_spline1d_kernel(
             ),
         )
     code += _WARP_SPLINE1D_FOOTER
-    return cupy.RawKernel(code, kernel_name)
+    kernel = cupy.RawKernel(code, kernel_name)
+    if opt_in_shared_memory:
+        # This function attribute is shared by launches of the cached kernel.
+        # Set a fixed ceiling so overlapping host calls cannot lower it.
+        kernel.max_dynamic_shared_size_bytes = _max_dynamic_shared_memory()
+    return kernel

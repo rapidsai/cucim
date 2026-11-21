@@ -662,7 +662,7 @@ def _exact_boundary_fold_ops(j, order, mode, int_t, float_type):
 
 def _exact_cval_term(spatial_axes, cval, internal_dtype):
     """cval * (1 - prod_j sum(weights_j)) for exact 'grid-constant'."""
-    prod = " * ".join(f"sfw_{j}" for j in spatial_axes) or "(W)1.0"
+    prod = " * ".join(f"sfw_{j}" for j in spatial_axes)
     return f"{cval} * ({internal_dtype})((W)1.0 - {prod})"
 
 
@@ -754,9 +754,16 @@ def _generate_interp_custom(
     float_type = cupy._core._scalar.get_typename(float_dtype)
     internal_dtype = float_type if integer_output else "Y"
 
+    # Exact boundaries temporarily use exterior indices. Keep them wide
+    # even when all in-domain indices fit in int.
+    exact = (
+        exact_boundary and order > 1 and mode in ("nearest", "grid-constant")
+    )
+    footprint_t = "ptrdiff_t" if exact else int_t
+
     # determine strides for x along each axis
     for j in range(ndim):
-        ops.append(f"const {int_t} xsize_{j} = x.shape()[{j}];")
+        ops.append(f"const {footprint_t} xsize_{j} = x.shape()[{j}];")
     ops.append(f"const {uint_t} sx_{ndim - 1} = 1;")
     for j in range(ndim - 1, 0, -1):
         ops.append(f"const {uint_t} sx_{j - 1} = sx_{j} * xsize_{j};")
@@ -794,7 +801,7 @@ def _generate_interp_custom(
         loop_batch_axis=loop_batch_axis,
     )
 
-    if cval is numpy.nan:
+    if mode in ("constant", "grid-constant") and math.isnan(cval):
         cval = "(Y)CUDART_NAN"
     elif cval == numpy.inf:
         cval = "(Y)CUDART_INF"
@@ -1133,7 +1140,6 @@ def _generate_interp_custom(
                     }}"""
                     )
     elif order > 1:
-        exact = exact_boundary and mode in ("nearest", "grid-constant")
         if exact:
             spline_mode = None
         elif mode == "grid-constant":
@@ -1150,7 +1156,7 @@ def _generate_interp_custom(
             ops.append(
                 f"""
             W wx, wy;
-            {int_t} start;"""
+            {footprint_t} start;"""
             )
 
         # Compute spline weights and indices for spatial axes (outside batch loop)
@@ -1178,23 +1184,26 @@ def _generate_interp_custom(
             else:
                 coord_var = f"({float_type})c_{j}"
 
-            if order & 1:
-                op_str = """
-                start = ({int_t})floor({coord_var}) - {order_2};"""
-            else:
-                op_str = """
-                start = ({int_t})floor({coord_var} + ({float_type})0.5) - {order_2};"""
-            ops.append(
-                op_str.format(
-                    int_t=int_t,
-                    coord_var=coord_var,
-                    float_type=float_type,
-                    order_2=order // 2,
-                )
+            center = (
+                f"floor({coord_var})"
+                if order & 1
+                else f"floor({coord_var} + ({float_type})0.5)"
             )
             if exact:
+                # Beyond this distance, even the largest spline pole raised
+                # to any footprint distance rounds to zero in float64. Clamp
+                # before casting. The spline weights still use the original
+                # coordinate, preserving its fractional part.
+                center = (
+                    f"fmin(fmax({center}, ({float_type})-1024), "
+                    f"({float_type})xsize_{j} + ({float_type})1024)"
+                )
+            ops.append(f"start = ({footprint_t}){center} - {order // 2};")
+            if exact:
                 ops.append(
-                    _exact_boundary_fold_ops(j, order, mode, int_t, float_type)
+                    _exact_boundary_fold_ops(
+                        j, order, mode, footprint_t, float_type
+                    )
                 )
 
             # set of coordinate values within spline footprint along axis j
@@ -1329,11 +1338,6 @@ def _generate_interp_custom(
     if order > 0 and not (loop_batch_axis and order >= 1):
         _weight = " * ".join([f"w_{j}" for j in range(ndim)])
         _coord_idx = " + ".join([f"ic_{j}" for j in range(ndim)])
-        exact = (
-            exact_boundary
-            and order > 1
-            and mode in ("nearest", "grid-constant")
-        )
         if (mode == "grid-constant" and not exact) or (
             order > 1 and mode == "constant"
         ):
@@ -1355,8 +1359,7 @@ def _generate_interp_custom(
             )
 
         ops.append("}" * ndim)
-        if exact and mode == "grid-constant":
-            spatial_axes = [j for j in range(ndim) if j not in batch_axes]
+        if exact and mode == "grid-constant" and spatial_axes:
             _cterm = _exact_cval_term(spatial_axes, cval, internal_dtype)
             ops.append(f"out += {_cterm};")
 
@@ -1385,7 +1388,7 @@ def _generate_interp_custom(
         name += "_batch_" + "_".join([str(j) for j in sorted(batch_axes)])
     if loop_batch_axis:
         name += "_looped"
-    if exact_boundary and order > 1 and mode in ("nearest", "grid-constant"):
+    if exact:
         name += "_exact"
     return operation, name
 

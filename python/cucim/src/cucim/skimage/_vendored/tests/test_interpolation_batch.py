@@ -270,6 +270,54 @@ def test_warp_spline_prefilter_large_shared_memory():
     testing.assert_allclose(actual, expected, rtol=5e-4, atol=5e-4)
 
 
+def test_warp_spline_prefilter_interleaved_large_shared_memory(monkeypatch):
+    core = _ndimage_spline_prefilter_core
+    itemsize = numpy.dtype("float32").itemsize
+    short = core._DEFAULT_MAX_DYNAMIC_SHARED_MEMORY // itemsize + 1
+    long = core._max_dynamic_shared_memory() // itemsize
+    if long <= short:
+        pytest.skip("device cannot opt in to two different line lengths")
+
+    inputs = [cupy.ones(n, dtype=cupy.float32) for n in (short, long)]
+    original = core.get_warp_spline1d_kernel
+    launches = []
+
+    def filter_line(image):
+        return _ndimage_interpolation.spline_filter1d(
+            image, output=cupy.float32
+        )
+
+    class InterleavedKernel:
+        def __init__(self, kernel):
+            self.kernel = kernel
+
+        @property
+        def max_dynamic_shared_size_bytes(self):
+            return self.kernel.max_dynamic_shared_size_bytes
+
+        @max_dynamic_shared_size_bytes.setter
+        def max_dynamic_shared_size_bytes(self, size):
+            self.kernel.max_dynamic_shared_size_bytes = size
+
+        def __call__(self, *args, **kwargs):
+            # Start the smaller call after the larger call has prepared
+            # its kernel and before it launches.
+            if kwargs["shared_mem"] == long * itemsize:
+                outputs.append(filter_line(inputs[0]))
+            launches.append(kwargs["shared_mem"])
+            return self.kernel(*args, **kwargs)
+
+    def interleave(*args, **kwargs):
+        return InterleavedKernel(original(*args, **kwargs))
+
+    monkeypatch.setattr(core, "get_warp_spline1d_kernel", interleave)
+    outputs = []
+    outputs.append(filter_line(inputs[1]))
+    assert launches == [short * itemsize, long * itemsize]
+    for actual, expected in zip(outputs, inputs):
+        testing.assert_allclose(actual, expected, rtol=1e-6, atol=1e-6)
+
+
 @pytest.mark.parametrize("order", [2, 3, 4, 5])
 @pytest.mark.parametrize("mode", ["reflect", "mirror", "grid-wrap", "constant"])
 @pytest.mark.parametrize("dtype", [cupy.uint8, cupy.float32, cupy.float64])

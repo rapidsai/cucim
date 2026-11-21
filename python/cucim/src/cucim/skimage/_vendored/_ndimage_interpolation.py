@@ -180,10 +180,8 @@ def spline_filter1d(
             warps_per_block=warps_per_block,
             channels=channels,
             cval=_cval,
+            opt_in_shared_memory=smem > core._DEFAULT_MAX_DYNAMIC_SHARED_MEMORY,
         )
-        if smem > core._DEFAULT_MAX_DYNAMIC_SHARED_MEMORY:
-            # Long lines opt in to the device's larger shared memory limit.
-            kern.max_dynamic_shared_size_bytes = smem
         n_blocks = n_signals // channels  # staged (n_samples, channels) blocks
         block = (32 * warps_per_block,)
         grid = ((n_blocks + warps_per_block - 1) // warps_per_block,)
@@ -336,7 +334,9 @@ def _prepad_for_spline_filter(input, mode, cval, batch_axes=None):
     return padded, npad
 
 
-def _use_exact_constant_boundary(image, mode, order, prefilter, batch_axes):
+def _use_exact_constant_boundary(
+    image, mode, order, prefilter, batch_axes, *, cval=0.0
+):
     """Whether the padding-free constant-extension path applies.
 
     'nearest' and 'grid-constant' use exact constant-extension boundaries
@@ -346,13 +346,15 @@ def _use_exact_constant_boundary(image, mode, order, prefilter, batch_axes):
 
     The interpolation kernel folds exterior coefficients into a window of
     ``order + 1`` in-domain coefficients, so every interpolated axis needs at
-    least ``order + 1`` samples. Complex inputs keep the padded path.
+    least ``order + 1`` samples. Complex inputs and nonfinite constant fill
+    values keep the padded path.
     """
     if not (
         prefilter
         and order > 1
         and mode in _spline_prefilter_core.EXACT_CONSTANT_MODES
         and image.dtype.kind != "c"
+        and (mode != "grid-constant" or math.isfinite(cval))
     ):
         return False
     batch_axes = batch_axes or ()
@@ -385,7 +387,9 @@ def _filter_input(image, prefilter, mode, cval, order, batch_axes=None):
     """
     if not prefilter or order < 2:
         return (cupy.ascontiguousarray(image), 0, False)
-    if _use_exact_constant_boundary(image, mode, order, prefilter, batch_axes):
+    if _use_exact_constant_boundary(
+        image, mode, order, prefilter, batch_axes, cval=cval
+    ):
         float_dtype = cupy.promote_types(image.dtype, cupy.float32)
         temp = image.astype(float_dtype, order="C", copy=True)
         exact_mode = _spline_prefilter_core.EXACT_CONSTANT_MODES[mode]
