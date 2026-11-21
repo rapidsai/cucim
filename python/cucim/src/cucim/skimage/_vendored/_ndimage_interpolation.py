@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import cmath
+import ctypes
 import math
 import warnings
 
@@ -20,6 +21,67 @@ from cucim.skimage._vendored import (
 )
 from cucim.skimage._vendored._internal import _normalize_axis_index
 from cucim.skimage._vendored.pad import pad
+
+
+def _launch_interpolation(
+    name,
+    filtered,
+    output,
+    transform_args,
+    *,
+    large_int,
+    mode,
+    cval,
+    order,
+    integer_output,
+    nprepad,
+    float_dtype,
+    batch_axes,
+    exact_boundary,
+):
+    loop_batch_axis = _interp_kernels.use_loop_batch(
+        batch_axes, filtered.ndim, output.shape, output.flags.c_contiguous
+    )
+    loop_batch_size = output.shape[-1] if loop_batch_axis else None
+    nonfinite_integer_fill = None
+    if integer_output and mode == "grid-constant" and not math.isfinite(cval):
+        if math.isnan(cval):
+            nonfinite_integer_fill = "CUDART_NAN"
+        else:
+            nonfinite_integer_fill = (
+                "CUDART_INF" if cval > 0 else "(-CUDART_INF)"
+            )
+    inputs = (filtered,) + transform_args
+    fill_dtype = None
+    if mode in _interp_kernels.FILL_MODES:
+        fill_value = numpy.float64(cval)
+        if output.dtype == numpy.float32:
+            # Match the device cast's silent narrowing, including overflow.
+            fill_value = numpy.float32(ctypes.c_float(fill_value).value)
+            fill_dtype = "float32"
+        else:
+            fill_dtype = "float64"
+        inputs += (fill_value,)
+    kernel = _interp_kernels._get_interp_kernel(
+        name,
+        filtered.ndim,
+        output.ndim,
+        large_int,
+        mode,
+        order,
+        integer_output,
+        nprepad,
+        float_dtype,
+        batch_axes or (),
+        loop_batch_size,
+        exact_boundary,
+        nonfinite_integer_fill,
+        fill_dtype,
+    )
+    if loop_batch_axis:
+        kernel(*inputs, output, size=math.prod(output.shape[:-1]))
+    else:
+        kernel(*inputs, output)
 
 
 def _check_parameter(func_name, order, mode):
@@ -179,7 +241,6 @@ def spline_filter1d(
             pole_type=pole_type,
             warps_per_block=warps_per_block,
             channels=channels,
-            cval=_cval,
             opt_in_shared_memory=smem > core._DEFAULT_MAX_DYNAMIC_SHARED_MEMORY,
         )
         n_blocks = n_signals // channels  # staged (n_samples, channels) blocks
@@ -199,7 +260,6 @@ def spline_filter1d(
             index_type=index_type,
             data_type=data_type,
             pole_type=pole_type,
-            cval=_cval,
         )
         block = (32, n_segments)
         grid = ((n_signals + 31) // 32,)
@@ -224,7 +284,6 @@ def spline_filter1d(
             data_type=data_type,
             pole_type=pole_type,
             block_size=block_size,
-            cval=_cval,
         )
         # Due to recursive nature, a given line of data must be processed by
         # a single thread. n_signals lines will be processed in total.
@@ -236,6 +295,8 @@ def spline_filter1d(
         )
 
     # apply causal + anti-causal IIR spline filters
+    if mode == core.EXACT_CONSTANT_MODES["grid-constant"]:
+        args += (numpy.float64(_cval),)
     kern(grid, block, args, **launch_kwargs)
 
     if isinstance(output, cupy.ndarray) and temp is not output:
@@ -503,24 +564,21 @@ def map_coordinates(
     float_dtype = cupy.promote_types(input.real.dtype, cupy.float32)
     large_int = max(math.prod(input.shape), coordinates.shape[0]) > 1 << 31
 
-    kern_info = _interp_kernels._get_map_kernel(
-        input.ndim,
-        large_int,
-        yshape=coordinates.shape[1:],
+    _launch_interpolation(
+        "map",
+        filtered,
+        ret,
+        (coordinates,),
+        large_int=large_int,
         mode=mode,
         cval=cval,
         order=order,
         integer_output=integer_output,
         nprepad=nprepad,
-        exact_boundary=exact_boundary,
         float_dtype=float_dtype,
         batch_axes=batch_axes,
-        output_c_contiguous=ret.flags.c_contiguous,
+        exact_boundary=exact_boundary,
     )
-    if kern_info.size is not None:
-        kern_info.kernel(filtered, coordinates, ret, size=kern_info.size)
-    else:
-        kern_info.kernel(filtered, coordinates, ret)
     return ret
 
 
@@ -705,26 +763,21 @@ def affine_transform(
         matrix = cupy.asarray(matrix)
         offset = cupy.asarray(offset, dtype=float_dtype)
         offset = -offset / matrix
-        kern_info = _interp_kernels._get_zoom_shift_kernel(
-            ndim,
-            large_int,
-            output_shape,
-            mode,
+        _launch_interpolation(
+            "zoom_shift",
+            filtered,
+            output,
+            (offset, matrix),
+            large_int=large_int,
+            mode=mode,
             cval=cval,
             order=order,
             integer_output=integer_output,
             nprepad=nprepad,
-            exact_boundary=exact_boundary,
             float_dtype=float_dtype,
             batch_axes=batch_axes,
-            output_c_contiguous=output.flags.c_contiguous,
+            exact_boundary=exact_boundary,
         )
-        if kern_info.size is not None:
-            kern_info.kernel(
-                filtered, offset, matrix, output, size=kern_info.size
-            )
-        else:
-            kern_info.kernel(filtered, offset, matrix, output)
     else:
         # identify batch axes where the row is an identity row with zero offset
         # and no other row depends on this axis. Otherwise, the transform
@@ -748,20 +801,6 @@ def affine_transform(
             input, prefilter, mode, cval, order, batch_axes=batch_axes
         )
 
-        kern_info = _interp_kernels._get_affine_kernel(
-            ndim,
-            large_int,
-            output_shape,
-            mode,
-            cval=cval,
-            order=order,
-            integer_output=integer_output,
-            nprepad=nprepad,
-            exact_boundary=exact_boundary,
-            float_dtype=float_dtype,
-            batch_axes=batch_axes,
-            output_c_contiguous=output.flags.c_contiguous,
-        )
         if isinstance(matrix, numpy.ndarray):
             # Build the combined matrix on the host and upload it once.
             m = numpy.empty((ndim, ndim + 1), dtype=float_dtype)
@@ -772,10 +811,21 @@ def affine_transform(
             m = cupy.zeros((ndim, ndim + 1), dtype=float_dtype)
             m[:, :-1] = matrix
             m[:, -1] = cupy.asarray(offset, dtype=float_dtype)
-        if kern_info.size is not None:
-            kern_info.kernel(filtered, m, output, size=kern_info.size)
-        else:
-            kern_info.kernel(filtered, m, output)
+        _launch_interpolation(
+            "affine",
+            filtered,
+            output,
+            (m,),
+            large_int=large_int,
+            mode=mode,
+            cval=cval,
+            order=order,
+            integer_output=integer_output,
+            nprepad=nprepad,
+            float_dtype=float_dtype,
+            batch_axes=batch_axes,
+            exact_boundary=exact_boundary,
+        )
     return output
 
 
@@ -992,29 +1042,26 @@ def shift(
             input, prefilter, mode, cval, order, batch_axes=batch_axes
         )
 
-        kern_info = _interp_kernels._get_shift_kernel(
-            input.ndim,
-            large_int,
-            input.shape,
-            mode,
-            cval=cval,
-            order=order,
-            integer_output=integer_output,
-            nprepad=nprepad,
-            exact_boundary=exact_boundary,
-            float_dtype=float_dtype,
-            batch_axes=batch_axes,
-            output_c_contiguous=output.flags.c_contiguous,
-        )
         shift = cupy.asarray(shift, dtype=float_dtype, order="C")
         if shift.ndim != 1:
             raise ValueError("shift must be 1d")
         if shift.size != filtered.ndim:
             raise ValueError("len(shift) must equal input.ndim")
-        if kern_info.size is not None:
-            kern_info.kernel(filtered, shift, output, size=kern_info.size)
-        else:
-            kern_info.kernel(filtered, shift, output)
+        _launch_interpolation(
+            "shift",
+            filtered,
+            output,
+            (shift,),
+            large_int=large_int,
+            mode=mode,
+            cval=cval,
+            order=order,
+            integer_output=integer_output,
+            nprepad=nprepad,
+            float_dtype=float_dtype,
+            batch_axes=batch_axes,
+            exact_boundary=exact_boundary,
+        )
     return output
 
 
@@ -1157,24 +1204,20 @@ def zoom(
             input, prefilter, mode, cval, order, batch_axes=batch_axes
         )
 
-        kern_info = _interp_kernels._get_zoom_kernel(
-            input.ndim,
-            large_int,
-            output_shape,
-            mode,
+        zoom = cupy.asarray(zoom, dtype=float_dtype)
+        _launch_interpolation(
+            "zoom_grid" if grid_mode else "zoom",
+            filtered,
+            output,
+            (zoom,),
+            large_int=large_int,
+            mode=mode,
             cval=cval,
             order=order,
             integer_output=integer_output,
-            grid_mode=grid_mode,
             nprepad=nprepad,
-            exact_boundary=exact_boundary,
             float_dtype=float_dtype,
             batch_axes=batch_axes,
-            output_c_contiguous=output.flags.c_contiguous,
+            exact_boundary=exact_boundary,
         )
-        zoom = cupy.asarray(zoom, dtype=float_dtype)
-        if kern_info.size is not None:
-            kern_info.kernel(filtered, zoom, output, size=kern_info.size)
-        else:
-            kern_info.kernel(filtered, zoom, output)
     return output

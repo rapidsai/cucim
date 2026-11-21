@@ -21,20 +21,21 @@ axes as done in the reference implementation here.
 
 from __future__ import annotations
 
+import cupy
 import numpy
 import pytest
-
-import cupy
-from cupy.cuda import runtime
 from cupy import testing
+
 import cucim.skimage._vendored.ndimage as vendored_ndimage
-from cucim.skimage._vendored import _ndimage_interpolation
-from cucim.skimage._vendored import _ndimage_spline_prefilter_core
+from cucim.skimage._vendored import (
+    _ndimage_interpolation,
+    _ndimage_spline_prefilter_core,
+)
 from cucim.skimage._vendored._internal import AxisError
 from cucim.skimage._vendored._ndimage_interp_kernels import (
     _get_coord_zoom_and_shift_grid,
-    _get_shift_kernel,
     loop_batch_max_channels,
+    use_loop_batch,
 )
 
 try:
@@ -42,11 +43,6 @@ try:
     import scipy.ndimage
 
     scipy_version = numpy.lib.NumpyVersion(scipy.__version__)
-except ImportError:
-    pass
-
-try:
-    import cv2
 except ImportError:
     pass
 
@@ -79,17 +75,7 @@ def test_zoom_shift_grid_codegen_indexes_shift_by_axis():
 
 
 def test_loop_batch_selected_when_last_axis_is_one_of_multiple_batch_axes():
-    kern_info = _get_shift_kernel(
-        4,
-        False,
-        (5, 6, 7, 3),
-        "nearest",
-        order=1,
-        batch_axes=(0, 3),
-        output_c_contiguous=True,
-    )
-
-    assert kern_info.size == 5 * 6 * 7
+    assert use_loop_batch((0, 3), 4, (5, 6, 7, 3))
 
 
 @pytest.mark.parametrize("order", [2, 3])

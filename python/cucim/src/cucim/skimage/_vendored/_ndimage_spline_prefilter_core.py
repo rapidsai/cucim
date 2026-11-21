@@ -273,7 +273,7 @@ def _exact_tail_decl(n_poles, channels=1):
         (void)tl; (void)tr; (void)tlp;"""
 
 
-def _exact_causal_init_code(mode, poles, p, cval=0.0, ch="0"):
+def _exact_causal_init_code(mode, poles, p, ch="0"):
     """Exact causal initialization for a constant extension.
 
     Outside the line, every intermediate sequence is an exponential
@@ -291,8 +291,8 @@ def _exact_causal_init_code(mode, poles, p, cval=0.0, ch="0"):
             code.append(f"tl[{ch}][0] = c[0];")
             code.append(f"tr[{ch}][0] = gain * c[(n - 1) * element_stride];")
         else:
-            code.append(f"tl[{ch}][0] = gain * (T){_lit(cval)};")
-            code.append(f"tr[{ch}][0] = gain * (T){_lit(cval)};")
+            code.append(f"tl[{ch}][0] = gain * (T)fill_value;")
+            code.append(f"tr[{ch}][0] = gain * (T)fill_value;")
     else:
         # Left tail of the previous pole's output: particular solutions for
         # the roots of its causal tail plus a homogeneous term in its pole.
@@ -344,11 +344,11 @@ def _exact_anticausal_init_code(mode, poles, p, ch="0"):
     return "\n        ".join(code)
 
 
-def _init_codes(mode, poles, p, n_boundary, cval=0.0, ch="0"):
+def _init_codes(mode, poles, p, n_boundary, ch="0"):
     """(causal, anti-causal) initialization code for pole ``p``."""
     if _is_exact_constant_mode(mode):
         return (
-            _exact_causal_init_code(mode, poles, p, cval=cval, ch=ch),
+            _exact_causal_init_code(mode, poles, p, ch=ch),
             _exact_anticausal_init_code(mode, poles, p, ch=ch),
         )
     return (
@@ -449,17 +449,26 @@ def _get_spline_mode(mode):
     return "reflect" if mode == "nearest" else "mirror"
 
 
-def _get_spline1d_code(mode, poles, n_boundary, cval=0.0):
+def _spline_fill_parameter(mode):
+    return (
+        ", double fill_value"
+        if mode == EXACT_CONSTANT_MODES["grid-constant"]
+        else ""
+    )
+
+
+def _get_spline1d_code(mode, poles, n_boundary):
     """Generates the code required for IIR filtering of a single 1d signal.
 
     Prefiltering is done by causal filtering followed by anti-causal filtering.
     Multiple boundary conditions have been implemented.
     """
+    fill_parameter = _spline_fill_parameter(mode)
     code = [
         """
     __device__ void spline_prefilter1d(
-        T* __restrict__ c, idx_t signal_length, idx_t element_stride)
-    {{"""
+        T* __restrict__ c, idx_t signal_length, idx_t element_strideFILL_PARAMETER)
+    {{""".replace("FILL_PARAMETER", fill_parameter)
     ]
 
     # variables common to all boundary modes
@@ -506,7 +515,7 @@ def _get_spline1d_code(mode, poles, n_boundary, cval=0.0):
         # initialize and apply the causal filter
         if exact:
             # generated without braces, so safe for the final format() call
-            causal, anticausal = _init_codes(mode, poles, p, n_boundary, cval)
+            causal, anticausal = _init_codes(mode, poles, p, n_boundary)
         else:
             causal = _causal_init_code(mode)
             anticausal = _anticausal_init_code(mode)
@@ -566,7 +575,7 @@ _batch_spline1d_strided_template = """
 extern "C" __global__
 __launch_bounds__({block_size})
 void {kernel_name}(T* __restrict__ y, idx_t n_signals, idx_t n_samples,
-                   {shape_parameters}) {{
+                   {shape_parameters}{fill_parameter}) {{
     const idx_t shape[] = {{{shape_values}}};
     idx_t y_elem_stride = 1;
     for (int a = {ndim} - 1; a > {axis}; --a) {{ y_elem_stride *= shape[a]; }}
@@ -575,7 +584,7 @@ void {kernel_name}(T* __restrict__ y, idx_t n_signals, idx_t n_samples,
     if (batch_idx < n_signals)
     {{
         T* __restrict__ y_i = row(y, batch_idx, {axis}, {ndim}, shape);
-        spline_prefilter1d(y_i, n_samples, y_elem_stride);
+        spline_prefilter1d(y_i, n_samples, y_elem_stride{fill_argument});
     }}
 }}
 """
@@ -601,7 +610,7 @@ typedef {index_type} idx_t;
 
 extern "C" __global__
 __launch_bounds__({block_size})
-void {kernel_name}(T* __restrict__ y, idx_t n_lines, idx_t n, idx_t inner)
+void {kernel_name}(T* __restrict__ y, idx_t n_lines, idx_t n, idx_t inner{fill_parameter})
 {{
     // A line is indexed by its (outer, inner) position. Element i of line
     // `line` is at (line / inner) * n * inner + i * inner + line % inner, so
@@ -709,7 +718,7 @@ _SEGMENTED_SPLINE1D_POLE = """
 
 
 def _get_segmented_spline1d_code(
-    kernel_name, mode, poles, n_boundary, n_segments, types, cval=0.0
+    kernel_name, mode, poles, n_boundary, n_segments, types
 ):
     """Generate a block-parallel spline prefilter for strided lines."""
     mode = _get_spline_mode(mode)
@@ -722,12 +731,11 @@ def _get_segmented_spline1d_code(
         block_size=32 * n_segments,
         gain=get_gain(poles),
         exact_decl=exact_decl,
+        fill_parameter=_spline_fill_parameter(mode),
         **types,
     )
     for pole_index, pole in enumerate(poles):
-        causal, anticausal = _init_codes(
-            mode, poles, pole_index, n_boundary, cval
-        )
+        causal, anticausal = _init_codes(mode, poles, pole_index, n_boundary)
         code += _SEGMENTED_SPLINE1D_POLE.format(
             pole_index=pole_index,
             pole=pole,
@@ -789,7 +797,7 @@ __device__ __forceinline__ void run_carry_in(
 
 extern "C" __global__
 __launch_bounds__({block_size})
-void {kernel_name}(T* __restrict__ y, idx_t n_signals, idx_t n)
+void {kernel_name}(T* __restrict__ y, idx_t n_signals, idx_t n{fill_parameter})
 {{
     // Each warp filters one contiguous (n, CH) block, staged in shared memory
     // so that global loads and stores are coalesced.
@@ -929,7 +937,6 @@ def get_raw_spline1d_kernel(
     data_type="double",
     pole_type="double",
     block_size=128,
-    cval=0.0,
 ):
     """Generate a spline prefilter with runtime sizes passed as scalar arguments.
 
@@ -952,7 +959,7 @@ def get_raw_spline1d_kernel(
     )
 
     # generate source for a 1d function for a given boundary mode and poles
-    code += _get_spline1d_code(mode, poles, n_boundary, cval)
+    code += _get_spline1d_code(mode, poles, n_boundary)
 
     # generate code handling batch operation of the 1d filter
     mode_str = mode.replace("-", "_")  # cannot have '-' in kernel name
@@ -969,6 +976,8 @@ def get_raw_spline1d_kernel(
             f"idx_t shape_{axis}" for axis in range(ndim)
         ),
         shape_values=", ".join(f"shape_{axis}" for axis in range(ndim)),
+        fill_parameter=_spline_fill_parameter(mode),
+        fill_argument=(", fill_value" if _spline_fill_parameter(mode) else ""),
     )
     return cupy.RawKernel(code, kernel_name)
 
@@ -1003,7 +1012,6 @@ def get_segmented_spline1d_kernel(
     index_type="int",
     data_type="float",
     pole_type="float",
-    cval=0.0,
 ):
     """Generate a block-parallel spline prefilter for strided lines."""
     if data_type not in ("float", "double"):
@@ -1022,7 +1030,6 @@ def get_segmented_spline1d_kernel(
         n_boundary,
         n_segments,
         dict(data_type=data_type, pole_type=pole_type, index_type=index_type),
-        cval=cval,
     )
     return cupy.RawKernel(code, kernel_name)
 
@@ -1127,7 +1134,6 @@ def get_warp_spline1d_kernel(
     pole_type="float",
     warps_per_block=4,
     channels=1,
-    cval=0.0,
     *,
     opt_in_shared_memory=False,
 ):
@@ -1161,6 +1167,7 @@ def get_warp_spline1d_kernel(
         kernel_name=kernel_name,
         gain=get_gain(poles),
         warps_per_block=warps_per_block,
+        fill_parameter=_spline_fill_parameter(mode),
         exact_decl=(
             _exact_tail_decl(len(poles), channels)
             if _is_exact_constant_mode(mode)
@@ -1169,7 +1176,7 @@ def get_warp_spline1d_kernel(
     )
     for pole_index, pole in enumerate(poles):
         causal, anticausal = _init_codes(
-            mode, poles, pole_index, n_boundary, cval, ch="ch"
+            mode, poles, pole_index, n_boundary, ch="ch"
         )
         code += _WARP_SPLINE1D_POLE.format(
             pole_index=pole_index,
