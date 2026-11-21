@@ -12,6 +12,7 @@ from functools import lru_cache
 
 import cupy
 import numpy
+from cupy import _core
 
 from cucim.skimage._vendored import (
     _internal as internal,
@@ -830,14 +831,15 @@ def _cached_gaussian_kernel1d(sigma, order, radius, dtype):
     # Avoid retaining unusually large kernels. Together with the entry count
     # limit, this bounds the cached kernel data to roughly 64 MiB per process.
     kernel_nbytes = (2 * radius + 1) * cupy.dtype(dtype).itemsize
-    if kernel_nbytes > _MAX_CACHED_GAUSSIAN_KERNEL_BYTES:
+    caller = _util._coefficient_cache_stream()
+    if caller is None or kernel_nbytes > _MAX_CACHED_GAUSSIAN_KERNEL_BYTES:
         return _gaussian_kernel1d(sigma, order, radius, cupy.dtype(dtype))
 
     device_id = cupy.cuda.runtime.getDevice()
     kernel = _cached_gaussian_kernel1d_for_device(
         device_id, sigma, order, radius, dtype
     )
-    return _util._record_cache_array_use(kernel)
+    return _util._record_cache_array_use(kernel, caller)
 
 
 @lru_cache(maxsize=_MAX_CACHED_GAUSSIAN_KERNELS)

@@ -75,7 +75,7 @@ def _register_cache_array(array, all_nonzero=False):
         weakref.finalize(
             array, _nonzero_cache_array_ids.discard, id(array)
         ).atexit = False
-    return _record_cache_array_use(array)
+    return array
 
 
 def _is_nonzero_cache_array(array):
@@ -89,9 +89,27 @@ def _is_nonzero_cache_array(array):
     return id(array) in _nonzero_cache_array_ids
 
 
-def _record_cache_array_use(array):
-    """Track consumer streams on the host; cache hits issue no CUDA operations."""
+def _coefficient_cache_stream():
+    """Return a trackable stream or None for a per-thread default stream."""
     stream = cupy.cuda.get_current_stream()
+    runtime = cupy.cuda.runtime
+    if not runtime.is_hip and stream.ptr not in (0, runtime.streamLegacy):
+        if stream.is_capturing():
+            # Retirement only covers queued work, not future graph replays.
+            raise RuntimeError(
+                "Direct CUDA Graph capture is unsupported for operations "
+                "using the coefficient cache"
+            )
+        if stream.ptr == runtime.streamPerThread:
+            # The PTDS handle resolves relative to the issuing host thread.
+            # A finalizer on another thread cannot record a completion event
+            # for this consumer. Allocate in the caller's stream instead.
+            return None
+    return stream
+
+
+def _record_cache_array_use(array, stream):
+    """Track a consumer stream for retirement after its queued work."""
     _cache_array_streams[id(array)].setdefault(stream.ptr, stream)
     return array
 
@@ -113,11 +131,21 @@ def _cached_filter_weights(weights, dtype, divisor=1):
     in the uncached edge filters. Keep it in the key so magnitude and single-
     axis filters never share coefficients with different normalization.
     """
+    caller = _coefficient_cache_stream()
+    if caller is None:
+        return _make_filter_weights(weights, dtype, divisor)
     device_id = cupy.cuda.runtime.getDevice()
     array = _cached_filter_weights_for_device(
         device_id, weights, cupy.dtype(dtype).str, divisor
     )
-    return _record_cache_array_use(array)
+    return _record_cache_array_use(array, caller)
+
+
+def _make_filter_weights(weights, dtype, divisor):
+    array = cupy.asarray(weights, dtype=dtype)
+    if divisor != 1:
+        array /= divisor
+    return array
 
 
 @lru_cache(maxsize=64)
@@ -126,9 +154,7 @@ def _cached_filter_weights_for_device(device_id, weights, dtype, divisor):
     with cupy.cuda.Device(device_id):
         stream = _get_cache_init_stream()
         with stream:
-            array = cupy.asarray(weights, dtype=dtype)
-            if divisor != 1:
-                array /= divisor
+            array = _make_filter_weights(weights, dtype, divisor)
             # checked once per cache entry (synchronizes the cache stream)
             all_nonzero = int(cupy.count_nonzero(array)) == array.size
         stream.synchronize()

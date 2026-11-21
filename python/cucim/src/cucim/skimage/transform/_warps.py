@@ -171,6 +171,9 @@ def resize(
     not provide it. If the finite-value promise is violated, output clipping
     may be skipped.
 
+    Direct CUDA Graph capture is unsupported when this function needs
+    Gaussian or zoom coefficients.
+
     Modes 'reflect' and 'symmetric' are similar, but differ in whether the edge
     pixels are duplicated during the reflection.  As an example, if an array
     has values [0, 1, 2] and was padded to the right by four values using
