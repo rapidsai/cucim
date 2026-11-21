@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -169,6 +169,11 @@ def resize(
 
     For a similar function that preserves the dtype of the input, consider
     `cucim.scipy.ndimage.zoom`.
+
+    For spline orders above 1, 'constant' and 'edge' use exact boundary
+    extension instead of SciPy's prepadding. Short axes, complex input, and
+    nonfinite constant fill values use prepadding. An axis is short when it
+    has fewer samples than the spline order plus one.
 
     Examples
     --------
@@ -521,6 +526,11 @@ def rotate(
     the array. Unlike the scikit-image implementation, more than one additional
     axis may be present on the array.
 
+    For spline orders above 1, 'constant' and 'edge' use exact boundary
+    extension instead of SciPy's prepadding. Short axes, complex input, and
+    nonfinite constant fill values use prepadding. An axis is short when it
+    has fewer samples than the spline order plus one.
+
     Examples
     --------
     >>> from skimage import data
@@ -608,8 +618,9 @@ def rotate(
 
     float_dtype = cp.promote_types(image.real.dtype, cp.float32)
 
-    # transfer the coordinate transform to the GPU
-    affine_params = cp.asarray(affine_params, dtype=float_dtype)
+    # Keep the coordinate transform on the host; affine_transform inspects it
+    # there and uploads it once.
+    affine_params = np.asarray(affine_params, dtype=float_dtype)
 
     return _ndimage_affine(
         image,
@@ -1050,6 +1061,11 @@ def warp(
       `ProjectiveTransform` and `order` in [0, 3] this function uses the
       underlying transformation matrix to warp the image with a much faster
       routine.
+
+    For spline orders above 1, 'constant' and 'edge' use exact boundary
+    extension instead of SciPy's prepadding. Short axes, complex input, and
+    nonfinite constant fill values use prepadding. An axis is short when it
+    has fewer samples than the spline order plus one.
 
     Examples
     --------
