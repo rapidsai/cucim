@@ -2606,7 +2606,6 @@ def test_otsu_empty_neighborhoods_are_zero():
     )
     assert int((expected == 0).sum()) > 0
     cp.testing.assert_array_equal(result, cp.asarray(expected))
-    assert int(rank.otsu(cp.asarray(image), cp.zeros((3, 3), bool)).max()) == 0
 
 
 def test_otsu_numeric_mask_matches_skimage_quantization():
@@ -2624,6 +2623,39 @@ def test_otsu_numeric_mask_matches_skimage_quantization():
     cp.testing.assert_array_equal(
         result, rank.otsu(image_gpu, footprint_gpu, mask=boolean_mask)
     )
+
+
+@pytest.mark.parametrize("backend", ["auto", "elementwise"])
+@pytest.mark.parametrize("shape", [(0, 3), (3, 3)])
+def test_otsu_empty_footprint_zeros_supplied_output(backend, shape):
+    image = cp.full((5, 5), 1000, dtype=cp.uint16)
+    footprint = cp.zeros(shape, dtype=bool)
+    out = cp.full((5, 10), 7, dtype=cp.float32)[:, ::2]
+    assert rank.otsu(image, footprint, out=out, backend=backend) is out
+    cp.testing.assert_array_equal(out, 0)
+
+
+@pytest.mark.parametrize("populated", [False, True])
+@pytest.mark.parametrize(
+    "dtype, kwargs, message",
+    [
+        (cp.float32, {"cast_to_uint8": False}, "uint8 or uint16"),
+        (cp.uint16, {"backend": "histogram"}, "backend='histogram' requires"),
+        (cp.uint8, {"backend": "invalid"}, "backend must be one of"),
+    ],
+)
+def test_otsu_validates_dtype_and_backend(populated, dtype, kwargs, message):
+    image = cp.ones((5, 5), dtype=dtype)
+    footprint = cp.full((3, 3), populated, dtype=bool)
+    with pytest.raises(ValueError, match=message):
+        rank.otsu(image, footprint, **kwargs)
+
+
+def test_otsu_empty_footprint_rejects_histogram():
+    image = cp.ones((5, 5), dtype=cp.uint8)
+    footprint = cp.zeros((3, 3), dtype=bool)
+    with pytest.raises(ValueError, match="backend='histogram' requires"):
+        rank.otsu(image, footprint, backend="histogram")
 
 
 def test_otsu_histogram_and_elementwise_agree_on_large_window():

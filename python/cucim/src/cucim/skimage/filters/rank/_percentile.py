@@ -59,7 +59,6 @@ _ZERO_FOR_EMPTY_FOOTPRINT_OPS = {
     "maximum",
     "mean",
     "minimum",
-    "otsu",
 }
 
 # --- Common docstring fragments ---

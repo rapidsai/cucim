@@ -28,6 +28,12 @@ from ._histogram import (
     _should_use_rank_histogram,
 )
 
+_HISTOGRAM_BACKEND_ERROR = (
+    "backend='histogram' requires a supported uint8 2D rank operation, "
+    "compatible output, no mask, zero shifts, reflect mode, and an all-ones "
+    "odd rectangular footprint within the histogram size limits"
+)
+
 _RANK_ORDERED_DIFFERENCE_PREAMBLE = r"""
 template <typename T, bool = std::is_floating_point<T>::value>
 struct RankOrderedDifference {
@@ -1073,6 +1079,13 @@ def _skimage_rank_filter(
         raise ValueError(
             "decomposed footprint sequences are not supported by rank filters"
         )
+    if operation == "otsu" and footprint is not None and not footprint.any():
+        if backend == "histogram":
+            raise ValueError(_HISTOGRAM_BACKEND_ERROR)
+        output = _util._get_output(output, input)
+        output.fill(0)
+        return output
+
     sizes, footprint, _ = _filters_core._check_size_footprint_structure(
         num_axes,
         size,
@@ -1189,11 +1202,7 @@ def _skimage_rank_filter(
         p1=p1,
     )
     if backend == "histogram" and not can_use_histogram:
-        raise ValueError(
-            "backend='histogram' requires a supported uint8 2D rank "
-            "operation, compatible output, no mask, zero shifts, reflect "
-            "mode, and an all-ones odd rectangular footprint"
-        )
+        raise ValueError(_HISTOGRAM_BACKEND_ERROR)
 
     if backend == "histogram" or (
         backend == "auto"
