@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,7 +13,6 @@
 
 #include <benchmark/benchmark.h>
 #include <CLI/CLI.hpp>
-#include <fmt/format.h>
 
 #include "cucim/core/framework.h"
 #include "cucim/io/format/image_format.h"

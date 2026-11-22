@@ -9,7 +9,7 @@
 
 #include <cuda_runtime.h>
 #include <catch2/catch_test_macros.hpp>
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 #include <cucim/filesystem/cufile_driver.h>
 #include <cstdlib>
 #include <ctime>
@@ -115,12 +115,12 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
     bytecounts.close();
     offsets.close();
 
-    fmt::print("file_size    : {}\n", test_file_size);
-    fmt::print("min_bytecount: {}\n", min_bytecount);
-    fmt::print("max_bytecount: {}\n", max_bytecount);
-    fmt::print("avg_bytecount: {}\n", static_cast<double>(sum_bytecount) / image_piece_count_);
-    fmt::print("min_offset   : {}\n", min_offset);
-    fmt::print("max_offset   : {}\n", max_offset);
+    cucim::print("file_size    : {}\n", test_file_size);
+    cucim::print("min_bytecount: {}\n", min_bytecount);
+    cucim::print("max_bytecount: {}\n", max_bytecount);
+    cucim::print("avg_bytecount: {}\n", static_cast<double>(sum_bytecount) / image_piece_count_);
+    cucim::print("min_offset   : {}\n", min_offset);
+    cucim::print("max_offset   : {}\n", max_offset);
 
     // Shuffle offsets
     if (SHUFFLE_LIST)
@@ -148,11 +148,11 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
 
     cucim::filesystem::discard_page_cache(input_file.c_str());
 
-    fmt::print("count:{} \n", image_piece_count_);
+    cucim::print("count:{} \n", image_piece_count_);
 
     SECTION("Regular POSIX")
     {
-        fmt::print("Regular POSIX\n");
+        cucim::print("Regular POSIX\n");
 
         double total_elapsed_time = 0;
         for (int iter = 0; iter < iter_max; ++iter)
@@ -172,7 +172,7 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
                 timer.print();
             }
         }
-        fmt::print("- Read whole average: {}\n", total_elapsed_time / (iter_max - skip_count));
+        cucim::print("- Read whole average: {}\n", total_elapsed_time / (iter_max - skip_count));
 
         total_elapsed_time = 0;
         for (int iter = 0; iter < iter_max; ++iter)
@@ -195,12 +195,12 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
                 timer.print();
             }
         }
-        fmt::print("- Read tiles average: {}\n", total_elapsed_time / (iter_max - skip_count));
+        cucim::print("- Read tiles average: {}\n", total_elapsed_time / (iter_max - skip_count));
     }
 
     SECTION("O_DIRECT")
     {
-        fmt::print("O_DIRECT\n");
+        cucim::print("O_DIRECT\n");
 
         double total_elapsed_time = 0;
         for (int iter = 0; iter < iter_max; ++iter)
@@ -220,7 +220,7 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
                 timer.print();
             }
         }
-        fmt::print("- Read whole average: {}\n", total_elapsed_time / (iter_max - skip_count));
+        cucim::print("- Read whole average: {}\n", total_elapsed_time / (iter_max - skip_count));
 
         total_elapsed_time = 0;
         for (int iter = 0; iter < iter_max; ++iter)
@@ -243,18 +243,18 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
                 timer.print();
             }
         }
-        fmt::print("- Read tiles average: {}\n", total_elapsed_time / (iter_max - skip_count));
+        cucim::print("- Read tiles average: {}\n", total_elapsed_time / (iter_max - skip_count));
     }
 
     SECTION("O_DIRECT pre-load")
     {
-        fmt::print("O_DIRECT pre-load\n");
+        cucim::print("O_DIRECT pre-load\n");
 
         size_t file_start_offset = ALIGN_DOWN(min_offset, BLOCK_SECTOR_SIZE);
         size_t end_boundary_offset = ALIGN_UP(max_offset + max_bytecount, BLOCK_SECTOR_SIZE);
         size_t large_block_size = end_boundary_offset - file_start_offset;
 
-        fmt::print("- size:{}\n", end_boundary_offset - file_start_offset);
+        cucim::print("- size:{}\n", end_boundary_offset - file_start_offset);
 
         double total_elapsed_time = 0;
         for (int iter = 0; iter < iter_max; ++iter)
@@ -274,7 +274,7 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
                 timer.print();
             }
         }
-        fmt::print("- Preload average: {}\n", total_elapsed_time / (iter_max - skip_count));
+        cucim::print("- Preload average: {}\n", total_elapsed_time / (iter_max - skip_count));
 
         total_elapsed_time = 0;
         for (int iter = 0; iter < iter_max; ++iter)
@@ -298,12 +298,12 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
                 timer.print();
             }
         }
-        fmt::print("- Read tiles average: {}\n", total_elapsed_time / (iter_max - skip_count));
+        cucim::print("- Read tiles average: {}\n", total_elapsed_time / (iter_max - skip_count));
     }
 
     SECTION("mmap")
     {
-        fmt::print("mmap\n");
+        cucim::print("mmap\n");
 
         double total_elapsed_time = 0;
         for (int iter = 0; iter < iter_max; ++iter)
@@ -331,7 +331,7 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
                 timer.print();
             }
         }
-        fmt::print("- mmap/munmap average: {}\n", total_elapsed_time / (iter_max - skip_count));
+        cucim::print("- mmap/munmap average: {}\n", total_elapsed_time / (iter_max - skip_count));
 
 
         total_elapsed_time = 0;
@@ -367,7 +367,7 @@ TEST_CASE("Verify raw tiff read", "[test_read_rawtiff.cpp]")
             //            }
             //            close(fd_mmap);
         }
-        fmt::print("- Read tiles average: {}\n", total_elapsed_time / (iter_max - skip_count));
+        cucim::print("- Read tiles average: {}\n", total_elapsed_time / (iter_max - skip_count));
     }
 
     free(unaligned_host);

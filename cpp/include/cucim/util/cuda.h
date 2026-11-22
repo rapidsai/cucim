@@ -5,6 +5,11 @@
 //
 #pragma once
 
+#include <cstdio>
+#include <format>
+#include <stdexcept>
+
+#include "cucim/util/print.h"
 
 #if CUCIM_SUPPORT_CUDA
 #    include <cuda_runtime.h>
@@ -15,8 +20,8 @@
         cuda_status = stmt;                                                                                            \
         if (cudaSuccess != cuda_status)                                                                                \
         {                                                                                                              \
-            fmt::print(stderr, "[Error] CUDA Runtime call {} in line {} of file {} failed with '{}' ({}).\n", #stmt,   \
-                       __LINE__, __FILE__, cudaGetErrorString(cuda_status), static_cast<int>(cuda_status));            \
+            ::cucim::print(stderr, "[Error] CUDA Runtime call {} in line {} of file {} failed with '{}' ({}).\n",      \
+                           #stmt, __LINE__, __FILE__, cudaGetErrorString(cuda_status), static_cast<int>(cuda_status)); \
         }                                                                                                              \
     }
 
@@ -26,7 +31,7 @@
         if (cudaSuccess != cuda_status)                                                                                \
         {                                                                                                              \
             throw std::runtime_error(                                                                                  \
-                fmt::format("[Error] CUDA Runtime call {} in line {} of file {} failed with '{}' ({}).\n", #stmt,      \
+                std::format("[Error] CUDA Runtime call {} in line {} of file {} failed with '{}' ({}).\n", #stmt,      \
                             __LINE__, __FILE__, cudaGetErrorString(cuda_status), static_cast<int>(cuda_status)));      \
         }                                                                                                              \
     }
@@ -36,8 +41,8 @@
         nvjpegStatus_t _nvjpeg_status = stmt;                                                                          \
         if (_nvjpeg_status != NVJPEG_STATUS_SUCCESS)                                                                   \
         {                                                                                                              \
-            fmt::print("[Error] NVJPEG call {} in line {} of file {} failed with the error code {}.\n", #stmt,         \
-                __LINE__, __FILE__, static_cast<int>(_nvjpeg_status));                                                 \
+            ::cucim::print("[Error] NVJPEG call {} in line {} of file {} failed with the error code {}.\n", #stmt,     \
+                           __LINE__, __FILE__, static_cast<int>(_nvjpeg_status));                                      \
         }                                                                                                              \
     }
 
@@ -47,7 +52,7 @@
         if (_nvjpeg_status != NVJPEG_STATUS_SUCCESS)                                                                   \
         {                                                                                                              \
             throw std::runtime_error(                                                                                  \
-                fmt::format("[Error] NVJPEG call {} in line {} of file {} failed with the error code {}.\n", #stmt,    \
+                std::format("[Error] NVJPEG call {} in line {} of file {} failed with the error code {}.\n", #stmt,    \
                             __LINE__, __FILE__, static_cast<int>(_nvjpeg_status)));                                    \
         }                                                                                                              \
     }

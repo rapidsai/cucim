@@ -15,7 +15,7 @@
 #include <random>
 #include <thread>
 
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 #include <tiffio.h>
 #include <tiffiop.h> // this is not included in the released library
 #include <turbojpeg.h>
@@ -235,7 +235,7 @@ bool IFD::read(const TIFF* tiff,
                 if (!read_region_tiles(tiff, ifd, location, location_index, w, h,
                                        raster_ptr, out_device, loader_ptr))
                 {
-                    fmt::print(stderr, "[Error] Failed to read region!\n");
+                    cucim::print(stderr, "[Error] Failed to read region!\n");
                 }
             };
 
@@ -301,7 +301,7 @@ bool IFD::read(const TIFF* tiff,
 
             if (!read_region_tiles(tiff, ifd, location, 0, w, h, raster, out_device, nullptr))
             {
-                fmt::print(stderr, "[Error] Failed to read region!\n");
+                cucim::print(stderr, "[Error] Failed to read region!\n");
             }
         }
     }
@@ -312,7 +312,7 @@ bool IFD::read(const TIFF* tiff,
         std::call_once(
             tiff->slow_path_warning_flag_,
             [](const std::string& file_path) {
-                fmt::print(
+                cucim::print(
                     stderr,
                     "[Warning] Loading image('{}') with a slow-path. The pixel format of the loaded image would be RGBA (4 channels) instead of RGB!\n",
                     file_path);
@@ -1284,7 +1284,6 @@ bool IFD::read_region_tiles_boundary(const TIFF* tiff,
 
 // Hidden methods for benchmarking.
 
-#include <fmt/format.h>
 #include <langinfo.h>
 #include <iostream>
 #include <fstream>

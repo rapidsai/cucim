@@ -46,7 +46,6 @@ target_link_libraries(cuslide2_tests
             deps::catch2
             deps::openslide
             deps::cli11
-            deps::fmt
             Threads::Threads
         )
 

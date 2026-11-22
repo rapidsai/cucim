@@ -15,10 +15,11 @@
 
 #include <cerrno>
 #include <chrono>
+#include <cstring>
 #include <format>
 
 #include <cuda_runtime.h>
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 
 #include "cucim/util/cuda.h"
 #include "cucim/util/platform.h"
@@ -143,7 +144,7 @@ std::shared_ptr<CuFileDriver> open(const char* file_path, const char* flags, mod
         {
             file_flags &= ~O_DIRECT;
             fd = ::open(file_path, file_flags, mode);
-            fmt::print(
+            cucim::print(
                 stderr, "The file {} doesn't support O_DIRECT. Trying to open the file without O_DIRECT\n", file_path);
             if (fd < 0)
             {
@@ -217,7 +218,7 @@ CuFileDriver::CuFileDriver(int fd, bool no_gds, bool use_mmap, const char* file_
         }
         else
         {
-            fmt::print(
+            cucim::print(
                 stderr,
                 "[Error] cuFileHandleRegister fd: {} ({}), status: {}. Would work with cuCIM's compatibility mode.\n",
                 fd, file_path_, cufileop_status_error(status.err));
@@ -256,7 +257,7 @@ ssize_t pread(const std::shared_ptr<CuFileDriver>& fd, void* buf, size_t count, 
     }
     else
     {
-        fmt::print(stderr, "fd (CuFileDriver) is null!\n");
+        cucim::print(stderr, "fd (CuFileDriver) is null!\n");
         return -1;
     }
 }
@@ -268,7 +269,7 @@ ssize_t pwrite(const std::shared_ptr<CuFileDriver>& fd, const void* buf, size_t 
     }
     else
     {
-        fmt::print(stderr, "fd (CuFileDriver) is null!\n");
+        cucim::print(stderr, "fd (CuFileDriver) is null!\n");
         return -1;
     }
 }
@@ -316,7 +317,7 @@ CuFileDriverInitializer::CuFileDriverInitializer()
         }
         else
         {
-            fmt::print(stderr, "cuFileDriverGetProperties() failed!\n");
+            cucim::print(stderr, "cuFileDriverGetProperties() failed!\n");
         }
         // fmt::print(stderr, "CuFileDriver opened!\n");
     }
@@ -336,7 +337,7 @@ CuFileDriverInitializer::~CuFileDriverInitializer()
         CUfileError_t status = cuFileDriverClose();
         if (status.err != CU_FILE_SUCCESS)
         {
-            fmt::print(stderr, "Unable to close cuFileDriver ({})\n", cufileop_status_error(status.err));
+            cucim::print(stderr, "Unable to close cuFileDriver ({})\n", cufileop_status_error(status.err));
         }
         else
         {
@@ -410,12 +411,12 @@ CuFileDriverCache::~CuFileDriverCache()
         CUfileError_t status = cuFileBufDeregister(device_cache_aligned_);
         if (status.err != CU_FILE_SUCCESS)
         {
-            fmt::print(stderr, "Failed on cuFileBufDeregister()! (status: {})\n", cufileop_status_error(status.err));
+            cucim::print(stderr, "Failed on cuFileBufDeregister()! (status: {})\n", cufileop_status_error(status.err));
         }
         CUDA_TRY(cudaFree(device_cache_));
         if (cuda_status)
         {
-            fmt::print(stderr, "Failed on cudaFree()!\n");
+            cucim::print(stderr, "Failed on cudaFree()!\n");
         }
         device_cache_ = nullptr;
         device_cache_aligned_ = nullptr;
@@ -431,12 +432,12 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
 {
     if (file_flags_ == -1)
     {
-        fmt::print(stderr, "File is not open yet.\n");
+        cucim::print(stderr, "File is not open yet.\n");
         return -1;
     }
     if ((file_flags_ & O_ACCMODE) == O_WRONLY)
     {
-        fmt::print(stderr, "The file is open with write-only mode!\n");
+        cucim::print(stderr, "The file is open with write-only mode!\n");
         return -1;
     }
 
@@ -593,7 +594,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                 read_cnt = ::pread(handle_->fd, buf_pos, PAGE_SIZE, file_offset + block_read_size);
                 if (read_cnt < 0)
                 {
-                    fmt::print(stderr, "Cannot read the remaining file content block! ({})\n", std::strerror(errno));
+                    cucim::print(stderr, "Cannot read the remaining file content block! ({})\n", std::strerror(errno));
                     return finish_read(-1);
                 }
                 if (read_cnt == 0)
@@ -635,7 +636,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                 ssize_t read_cnt = ::pread(handle_->fd, cache_buf, large_block_size, file_start_offset);
                 if (read_cnt < 0)
                 {
-                    fmt::print(stderr, "Cannot read the file content block! ({})\n", std::strerror(errno));
+                    cucim::print(stderr, "Cannot read the file content block! ({})\n", std::strerror(errno));
                     return finish_read(-1);
                 }
 
@@ -674,7 +675,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                     read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, read_offset);
                     if (read_cnt < 0)
                     {
-                        fmt::print(stderr, "Cannot read the head part of the file content block! ({})\n",
+                        cucim::print(stderr, "Cannot read the head part of the file content block! ({})\n",
                                    std::strerror(errno));
                         return finish_read(-1);
                     }
@@ -734,7 +735,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                     read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, read_offset);
                     if (read_cnt < 0)
                     {
-                        fmt::print(stderr, "Cannot read the tail part of the file content block! ({})\n",
+                        cucim::print(stderr, "Cannot read the tail part of the file content block! ({})\n",
                                    std::strerror(errno));
                         return finish_read(-1);
                     }
@@ -764,7 +765,7 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
         total_read_cnt += read_cnt;
         if (read_cnt < 0)
         {
-            fmt::print(stderr, "Failed to read file with cuFileRead().\n");
+            cucim::print(stderr, "Failed to read file with cuFileRead().\n");
             return -1;
         }
     }
@@ -775,12 +776,12 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
 {
     if (file_flags_ == -1)
     {
-        fmt::print(stderr, "File is not open yet.\n");
+        cucim::print(stderr, "File is not open yet.\n");
         return -1;
     }
     if ((file_flags_ & O_ACCMODE) == O_RDONLY)
     {
-        fmt::print(stderr, "The file is open with read-only mode!\n");
+        cucim::print(stderr, "The file is open with read-only mode!\n");
         return -1;
     }
 
@@ -838,7 +839,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
     }
     else if (file_type == FileHandleType::kMemoryMapped)
     {
-        fmt::print(stderr, "[Error] pwrite() is not supported for Memory-mapped IO file type!\n");
+        cucim::print(stderr, "[Error] pwrite() is not supported for Memory-mapped IO file type!\n");
         return -1;
     }
     else if (memory_type == cudaMemoryTypeUnregistered || handle_->type == FileHandleType::kPosixODirect)
@@ -904,7 +905,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                 read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, tail_offset);
                 if (read_cnt < 0)
                 {
-                    fmt::print(stderr, "Cannot read the remaining file content block! ({})\n", std::strerror(errno));
+                    cucim::print(stderr, "Cannot read the remaining file content block! ({})\n", std::strerror(errno));
                     return -1;
                 }
                 // Overwrite a buffer to write, to the intermediate remaining block (internal_buf_pos)
@@ -927,7 +928,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                 write_cnt = ::pwrite(handle_->fd, internal_buf_pos, PAGE_SIZE, tail_offset);
                 if (write_cnt < 0)
                 {
-                    fmt::print(stderr, "Cannot write the remaining file content! ({})\n", std::strerror(errno));
+                    cucim::print(stderr, "Cannot write the remaining file content! ({})\n", std::strerror(errno));
                     return -1;
                 }
 
@@ -952,7 +953,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                 ssize_t read_cnt = ::pread(handle_->fd, cache_buf, PAGE_SIZE, file_start_offset);
                 if (read_cnt < 0)
                 {
-                    fmt::print(
+                    cucim::print(
                         stderr, "Cannot read the head part of the file content block! ({})\n", std::strerror(errno));
                     return -1;
                 }
@@ -962,7 +963,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                                        end_boundary_offset - PAGE_SIZE);
                     if (read_cnt < 0)
                     {
-                        fmt::print(stderr, "Cannot read the tail part of the file content block! ({})\n",
+                        cucim::print(stderr, "Cannot read the tail part of the file content block! ({})\n",
                                    std::strerror(errno));
                         return -1;
                     }
@@ -985,7 +986,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                 ssize_t write_cnt = ::pwrite(handle_->fd, cache_buf, large_block_size, file_start_offset);
                 if (write_cnt < 0)
                 {
-                    fmt::print(stderr, "Cannot write the file content block! ({})\n", std::strerror(errno));
+                    cucim::print(stderr, "Cannot write the file content block! ({})\n", std::strerror(errno));
                     return -1;
                 }
 
@@ -1012,7 +1013,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                     read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, write_offset);
                     if (read_cnt < 0)
                     {
-                        fmt::print(stderr, "Cannot read the head part of the file content block! ({})\n",
+                        cucim::print(stderr, "Cannot read the head part of the file content block! ({})\n",
                                    std::strerror(errno));
                         return -1;
                     }
@@ -1036,7 +1037,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                     write_cnt = ::pwrite(handle_->fd, internal_buf_pos, PAGE_SIZE, write_offset);
                     if (write_cnt < 0)
                     {
-                        fmt::print(stderr, "Cannot write the head part of the file content block! ({})\n",
+                        cucim::print(stderr, "Cannot write the head part of the file content block! ({})\n",
                                    std::strerror(errno));
                         return -1;
                     }
@@ -1083,7 +1084,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                     read_cnt = ::pread(handle_->fd, internal_buf_pos, PAGE_SIZE, write_offset);
                     if (read_cnt < 0)
                     {
-                        fmt::print(stderr, "Cannot read the tail part of the file content block! ({})\n",
+                        cucim::print(stderr, "Cannot read the tail part of the file content block! ({})\n",
                                    std::strerror(errno));
                         return -1;
                     }
@@ -1106,7 +1107,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
                     write_cnt = ::pwrite(handle_->fd, internal_buf_pos, PAGE_SIZE, write_offset);
                     if (write_cnt < 0)
                     {
-                        fmt::print(stderr, "Cannot write the tail part of the file content block! ({})\n",
+                        cucim::print(stderr, "Cannot write the tail part of the file content block! ({})\n",
                                    std::strerror(errno));
                         return -1;
                     }
@@ -1123,7 +1124,7 @@ ssize_t CuFileDriver::pwrite(const void* buf, size_t count, off_t file_offset, o
             cuFileWrite(handle_->cufile, reinterpret_cast<const char*>(buf) + buf_offset, count, file_offset, 0);
         if (write_cnt < 0)
         {
-            fmt::print(stderr, "[cuFile Error] {}\n", CUFILE_ERRSTR(write_cnt));
+            cucim::print(stderr, "[cuFile Error] {}\n", CUFILE_ERRSTR(write_cnt));
             return -1;
         }
         total_write_cnt += write_cnt;
@@ -1147,7 +1148,7 @@ bool CuFileDriver::close()
         int err = munmap(mmap_ptr_, file_size_);
         if (err < 0)
         {
-            fmt::print(stderr, "[Error] Cannot call munmap() ({})\n", std::strerror(errno));
+            cucim::print(stderr, "[Error] Cannot call munmap() ({})\n", std::strerror(errno));
         }
         mmap_ptr_ = nullptr;
     }
@@ -1161,7 +1162,7 @@ bool CuFileDriver::close()
             int err = ::ftruncate(handle_->fd, file_size_);
             if (err < 0)
             {
-                fmt::print(stderr, "[Error] Cannot resize the file {} to {} ({})\n", handle_->path, file_size_,
+                cucim::print(stderr, "[Error] Cannot resize the file {} to {} ({})\n", handle_->path, file_size_,
                            std::strerror(errno));
             }
         }

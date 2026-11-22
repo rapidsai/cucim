@@ -6,6 +6,7 @@
 
 #include "cumed.h"
 
+#include <cstring>
 #include <fcntl.h>
 #include <filesystem>
 #include <format>

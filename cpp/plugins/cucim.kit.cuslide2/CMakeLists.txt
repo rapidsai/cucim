@@ -92,7 +92,6 @@ include(ExternalProject)
 ################################################################################
 # Define dependencies
 ################################################################################
-superbuild_depend(fmt)
 superbuild_depend(catch2)
 superbuild_depend(openslide)
 superbuild_depend(googletest)
@@ -128,7 +127,6 @@ find_package(cucim CONFIG REQUIRED
 
 message(STATUS "=============================================================")
 message(STATUS "cuslide2 PURE nvImageCodec - Dependencies:")
-message(STATUS "  ✓ fmt (logging)")
 message(STATUS "  ✓ nvImageCodec (GPU JPEG/JPEG2000/deflate/LZW decoding)")
 message(STATUS "  ✓ pugixml (XML metadata)")
 message(STATUS "  ✓ json (JSON metadata)")
@@ -197,7 +195,6 @@ target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-W
 # Link libraries
 target_link_libraries(cuslide2_core
         PUBLIC
-            deps::fmt
             cucim::cucim
             deps::pugixml
             deps::json

@@ -24,6 +24,7 @@
 #include <cstdlib>    // for std::atexit, std::getenv, std::strtol
 #include <cstring>    // for strlen
 #include <format>
+#include <iterator>
 #include <thread>     // for std::thread::hardware_concurrency
 #include <type_traits>
 
@@ -34,8 +35,7 @@
 #include <sys/stat.h>    // for stat, S_ISDIR
 #endif
 
-#include <fmt/format.h>
-#include <fmt/ranges.h>  // For fmt::join
+#include <cucim/util/print.h>
 #include <stdexcept>
 #include <cstring>
 #include <algorithm>
@@ -152,7 +152,7 @@ static std::string detect_nvimgcodec_extensions_path()
     if (env_path && env_path[0] != '\0')
     {
         #ifdef DEBUG
-        fmt::print("[nvimgcodec_ext] Using NVIMGCODEC_EXTENSIONS_PATH: {}\n", env_path);
+        cucim::print("[nvimgcodec_ext] Using NVIMGCODEC_EXTENSIONS_PATH: {}\n", env_path);
         #endif
         return std::string(env_path);
     }
@@ -165,7 +165,7 @@ static std::string detect_nvimgcodec_extensions_path()
     void* real_func = reinterpret_cast<void*>(&nvimgcodecGetProperties);
 #endif
     #ifdef DEBUG
-    fmt::print("[nvimgcodec_ext] nvimgcodecGetProperties address: {}\n", real_func);
+    cucim::print("[nvimgcodec_ext] nvimgcodecGetProperties address: {}\n", real_func);
     #endif
     if (real_func)
     {
@@ -174,7 +174,7 @@ static std::string detect_nvimgcodec_extensions_path()
         {
             std::string lib_path(dl_info.dli_fname);
             #ifdef DEBUG
-            fmt::print("[nvimgcodec_ext] dladdr -> lib_path: {}\n", lib_path);
+            cucim::print("[nvimgcodec_ext] dladdr -> lib_path: {}\n", lib_path);
             #endif
             auto last_slash = lib_path.rfind('/');
             if (last_slash != std::string::npos)
@@ -187,12 +187,12 @@ static std::string detect_nvimgcodec_extensions_path()
                 if (stat(candidate.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
                 {
                     #ifdef DEBUG
-                    fmt::print("[nvimgcodec_ext] Found extensions at: {}\n", candidate);
+                    cucim::print("[nvimgcodec_ext] Found extensions at: {}\n", candidate);
                     #endif
                     return candidate;
                 }
                 #ifdef DEBUG
-                fmt::print("[nvimgcodec_ext] Not found: {}\n", candidate);
+                cucim::print("[nvimgcodec_ext] Not found: {}\n", candidate);
                 #endif
 
                 // 3b. Probe <lib_dir>/../extensions/ (pip package layout)
@@ -200,26 +200,26 @@ static std::string detect_nvimgcodec_extensions_path()
                 if (stat(candidate.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
                 {
                     #ifdef DEBUG
-                    fmt::print("[nvimgcodec_ext] Found extensions at: {}\n", candidate);
+                    cucim::print("[nvimgcodec_ext] Found extensions at: {}\n", candidate);
                     #endif
                     return candidate;
                 }
                 #ifdef DEBUG
-                fmt::print("[nvimgcodec_ext] Not found: {}\n", candidate);
+                cucim::print("[nvimgcodec_ext] Not found: {}\n", candidate);
                 #endif
             }
         }
         else
         {
             #ifdef DEBUG
-            fmt::print("[nvimgcodec_ext] dladdr failed\n");
+            cucim::print("[nvimgcodec_ext] dladdr failed\n");
             #endif
         }
     }
 
     // 4. Not found — return empty, nvImageCodec will use its default search
     #ifdef DEBUG
-    fmt::print("[nvimgcodec_ext] WARNING: Could not detect extensions path\n");
+    cucim::print("[nvimgcodec_ext] WARNING: Could not detect extensions path\n");
     #endif
     return {};
 }
@@ -256,14 +256,14 @@ static int compute_max_decoder_threads()
         long val = std::strtol(env_val, &end, 10);
         if (end == env_val || *end != '\0')
         {
-            fmt::print(stderr,
+            cucim::print(stderr,
                 "[cuslide2] WARNING: CUCIM_MAX_DECODER_THREADS='{}' is not a "
                 "valid integer — ignoring and using heuristic\n", env_val);
         }
         else if (val > 0)
         {
             #ifdef DEBUG
-            fmt::print("[cuslide2] CUCIM_MAX_DECODER_THREADS={}\n", val);
+            cucim::print("[cuslide2] CUCIM_MAX_DECODER_THREADS={}\n", val);
             #endif
             return static_cast<int>(val);
         }
@@ -273,7 +273,7 @@ static int compute_max_decoder_threads()
         }
         else
         {
-            fmt::print(stderr,
+            cucim::print(stderr,
                 "[cuslide2] WARNING: CUCIM_MAX_DECODER_THREADS={} is negative "
                 "— ignoring and using heuristic\n", val);
         }
@@ -290,7 +290,7 @@ static int compute_max_decoder_threads()
         kHeuristicMaxThreads);
 
     #ifdef DEBUG
-    fmt::print("[nvimgcodec] max_decoder_threads heuristic: hw_threads={}, "
+    cucim::print("[nvimgcodec] max_decoder_threads heuristic: hw_threads={}, "
                "fair_share={}, cap={}\n",
                hw_threads, fair_share, kHeuristicMaxThreads);
     #endif
@@ -328,10 +328,18 @@ static std::string tiff_tag_value_to_string(const TiffTagValue& value)
                            std::is_same_v<T, std::vector<float>> ||
                            std::is_same_v<T, std::vector<double>>)
         {
-            // Print a small prefix of arrays using fmt::join for efficiency.
+            // Print a small prefix of arrays for efficiency.
             const size_t limit = 10;
             const auto n = std::min(v.size(), limit);
-            auto result = fmt::format("{}", fmt::join(v.begin(), v.begin() + n, ","));
+            std::string result;
+            for (size_t i = 0; i < n; ++i)
+            {
+                if (i > 0)
+                {
+                    result += ',';
+                }
+                std::format_to(std::back_inserter(result), "{}", v[i]);
+            }
             if (v.size() > limit)
                 result += ",...";
             return result;
@@ -416,7 +424,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         {
             status_message_ = std::move(version_error);
             #ifdef DEBUG
-            fmt::print("⚠️  {}\n", status_message_);
+            cucim::print("⚠️  {}\n", status_message_);
             #endif // DEBUG
             return;
         }
@@ -443,7 +451,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         #ifdef DEBUG
         if (!ext_path.empty())
         {
-            fmt::print("  nvImageCodec extensions path: {}\n", ext_path);
+            cucim::print("  nvImageCodec extensions path: {}\n", ext_path);
         }
         #endif
 
@@ -454,7 +462,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
             status_message_ = std::format("Failed to create nvImageCodec instance for TIFF parsing (status: {})",
                                          static_cast<int>(status));
             #ifdef DEBUG
-            fmt::print("⚠️  {}\n", status_message_);
+            cucim::print("⚠️  {}\n", status_message_);
             #endif // DEBUG
             return;
         }
@@ -494,7 +502,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
                 status_message_ = std::format("Failed to create decoder for metadata extraction (status: {})",
                                              static_cast<int>(status));
                 #ifdef DEBUG
-                fmt::print("⚠️  {}\n", status_message_);
+                cucim::print("⚠️  {}\n", status_message_);
                 #endif // DEBUG
                 return;
             }
@@ -508,7 +516,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
             status_message_ = "nvImageCodec TIFF parser initialized successfully (with metadata extraction support)";
         }
         #ifdef DEBUG
-        fmt::print("✅ {}\n", status_message_);
+        cucim::print("✅ {}\n", status_message_);
         #endif // DEBUG
 
         // The decoder and instance are intentionally not torn down at process exit.
@@ -526,7 +534,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
     {
         status_message_ = std::format("nvImageCodec TIFF parser initialization exception: {}", e.what());
         #ifdef DEBUG
-        fmt::print("❌ {}\n", status_message_);
+        cucim::print("❌ {}\n", status_message_);
         #endif // DEBUG
         initialized_ = false;
     }
@@ -593,7 +601,7 @@ void NvImageCodecTiffParserManager::shutdown()
     }
 
     #ifdef DEBUG
-    fmt::print("[nvimgcodec] Shutting down NvImageCodecTiffParserManager...\n");
+    cucim::print("[nvimgcodec] Shutting down NvImageCodecTiffParserManager...\n");
     #endif
 
     if (decoder_)
@@ -611,7 +619,7 @@ void NvImageCodecTiffParserManager::shutdown()
     initialized_ = false;
 
     #ifdef DEBUG
-    fmt::print("[nvimgcodec] Shutdown complete.\n");
+    cucim::print("[nvimgcodec] Shutdown complete.\n");
     #endif
 }
 
@@ -662,7 +670,7 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
     }
 
     #ifdef DEBUG
-    fmt::print("✅ Opened TIFF file: {}\n", file_path);
+    cucim::print("✅ Opened TIFF file: {}\n", file_path);
     #endif // DEBUG
 
     // Step 2: Parse TIFF structure (metadata only)
@@ -679,7 +687,7 @@ TiffFileParser::TiffFileParser(const std::string& file_path)
 
     initialized_ = true;
     #ifdef DEBUG
-    fmt::print("✅ TIFF parser initialized with {} IFDs\n", ifd_infos_.size());
+    cucim::print("✅ TIFF parser initialized with {} IFDs\n", ifd_infos_.size());
     #endif // DEBUG
 }
 
@@ -725,13 +733,13 @@ bool TiffFileParser::parse_tiff_structure()
 
     uint32_t num_ifds = stream_info.num_images;
     #ifdef DEBUG
-    fmt::print("  TIFF has {} IFDs (resolution levels)\n", num_ifds);
+    cucim::print("  TIFF has {} IFDs (resolution levels)\n", num_ifds);
     #endif // DEBUG
 
     if (stream_info.codec_name[0] != '\0')
     {
         #ifdef DEBUG
-        fmt::print("  Codec: {}\n", stream_info.codec_name);
+        cucim::print("  Codec: {}\n", stream_info.codec_name);
         #endif // DEBUG
     }
 
@@ -771,11 +779,11 @@ bool TiffFileParser::parse_tiff_structure()
                 first_substream_status = static_cast<int>(status);
             }
             #ifdef DEBUG
-            fmt::print("❌ Failed to get sub-code stream for IFD {} (status: {})\n",
+            cucim::print("❌ Failed to get sub-code stream for IFD {} (status: {})\n",
                       i, static_cast<int>(status));
             #endif // DEBUG
             #ifdef DEBUG
-            fmt::print("   This IFD will be SKIPPED and cannot be decoded.\n");
+            cucim::print("   This IFD will be SKIPPED and cannot be decoded.\n");
             #endif // DEBUG
             // Set sub_code_stream to nullptr explicitly to mark as invalid
             ifd_info.sub_code_stream = nullptr;
@@ -798,11 +806,11 @@ bool TiffFileParser::parse_tiff_structure()
                 first_image_info_status = static_cast<int>(status);
             }
             #ifdef DEBUG
-            fmt::print("❌ Failed to get image info for IFD {} (status: {})\n",
+            cucim::print("❌ Failed to get image info for IFD {} (status: {})\n",
                       i, static_cast<int>(status));
             #endif // DEBUG
             #ifdef DEBUG
-            fmt::print("   This IFD will be SKIPPED and cannot be decoded.\n");
+            cucim::print("   This IFD will be SKIPPED and cannot be decoded.\n");
             #endif // DEBUG
             // Clean up the sub_code_stream before continuing
             if (ifd_info.sub_code_stream)
@@ -861,7 +869,7 @@ bool TiffFileParser::parse_tiff_structure()
                         case 1:    // COMPRESSION_NONE
                             // Keep as "tiff" for uncompressed
                             #ifdef DEBUG
-                            fmt::print("  ℹ️  Detected uncompressed TIFF\n");
+                            cucim::print("  ℹ️  Detected uncompressed TIFF\n");
                             #endif // DEBUG
                             compression_inferred = true;
                             break;
@@ -869,14 +877,14 @@ bool TiffFileParser::parse_tiff_structure()
                             ifd_info.codec = "tiff";  // nvImageCodec handles as tiff
                             compression_inferred = true;
                             #ifdef DEBUG
-                            fmt::print("  ℹ️  Detected LZW compression (TIFF codec)\n");
+                            cucim::print("  ℹ️  Detected LZW compression (TIFF codec)\n");
                             #endif // DEBUG
                             break;
                         case 7:    // COMPRESSION_JPEG
                             ifd_info.codec = "jpeg";  // Use JPEG decoder!
                             compression_inferred = true;
                             #ifdef DEBUG
-                            fmt::print("  ℹ️  Detected JPEG compression → using JPEG codec\n");
+                            cucim::print("  ℹ️  Detected JPEG compression → using JPEG codec\n");
                             #endif // DEBUG
                             break;
                         case 8:    // COMPRESSION_DEFLATE (Adobe-style)
@@ -884,7 +892,7 @@ bool TiffFileParser::parse_tiff_structure()
                             ifd_info.codec = "tiff";
                             compression_inferred = true;
                             #ifdef DEBUG
-                            fmt::print("  ℹ️  Detected DEFLATE compression (TIFF codec)\n");
+                            cucim::print("  ℹ️  Detected DEFLATE compression (TIFF codec)\n");
                             #endif // DEBUG
                             break;
                         case 33003: // Aperio JPEG2000 YCbCr
@@ -893,12 +901,12 @@ bool TiffFileParser::parse_tiff_structure()
                             ifd_info.codec = "jpeg2000";
                             compression_inferred = true;
                             #ifdef DEBUG
-                            fmt::print("  ℹ️  Detected JPEG2000 compression\n");
+                            cucim::print("  ℹ️  Detected JPEG2000 compression\n");
                             #endif // DEBUG
                             break;
                         default:
                             #ifdef DEBUG
-                            fmt::print("  ⚠️  Unknown TIFF compression value: {}\n", compression_value);
+                            cucim::print("  ⚠️  Unknown TIFF compression value: {}\n", compression_value);
                             #endif // DEBUG
                             break;
                     }
@@ -906,7 +914,7 @@ bool TiffFileParser::parse_tiff_structure()
                 else
                 {
                     #ifdef DEBUG
-                    fmt::print("  ⚠️  COMPRESSION tag is not uint16_t (unexpected type)\n");
+                    cucim::print("  ⚠️  COMPRESSION tag is not uint16_t (unexpected type)\n");
                     #endif // DEBUG
                 }
             }
@@ -920,7 +928,7 @@ bool TiffFileParser::parse_tiff_structure()
                 {
                     ifd_info.codec = "jpeg2000";
                     #ifdef DEBUG
-                    fmt::print("  ℹ️  Inferred codec 'jpeg2000' from filename (JP2K pattern)\n");
+                    cucim::print("  ℹ️  Inferred codec 'jpeg2000' from filename (JP2K pattern)\n");
                     #endif // DEBUG
                     compression_inferred = true;
                 }
@@ -930,8 +938,8 @@ bool TiffFileParser::parse_tiff_structure()
             if (!compression_inferred && ifd_info.tiff_tags.empty())
             {
                 #ifdef DEBUG
-                fmt::print("  ⚠️  Warning: codec is 'tiff' but could not infer compression.\n");
-                fmt::print("     File: {}\n", file_path_);
+                cucim::print("  ⚠️  Warning: codec is 'tiff' but could not infer compression.\n");
+                cucim::print("     File: {}\n", file_path_);
                 #endif
             }
         }
@@ -943,17 +951,17 @@ bool TiffFileParser::parse_tiff_structure()
     if (ifd_infos_.size() == num_ifds)
     {
         #ifdef DEBUG
-        fmt::print("✅ TIFF parser initialized with {} IFDs (all successful)\n", ifd_infos_.size());
+        cucim::print("✅ TIFF parser initialized with {} IFDs (all successful)\n", ifd_infos_.size());
         #endif // DEBUG
     }
     else
     {
         #ifdef DEBUG
-        fmt::print("⚠️  TIFF parser initialized with {} IFDs ({} out of {} total)\n",
+        cucim::print("⚠️  TIFF parser initialized with {} IFDs ({} out of {} total)\n",
                   ifd_infos_.size(), ifd_infos_.size(), num_ifds);
         #endif // DEBUG
         #ifdef DEBUG
-        fmt::print("   {} IFDs were skipped due to parsing errors\n", num_ifds - ifd_infos_.size());
+        cucim::print("   {} IFDs were skipped due to parsing errors\n", num_ifds - ifd_infos_.size());
         #endif // DEBUG
     }
 
@@ -978,17 +986,17 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
     auto& manager = NvImageCodecTiffParserManager::instance();
 
     #ifdef DEBUG
-    fmt::print("🔍 Extracting metadata for IFD[{}]...\n", ifd_info.index);
+    cucim::print("🔍 Extracting metadata for IFD[{}]...\n", ifd_info.index);
     #endif
 
     if (!manager.get_decoder() || !ifd_info.sub_code_stream)
     {
         #ifdef DEBUG
         if (!manager.get_decoder()) {
-            fmt::print("  ⚠️  Decoder not available\n");
+            cucim::print("  ⚠️  Decoder not available\n");
         }
         if (!ifd_info.sub_code_stream) {
-            fmt::print("  ⚠️  No sub-code stream for this IFD\n");
+            cucim::print("  ⚠️  No sub-code stream for this IFD\n");
         }
         #endif
         return;  // No decoder or stream available
@@ -1006,7 +1014,7 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
     if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
         #ifdef DEBUG
-        fmt::print("  ⚠️  Metadata query failed with status: {}\n", static_cast<int>(status));
+        cucim::print("  ⚠️  Metadata query failed with status: {}\n", static_cast<int>(status));
         #endif
         return;
     }
@@ -1014,13 +1022,13 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
     if (metadata_count == 0)
     {
         #ifdef DEBUG
-        fmt::print("  ℹ️  No metadata entries found for this IFD\n");
+        cucim::print("  ℹ️  No metadata entries found for this IFD\n");
         #endif
         return;  // No metadata
     }
 
     #ifdef DEBUG
-    fmt::print("  ✅ Found {} metadata entries for IFD[{}]\n", metadata_count, ifd_info.index);
+    cucim::print("  ✅ Found {} metadata entries for IFD[{}]\n", metadata_count, ifd_info.index);
     #endif
 
     // Step 2: Allocate metadata structures AND blobs
@@ -1051,7 +1059,7 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
     if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
         #ifdef DEBUG
-        fmt::print("  ⚠️  Failed to query metadata sizes (status: {})\n", static_cast<int>(status));
+        cucim::print("  ⚠️  Failed to query metadata sizes (status: {})\n", static_cast<int>(status));
         #endif
         return;
     }
@@ -1066,7 +1074,7 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
             metadata_blobs[i].data.resize(required_size);
             metadata_structs[i].buffer = metadata_blobs[i].data.data();  // Decode directly into final destination!
             #ifdef DEBUG
-            fmt::print("    📦 Allocated {} bytes for metadata[{}]\n", required_size, i);
+            cucim::print("    📦 Allocated {} bytes for metadata[{}]\n", required_size, i);
             #endif
         }
     }
@@ -1082,13 +1090,13 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
     if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
         #ifdef DEBUG
-        fmt::print("  ⚠️  Failed to retrieve metadata content (status: {})\n", static_cast<int>(status));
+        cucim::print("  ⚠️  Failed to retrieve metadata content (status: {})\n", static_cast<int>(status));
         #endif
         return;
     }
 
     #ifdef DEBUG
-    fmt::print("  ✅ Successfully retrieved {} metadata entries with content\n", metadata_count);
+    cucim::print("  ✅ Successfully retrieved {} metadata entries with content\n", metadata_count);
     #endif
 
     // Step 4: Move blobs into metadata_blobs map (no copy - just move!)
@@ -1117,7 +1125,7 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
             case NVIMGCODEC_METADATA_KIND_MED_LEICA: kind_name = "MED_LEICA"; break;
             case NVIMGCODEC_METADATA_KIND_MED_TRESTLE: kind_name = "MED_TRESTLE"; break;
         }
-        fmt::print("    Metadata[{}]: kind={} ({}), format={}, size={}\n",
+        cucim::print("    Metadata[{}]: kind={} ({}), format={}, size={}\n",
                   j, kind, kind_name, format, buffer_size);
         #endif
 
@@ -1137,17 +1145,17 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
                 // Aperio metadata is typically in RAW format as text
                 ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
                 #ifdef DEBUG
-                fmt::print("  ✅ Extracted Aperio ImageDescription ({} bytes)\n", buffer_size);
+                cucim::print("  ✅ Extracted Aperio ImageDescription ({} bytes)\n", buffer_size);
                 #endif
             }
             else if (kind == NVIMGCODEC_METADATA_KIND_MED_PHILIPS && ifd_info.image_description.empty())
             {
                 ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
                 #ifdef DEBUG
-                fmt::print("  ✅ Extracted Philips ImageDescription XML ({} bytes)\n", buffer_size);
+                cucim::print("  ✅ Extracted Philips ImageDescription XML ({} bytes)\n", buffer_size);
                 if (buffer_size > 0) {
                     std::string preview(data_ptr, data_ptr + std::min(buffer_size, size_t(100)));
-                    fmt::print("     XML preview: {}...\n", preview);
+                    cucim::print("     XML preview: {}...\n", preview);
                 }
                 #endif
             }
@@ -1155,21 +1163,21 @@ void TiffFileParser::extract_ifd_metadata(IfdInfo& ifd_info)
             {
                 ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
                 #ifdef DEBUG
-                fmt::print("  ✅ Extracted Ventana metadata ({} bytes)\n", buffer_size);
+                cucim::print("  ✅ Extracted Ventana metadata ({} bytes)\n", buffer_size);
                 #endif
             }
             else if (kind == NVIMGCODEC_METADATA_KIND_MED_LEICA && ifd_info.image_description.empty())
             {
                 ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
                 #ifdef DEBUG
-                fmt::print("  ✅ Extracted Leica metadata ({} bytes)\n", buffer_size);
+                cucim::print("  ✅ Extracted Leica metadata ({} bytes)\n", buffer_size);
                 #endif
             }
             else if (kind == NVIMGCODEC_METADATA_KIND_MED_TRESTLE && ifd_info.image_description.empty())
             {
                 ifd_info.image_description.assign(data_ptr, data_ptr + buffer_size);
                 #ifdef DEBUG
-                fmt::print("  ✅ Extracted Trestle metadata ({} bytes)\n", buffer_size);
+                cucim::print("  ✅ Extracted Trestle metadata ({} bytes)\n", buffer_size);
                 #endif
             }
 
@@ -1211,7 +1219,7 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     if (!manager.get_decoder())
     {
         #ifdef DEBUG
-        fmt::print("  ⚠️  Cannot extract TIFF tags: decoder not available\n");
+        cucim::print("  ⚠️  Cannot extract TIFF tags: decoder not available\n");
         #endif // DEBUG
         return;
     }
@@ -1219,7 +1227,7 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     if (!ifd_info.sub_code_stream)
     {
         #ifdef DEBUG
-        fmt::print("  ⚠️  Cannot extract TIFF tags: sub_code_stream is null\n");
+        cucim::print("  ⚠️  Cannot extract TIFF tags: sub_code_stream is null\n");
         #endif // DEBUG
         return;
     }
@@ -1374,7 +1382,7 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     if (extracted_count == 0 && !tag_extraction_warned_)
     {
         tag_extraction_warned_ = true;
-        fmt::print(stderr,
+        cucim::print(stderr,
                    "[cuslide2] No TIFF tags returned by nvImageCodec for '{}'. "
                    "OME/vendor metadata and pixel spacing will be unavailable. "
                    "Tag retrieval requires a working decoder (CUDA device) and the nvTIFF "

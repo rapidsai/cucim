@@ -67,6 +67,7 @@ add_library(${CUCIM_PACKAGE_NAME}
         include/cucim/util/cuda.h
         include/cucim/util/file.h
         include/cucim/util/platform.h
+        include/cucim/util/print.h
         include/cucim/3rdparty/dlpack/dlpack.h
         include/cucim/3rdparty/dlpack/dlpackcpp.h
         src/cuimage.cpp
@@ -120,7 +121,7 @@ set_target_properties(${CUCIM_PACKAGE_NAME}
 
 # Note: Looks like the following line causes error on CMake 3.18.4 (it is working on 3.18.2). Keeping it for now.
 set(CUCIM_REQUIRED_FEATURES cxx_std_20)
-target_compile_features(${CUCIM_PACKAGE_NAME} PRIVATE ${CUCIM_REQUIRED_FEATURES})
+target_compile_features(${CUCIM_PACKAGE_NAME} PUBLIC ${CUCIM_REQUIRED_FEATURES})
 # Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
 target_compile_options(${CUCIM_PACKAGE_NAME}
     PRIVATE
@@ -144,8 +145,6 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
         PUBLIC
             ${CMAKE_DL_LIBS}
             Threads::Threads # -lpthread
-            $<BUILD_INTERFACE:deps::fmt>
-            $<INSTALL_INTERFACE:cucim::fmt-header-only>
             # <cucim/memory/device_resource.h> is public and exposes cuda::mr,
             # so a consumer compiling against it needs CCCL and the CUDA
             # runtime. CCCL is listed first: the toolkit carries its own older
@@ -212,7 +211,7 @@ target_include_directories(${CUCIM_PACKAGE_NAME}
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/${CUCIM_PACKAGE_NAME}/3rdparty>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty> # for 3rdparty libraries such as dlpack, nvtx3, and fmt
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty> # for 3rdparty libraries such as dlpack and nvtx3
         PRIVATE
             ${CMAKE_CURRENT_LIST_DIR}/src
         )

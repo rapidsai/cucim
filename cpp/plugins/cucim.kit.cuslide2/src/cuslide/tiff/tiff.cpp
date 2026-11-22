@@ -14,7 +14,7 @@
 #include <string>
 #include <string_view>
 
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 #include <nlohmann/json.hpp>
 #include <pugixml.hpp>
 #include "ome_xml.h"
@@ -267,7 +267,7 @@ TIFF::TIFF(const cucim::filesystem::Path& file_path) : file_path_(file_path)
     PROF_SCOPED_RANGE(PROF_EVENT_P(tiff_tiff, 1));
 
     #ifdef DEBUG
-    fmt::print("📂 Opening TIFF file with nvImageCodec: {}\n", file_path);
+    cucim::print("📂 Opening TIFF file with nvImageCodec: {}\n", file_path);
     #endif // DEBUG
 
     // Step 1: Open file descriptor (needed for CuCIMFileHandle)
@@ -312,18 +312,18 @@ TIFF::TIFF(const cucim::filesystem::Path& file_path) : file_path_(file_path)
         }
 
         #ifdef DEBUG
-        fmt::print("✅ nvImageCodec TiffFileParser initialized successfully\n");
+        cucim::print("✅ nvImageCodec TiffFileParser initialized successfully\n");
         #endif // DEBUG
 
         // Extract basic file properties from TiffFileParser
         std::string detected_format = nvimgcodec_parser_->get_detected_format();
         #ifdef DEBUG
-        fmt::print("   Detected format: {}\n", detected_format);
+        cucim::print("   Detected format: {}\n", detected_format);
         #endif // DEBUG
 
         #ifdef DEBUG
         uint32_t ifd_count = nvimgcodec_parser_->get_ifd_count();
-        fmt::print("   IFD count: {}\n", ifd_count);
+        cucim::print("   IFD count: {}\n", ifd_count);
         #endif // DEBUG
 
         // Set default values (nvImageCodec handles endianness internally)
@@ -331,13 +331,13 @@ TIFF::TIFF(const cucim::filesystem::Path& file_path) : file_path_(file_path)
 
     } catch (const std::exception& e) {
         #ifdef DEBUG
-        fmt::print("❌ FATAL: Failed to initialize nvImageCodec TiffFileParser: {}\n", e.what());
+        cucim::print("❌ FATAL: Failed to initialize nvImageCodec TiffFileParser: {}\n", e.what());
         #endif // DEBUG
         #ifdef DEBUG
-        fmt::print("   This library requires nvImageCodec for TIFF support.\n");
+        cucim::print("   This library requires nvImageCodec for TIFF support.\n");
         #endif // DEBUG
         #ifdef DEBUG
-        fmt::print("   Please ensure nvImageCodec is properly installed.\n");
+        cucim::print("   Please ensure nvImageCodec is properly installed.\n");
         #endif // DEBUG
         // CRITICAL: Clear client_data BEFORE reset to prevent the deleter from
         // trying to delete 'this' while we're still in the constructor
@@ -445,7 +445,7 @@ void TIFF::construct_ifds()
 
     uint32_t ifd_count = nvimgcodec_parser_->get_ifd_count();
     #ifdef DEBUG
-    fmt::print("📋 Constructing {} IFDs from nvImageCodec metadata\n", ifd_count);
+    cucim::print("📋 Constructing {} IFDs from nvImageCodec metadata\n", ifd_count);
     #endif // DEBUG
 
     ifd_offsets_.reserve(ifd_count);
@@ -473,7 +473,7 @@ void TIFF::construct_ifds()
             global_to_parser_local_ifd_.emplace_back(0, ifd_index);
 
             #ifdef DEBUG
-            fmt::print("  ✅ IFD[{}]: {}x{}, {} channels, codec: {}\n",
+            cucim::print("  ✅ IFD[{}]: {}x{}, {} channels, codec: {}\n",
                       ifd_index, ifd_info.width, ifd_info.height,
                       ifd_info.num_channels, ifd_info.codec);
             #endif // DEBUG
@@ -484,7 +484,7 @@ void TIFF::construct_ifds()
 
         } catch (const std::exception& e) {
             #ifdef DEBUG
-            fmt::print("  ⚠️  Failed to create IFD[{}]: {}\n", ifd_index, e.what());
+            cucim::print("  ⚠️  Failed to create IFD[{}]: {}\n", ifd_index, e.what());
             #endif // DEBUG
             // Continue with other IFDs - some may be corrupted
         }
@@ -495,7 +495,7 @@ void TIFF::construct_ifds()
     }
 
     #ifdef DEBUG
-    fmt::print("✅ Successfully created {} out of {} IFDs\n", ifds_.size(), ifd_count);
+    cucim::print("✅ Successfully created {} out of {} IFDs\n", ifds_.size(), ifd_count);
     #endif // DEBUG
 
     // Initialize level-to-IFD mapping (will be updated by resolve_vendor_format)
@@ -520,7 +520,7 @@ void TIFF::construct_ifds()
     });
 
     #ifdef DEBUG
-    fmt::print("✅ TIFF initialization complete: {} levels, {} associated images\n",
+    cucim::print("✅ TIFF initialization complete: {} levels, {} associated images\n",
               level_to_ifd_idx_.size(), associated_images_.size());
     #endif // DEBUG
 }
@@ -660,7 +660,7 @@ void TIFF::resolve_vendor_format()
             {
                 is_aperio = true;
                 #ifdef DEBUG
-                fmt::print("✅ Aperio detected via metadata_blobs\n");
+                cucim::print("✅ Aperio detected via metadata_blobs\n");
                 #endif
             }
         }
@@ -704,7 +704,7 @@ void TIFF::resolve_vendor_format()
             {
                 is_philips = true;
                 #ifdef DEBUG
-                fmt::print("✅ Philips detected via metadata_blobs\n");
+                cucim::print("✅ Philips detected via metadata_blobs\n");
                 #endif
             }
         }
@@ -783,7 +783,7 @@ void TIFF::resolve_vendor_format()
         #ifdef DEBUG
         if (tiff_type_ != TiffType::Generic)
         {
-            fmt::print("✅ Detected vendor format: {}\n", static_cast<uint32_t>(tiff_type_));
+            cucim::print("✅ Detected vendor format: {}\n", static_cast<uint32_t>(tiff_type_));
         }
         #endif
     }
@@ -825,7 +825,7 @@ void TIFF::_populate_ome_tiff_metadata(uint16_t ifd_count, void* metadata, std::
     {
         // The file advertised OME XML but it could not be used, so callers silently lose
         // channel/plane information. Report why rather than discarding the reason.
-        fmt::print(stderr, "[cuslide2] OME XML present but not usable ({} bytes): {}\n",
+        cucim::print(stderr, "[cuslide2] OME XML present but not usable ({} bytes): {}\n",
                    first_ifd->image_description().size(),
                    parse_error.empty() ? "incomplete OME model" : parse_error);
         return;
@@ -1061,7 +1061,7 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
         if (std::string_view(data_object.attribute("ObjectType").as_string("")) != "DPUfsImport")
         {
             #ifdef DEBUG
-            fmt::print(
+            cucim::print(
                 stderr,
                 "[Warning] Failed to read as Philips TIFF. It looks like Philips TIFF but the image description of the first IFD doesn't have '<DataObject ObjectType=\"DPUfsImport\">' node!\n");
             #endif // DEBUG
@@ -1074,7 +1074,7 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
         if (wsi_nodes.size() != 1)
         {
             #ifdef DEBUG
-            fmt::print(
+            cucim::print(
                 stderr,
                 "[Warning] Failed to read as Philips TIFF. Expected only one 'DPScannedImage' node with PIM_DP_IMAGE_TYPE='WSI'.\n");
             #endif // DEBUG
@@ -1109,7 +1109,7 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
             if (spacing_x == 0.0 || spacing_y == 0.0)
             {
                 #ifdef DEBUG
-                fmt::print(stderr, "[Warning] Failed to read DICOM_PIXEL_SPACING: {}\n", values);
+                cucim::print(stderr, "[Warning] Failed to read DICOM_PIXEL_SPACING: {}\n", values);
                 #endif // DEBUG
                 return;
             }
@@ -1177,7 +1177,7 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
             {
                 // No pixel spacing metadata for this level - calculate from actual dimensions
                 #ifdef DEBUG
-                fmt::print("  ℹ️  No DICOM_PIXEL_SPACING for IFD[{}], using actual dimensions\n", index);
+                cucim::print("  ℹ️  No DICOM_PIXEL_SPACING for IFD[{}], using actual dimensions\n", index);
                 #endif
                 // Keep the actual dimensions from nvImageCodec
             }
@@ -1458,7 +1458,7 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             if (compression_method != COMPRESSION_JPEG && compression_method != COMPRESSION_LZW)
             {
                 #ifdef DEBUG
-                fmt::print(stderr,
+                cucim::print(stderr,
                            "[Error] Unsupported compression method in read_associated_image()! (compression: {})\n",
                            compression_method);
                 #endif // DEBUG

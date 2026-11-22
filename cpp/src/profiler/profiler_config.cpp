@@ -1,11 +1,10 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "cucim/profiler/profiler_config.h"
 
-#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;

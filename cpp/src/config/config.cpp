@@ -8,7 +8,7 @@
 #include "cucim/cache/cache_type.h"
 #include "cucim/util/file.h"
 
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 #include <nlohmann/json.hpp>
 
 #include <cstring>
@@ -139,7 +139,7 @@ bool Config::parse_config(std::string& path)
     }
     catch (const json::parse_error& e)
     {
-        fmt::print(stderr,
+        cucim::print(stderr,
                    "Failed to load configuration file: {}\n"
                    "  message: {}\n"
                    "  exception id: {}\n"

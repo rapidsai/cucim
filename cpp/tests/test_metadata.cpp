@@ -10,7 +10,7 @@
 #include "cucim/io/format/image_format.h"
 
 #include <catch2/catch_test_macros.hpp>
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 #include <chrono>
 #include <cstdlib>
 #include <format>
@@ -57,7 +57,7 @@ class Document
 #include <string>
 void test(float* haha)
 {
-    fmt::print("T {} {} {}\n", haha[0], haha[1], haha[2]);
+    cucim::print("T {} {} {}\n", haha[0], haha[1], haha[2]);
 }
 
 TEST_CASE("Verify metadata", "[test_metadata.cpp]")
@@ -193,5 +193,5 @@ TEST_CASE("Load test", "[test_metadata.cpp]")
     REQUIRE(test.dtype() == DLDataType{ DLDataTypeCode::kDLUInt, 8, 1 });
     REQUIRE(test.typestr() == "|u1");
 
-    fmt::print("{}", img.metadata());
+    cucim::print("{}", img.metadata());
 }

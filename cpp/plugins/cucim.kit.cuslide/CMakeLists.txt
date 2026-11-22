@@ -94,7 +94,6 @@ include(ExternalProject)
 ################################################################################
 # Define dependencies
 ################################################################################
-superbuild_depend(fmt)
 superbuild_depend(libjpeg-turbo) # libjpeg-turbo should be located before libtiff as libtiff depends on libjpeg-turbo
 superbuild_depend(libopenjpeg)
 superbuild_depend(libtiff)
@@ -195,7 +194,6 @@ target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-W
 # Link libraries
 target_link_libraries(${CUCIM_PLUGIN_NAME}
         PRIVATE
-            deps::fmt
             cucim::cucim
             deps::libtiff
             deps::libjpeg-turbo

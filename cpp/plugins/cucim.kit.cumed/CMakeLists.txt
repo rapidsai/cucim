@@ -94,7 +94,6 @@ include(ExternalProject)
 ################################################################################
 # Define dependencies
 ################################################################################
-superbuild_depend(fmt)
 superbuild_depend(catch2)
 superbuild_depend(googletest)
 superbuild_depend(googlebenchmark)
@@ -151,7 +150,6 @@ target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-W
 target_link_libraries(${CUCIM_PLUGIN_NAME}
         PRIVATE
             CUDA::cudart_static
-            deps::fmt
             cucim::cucim
         )
 

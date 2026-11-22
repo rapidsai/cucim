@@ -10,7 +10,7 @@
 
 #include <boost/make_shared.hpp>
 #include <format>
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 
 
 template <>
@@ -263,7 +263,7 @@ SharedMemoryImageCache::~SharedMemoryImageCache()
     bool succeed = remove_shmem();
     if (!succeed)
     {
-        fmt::print(stderr, "[Warning] Couldn't delete the shared memory object '{}'.",
+        cucim::print(stderr, "[Warning] Couldn't delete the shared memory object '{}'.",
                    cucim::CuImage::get_config()->shm_name());
     }
 }

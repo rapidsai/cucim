@@ -14,7 +14,7 @@
 #if CUCIM_SUPPORT_CUDA
 #    include <cuda_runtime.h>
 #endif
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 
 #include "cucim/profiler/nvtx3.h"
 #include "cucim/util/cuda.h"
@@ -291,7 +291,7 @@ CuImage::~CuImage()
             case io::DeviceType::kCUDAManaged:
             case io::DeviceType::kCPUShared:
             case io::DeviceType::kCUDAShared:
-                fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
+                cucim::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
                 break;
             }
         }
@@ -1442,7 +1442,7 @@ void CuImageIterator<DataType>::increase_index_()
             case io::DeviceType::kCUDAManaged:
             case io::DeviceType::kCPUShared:
             case io::DeviceType::kCUDAShared:
-                fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
+                cucim::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
                 break;
             }
 

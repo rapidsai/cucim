@@ -43,7 +43,6 @@ target_link_libraries(cuslide_tests
             deps::catch2
             deps::openslide
             deps::cli11
-            deps::fmt
         )
 
 # Add headers in src

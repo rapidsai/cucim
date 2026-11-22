@@ -40,7 +40,6 @@ target_link_libraries(cumed_tests
             ${CUCIM_PLUGIN_NAME}
             deps::catch2
             deps::cli11
-            deps::fmt
         )
 
 # Add headers in src

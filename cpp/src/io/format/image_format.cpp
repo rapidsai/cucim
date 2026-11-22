@@ -8,7 +8,6 @@
 #include "cucim/memory/memory_manager.h"
 
 #include <cstring>
-#include <fmt/format.h>
 
 
 namespace cucim::io::format

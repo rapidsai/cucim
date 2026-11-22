@@ -12,7 +12,6 @@
 #include <cucim/codec/hash_function.h>
 #include <cucim/io/device.h>
 #include <cucim/util/cuda.h>
-#include <fmt/format.h>
 
 #define ALIGN_UP(x, align_to) (((uint64_t)(x) + ((uint64_t)(align_to)-1)) & ~((uint64_t)(align_to)-1))
 #define ALIGN_DOWN(x, align_to) ((uint64_t)(x) & ~((uint64_t)(align_to)-1))

@@ -13,7 +13,7 @@
 #include <string>
 #include <string_view>
 
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 #include <nlohmann/json.hpp>
 #include <pugixml.hpp>
 #include <tiffiop.h>
@@ -248,7 +248,7 @@ static void parse_aperio_svs_metadata(std::shared_ptr<IFD>& first_ifd, json& met
 
     if (desc.size() > kMaxImageDescriptionBytes)
     {
-        fmt::print(stderr, "[Warning] Aperio SVS ImageDescription exceeds 1 MB limit ({}); skipping metadata parse\n",
+        cucim::print(stderr, "[Warning] Aperio SVS ImageDescription exceeds 1 MB limit ({}); skipping metadata parse\n",
                    desc.size());
         return;
     }
@@ -467,7 +467,7 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
         const auto& data_object = doc.child("DataObject");
         if (std::string_view(data_object.attribute("ObjectType").as_string("")) != "DPUfsImport")
         {
-            fmt::print(
+            cucim::print(
                 stderr,
                 "[Warning] Failed to read as Philips TIFF. It looks like Philips TIFF but the image description of the first IFD doesn't have '<DataObject ObjectType=\"DPUfsImport\">' node!\n");
             return;
@@ -478,7 +478,7 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
         pugi::xpath_node_set wsi_nodes = PIM_DP_IMAGE_TYPE.evaluate_node_set(data_object);
         if (wsi_nodes.size() != 1)
         {
-            fmt::print(
+            cucim::print(
                 stderr,
                 "[Warning] Failed to read as Philips TIFF. Expected only one 'DPScannedImage' node with PIM_DP_IMAGE_TYPE='WSI'.\n");
             return;
@@ -511,7 +511,7 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
             }
             if (spacing_x == 0.0 || spacing_y == 0.0)
             {
-                fmt::print(stderr, "[Warning] Failed to read DICOM_PIXEL_SPACING: {}\n", values);
+                cucim::print(stderr, "[Warning] Failed to read DICOM_PIXEL_SPACING: {}\n", values);
                 return;
             }
             pixel_spacings.emplace_back(std::pair{ spacing_x, spacing_y });
@@ -519,7 +519,7 @@ void TIFF::_populate_philips_tiff_metadata(uint16_t ifd_count, void* metadata, s
 
         if (pixel_spacings.empty())
         {
-            fmt::print(stderr, "[Warning] Philips TIFF: no DICOM_PIXEL_SPACING entries found\n");
+            cucim::print(stderr, "[Warning] Philips TIFF: no DICOM_PIXEL_SPACING entries found\n");
             return;
         }
 
@@ -825,7 +825,7 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
 
             if (compression_method != COMPRESSION_JPEG && compression_method != COMPRESSION_LZW)
             {
-                fmt::print(stderr,
+                cucim::print(stderr,
                            "[Error] Unsupported compression method in read_associated_image()! (compression: {})\n",
                            compression_method);
                 return false;
@@ -886,7 +886,7 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
                                                        jpeg_color_space))
                     {
                         cucim_free(raster);
-                        fmt::print(stderr, "[Error] Failed to read region with libjpeg!\n");
+                        cucim::print(stderr, "[Error] Failed to read region with libjpeg!\n");
                         return false;
                     }
                     break;
@@ -895,7 +895,7 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
                                                   strip_nbytes, out_device))
                     {
                         cucim_free(raster);
-                        fmt::print(stderr, "[Error] Failed to read region with lzw decoder!\n");
+                        cucim::print(stderr, "[Error] Failed to read region with lzw decoder!\n");
                         return false;
                     }
                     break;
@@ -922,7 +922,7 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
             if (!cucim::codec::base64::decode(
                     image_desc_buf, image_ifd->image_description().size(), &decoded_buf, &decoded_size))
             {
-                fmt::print(stderr, "[Error] Failed to decode base64-encoded string from the metadata!\n");
+                cucim::print(stderr, "[Error] Failed to decode base64-encoded string from the metadata!\n");
                 return false;
             }
 
@@ -931,7 +931,7 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
 
             if (!cuslide::jpeg::get_dimension(decoded_buf, 0, decoded_size, &image_width, &image_height))
             {
-                fmt::print(stderr, "[Error] Failed to read jpeg header for image dimension!\n");
+                cucim::print(stderr, "[Error] Failed to read jpeg header for image dimension!\n");
                 return false;
             }
 
@@ -948,7 +948,7 @@ bool TIFF::read_associated_image(const cucim::io::format::ImageMetadataDesc* met
                                                out_device))
             {
                 cucim_free(raster);
-                fmt::print(stderr, "[Error] Failed to read image from metadata with libjpeg!\n");
+                cucim::print(stderr, "[Error] Failed to read image from metadata with libjpeg!\n");
                 return false;
             }
             break;

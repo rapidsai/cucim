@@ -6,7 +6,8 @@
 #pragma once
 
 #include "dlpack/dlpack.h"
-#include <fmt/format.h>
+#include <format>
+#include <stdexcept>
 
 namespace cucim::memory
 {
@@ -36,7 +37,7 @@ inline const char* to_numpy_dtype(const DLDataType& dtype) {
         case 64:
             return "<i8";
         }
-        throw std::logic_error(fmt::format("DLDataType(code: kDLInt, bits: {}) is not supported!", bits));
+        throw std::logic_error(std::format("DLDataType(code: kDLInt, bits: {}) is not supported!", bits));
     case kDLUInt:
         switch(bits) {
         case 8:
@@ -48,7 +49,7 @@ inline const char* to_numpy_dtype(const DLDataType& dtype) {
         case 64:
             return "<u8";
         }
-        throw std::logic_error(fmt::format("DLDataType(code: kDLUInt, bits: {}) is not supported!", bits));
+        throw std::logic_error(std::format("DLDataType(code: kDLUInt, bits: {}) is not supported!", bits));
     case kDLFloat:
         switch(bits) {
         case 16:
@@ -60,9 +61,9 @@ inline const char* to_numpy_dtype(const DLDataType& dtype) {
         }
         break;
     case kDLBfloat:
-        throw std::logic_error(fmt::format("DLDataType(code: kDLBfloat, bits: {}) is not supported!", bits));
+        throw std::logic_error(std::format("DLDataType(code: kDLBfloat, bits: {}) is not supported!", bits));
     }
-    throw std::logic_error(fmt::format("DLDataType(code: {}, bits: {}) is not supported!", code, bits));
+    throw std::logic_error(std::format("DLDataType(code: {}, bits: {}) is not supported!", code, bits));
 }
 
 class DLTContainer

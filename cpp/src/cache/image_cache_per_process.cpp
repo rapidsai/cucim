@@ -9,7 +9,7 @@
 #include "cucim/memory/memory_manager.h"
 #include "cucim/util/cuda.h"
 
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 
 #include <exception>
 #include <utility>
@@ -72,7 +72,7 @@ PerProcessImageCacheValue::~PerProcessImageCacheValue()
         case io::DeviceType::kCUDAManaged:
         case io::DeviceType::kCPUShared:
         case io::DeviceType::kCUDAShared:
-            fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
+            cucim::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
             break;
         }
         data = nullptr;
@@ -136,7 +136,7 @@ void* PerProcessImageCache::allocate(std::size_t n)
     case io::DeviceType::kCUDAManaged:
     case io::DeviceType::kCPUShared:
     case io::DeviceType::kCUDAShared:
-        fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type_));
+        cucim::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type_));
         break;
     }
     return nullptr;
@@ -178,7 +178,7 @@ bool PerProcessImageCache::insert(std::shared_ptr<ImageCacheKey>& key, std::shar
     }
     else
     {
-        fmt::print(stderr, "{} existing list_[] = {}\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), (uint64_t)item->key->location_hash);
+        cucim::print(stderr, "{} existing list_[] = {}\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), (uint64_t)item->key->location_hash);
     }
     return succeed;
 }

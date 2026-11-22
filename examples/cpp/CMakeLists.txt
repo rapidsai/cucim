@@ -23,5 +23,4 @@ target_compile_options(tiff_image PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wal
 target_link_libraries(tiff_image
         PRIVATE
             ${CUCIM_PACKAGE_NAME}
-            deps::fmt
         )

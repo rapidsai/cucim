@@ -5,7 +5,7 @@
 
 #include "cucim/logger/timer.h"
 
-#include <fmt/format.h>
+#include "cucim/util/print.h"
 
 namespace cucim::logger
 {
@@ -43,11 +43,11 @@ void Timer::print(const char* message)
 {
     if (message)
     {
-        fmt::print(stderr, fmt::runtime(message), elapsed_seconds_);
+        cucim::vprint(stderr, message, std::make_format_args(elapsed_seconds_));
     }
     else
     {
-        fmt::print(stderr, fmt::runtime(message_), elapsed_seconds_);
+        cucim::vprint(stderr, message_, std::make_format_args(elapsed_seconds_));
     }
 }
 

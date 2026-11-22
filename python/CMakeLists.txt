@@ -94,7 +94,6 @@ include(ExternalProject)
 ################################################################################
 # Define dependencies
 ################################################################################
-superbuild_depend(fmt)
 superbuild_depend(json)
 
 # Use the CCCL version pinned by rapids-cmake (as other RAPIDS projects do)
@@ -188,7 +187,6 @@ nanobind_add_module(cucim
 target_link_libraries(cucim
     PRIVATE
         cucim::cucim
-        deps::fmt
         deps::json
         )
 

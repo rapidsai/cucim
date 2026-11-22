@@ -7,7 +7,7 @@
 #include "filesystem_pydoc.h"
 
 #include <format>
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 #include <nanobind/stl/filesystem.h>
 #include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/string.h>
@@ -110,7 +110,7 @@ ssize_t py_pread(const std::shared_ptr<CuFileDriver>& fd, nb::handle buf, size_t
     }
     else
     {
-        fmt::print(stderr, "fd (CuFileDriver) is None!");
+        cucim::print(stderr, "fd (CuFileDriver) is None!");
         return -1;
     }
 }
@@ -122,7 +122,7 @@ ssize_t py_pwrite(const std::shared_ptr<CuFileDriver>& fd, nb::handle buf, size_
     }
     else
     {
-        fmt::print(stderr, "fd (CuFileDriver) is None!");
+        cucim::print(stderr, "fd (CuFileDriver) is None!");
         return -1;
     }
 }
