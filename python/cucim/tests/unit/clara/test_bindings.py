@@ -246,6 +246,15 @@ def test_filesystem_odirect_tail_offset(tmp_path, count, write, device):
     address = storage.data.ptr if device == "cuda" else storage.ctypes.data
     start = (-address) % page_size
     buffer = storage[start : start + count]
+    if device == "cuda" and not write:
+        consumer = array_module.cuda.Stream(non_blocking=True)
+        host_buffer = np.frombuffer(
+            array_module.cuda.alloc_pinned_memory(count),
+            dtype=np.uint8,
+            count=count,
+        )
+        buffer.fill(0)
+        array_module.cuda.get_current_stream().synchronize()
 
     if not hasattr(os, "O_DIRECT"):
         pytest.skip("O_DIRECT is unavailable")
@@ -264,6 +273,8 @@ def test_filesystem_odirect_tail_offset(tmp_path, count, write, device):
                 assert driver.pwrite(buffer, count, file_offset) == count
             else:
                 assert driver.pread(buffer, count, file_offset) == count
+                if device == "cuda":
+                    buffer = buffer.get(stream=consumer, out=host_buffer)
     finally:
         os.close(fd)
 
@@ -273,8 +284,6 @@ def test_filesystem_odirect_tail_offset(tmp_path, count, write, device):
         assert path.read_bytes() == expected
     else:
         expected = np.frombuffer(original[file_offset:end], dtype=np.uint8)
-        if device == "cuda":
-            buffer = buffer.get()
         np.testing.assert_array_equal(buffer, expected)
 
 
