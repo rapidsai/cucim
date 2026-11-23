@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_MEMORY_DEVICE_RESOURCES_H
-#define CUCIM_MEMORY_DEVICE_RESOURCES_H
+#pragma once
 
 #include "cucim/core/framework.h"
 #include "cucim/io/device.h"
@@ -240,5 +239,3 @@ EXPORT_VISIBLE bool move_raster_from_device(void** target,
                                             DeviceResources& resources);
 
 } // namespace cucim::memory
-
-#endif // CUCIM_MEMORY_DEVICE_RESOURCES_H
