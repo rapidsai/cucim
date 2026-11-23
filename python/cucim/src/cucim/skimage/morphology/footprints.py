@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import os
@@ -9,8 +9,6 @@ from numbers import Integral
 
 import cupy as cp
 import numpy as np
-
-from cucim.skimage import morphology
 
 # Precomputed ball and disk decompositions were saved as 2D arrays where the
 # radius of the desired decomposition is used to index into the first axis of
@@ -114,11 +112,16 @@ def footprint_from_sequence(footprints):
         An single array equivalent to applying the sequence of ``footprints``.
     """
 
+    # Use the private implementation so this utility does not issue a warning
+    # about the deprecated public binary_dilation API. Import lazily to avoid
+    # a cycle: binary morphology also imports footprint utilities.
+    from .binary import _binary_dilation
+
     # Create a single pixel image of sufficient size and apply binary dilation.
     shape = _shape_from_sequence(footprints)
     imag = cp.zeros(shape, dtype=bool)
     imag[tuple(s // 2 for s in shape)] = 1
-    return morphology.binary_dilation(imag, footprints)
+    return _binary_dilation(imag, footprints)
 
 
 def footprint_rectangle(shape, *, dtype=cp.uint8, decomposition=None):

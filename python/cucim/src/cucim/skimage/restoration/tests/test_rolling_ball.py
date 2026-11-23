@@ -257,11 +257,12 @@ def test_workers(workers):
     rolling_ball(img, radius=10, nansafe=False, workers=workers)
 
 
-def test_num_threads_deprecated():
-    img = cp.full((100, 100), 23, dtype=np.uint8)
-
-    with pytest.warns(FutureWarning, match="`num_threads` is deprecated"):
-        rolling_ball(img, radius=10, num_threads=2)
+@pytest.mark.parametrize("kwargs", [{}, {"workers": 2}])
+def test_num_threads_removed(kwargs):
+    with pytest.raises(
+        TypeError, match="unexpected keyword argument 'num_threads'"
+    ):
+        rolling_ball(None, num_threads=2, **kwargs)
 
 
 def test_ndim():
