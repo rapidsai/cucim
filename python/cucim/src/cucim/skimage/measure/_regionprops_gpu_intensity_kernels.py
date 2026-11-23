@@ -533,15 +533,23 @@ def regionprops_intensity_median(
         ),
     )
 
-    segmented_filled = _fill_intensity_median_segmented_sort(
-        img1d,
-        counts,
-        offsets,
-        medians,
-        num_channels=num_channels,
-        min_region_size=0,
-        max_region_size=int(hybrid_size_threshold),
-    )
+    try:
+        segmented_filled = _fill_intensity_median_segmented_sort(
+            img1d,
+            counts,
+            offsets,
+            medians,
+            num_channels=num_channels,
+            min_region_size=0,
+            max_region_size=int(hybrid_size_threshold),
+            nan_labels=nan_labels,
+        )
+    except cp.cuda.memory.OutOfMemoryError:
+        # The sort helper has released its temporaries. Recompute all
+        # nonempty regions, including any channels it already filled.
+        segmented_filled = None
+    del offsets, nan_labels
+
     segmented_filled_cpu = (
         cp.asnumpy(segmented_filled) if segmented_filled is not None else None
     )
@@ -557,12 +565,6 @@ def regionprops_intensity_median(
             )
             medians[label_index] = cp.median(values, axis=0)
         slice_start = slice_stop
-
-    if nan_labels is not None and segmented_filled is not None:
-        segmented_mask = segmented_filled
-        if num_channels > 1:
-            segmented_mask = segmented_mask[:, cp.newaxis]
-        medians[(nan_labels != 0) & segmented_mask] = cp.nan
 
     if num_channels == 1 and intensity_image.ndim > label_image.ndim:
         medians = medians[:, cp.newaxis]
@@ -696,6 +698,7 @@ def _fill_intensity_median_segmented_sort(
     num_channels,
     min_region_size,
     max_region_size,
+    nan_labels,
 ):
     if _skimage_cpp_ext is None or max_region_size <= min_region_size:
         return None
@@ -718,7 +721,7 @@ def _fill_intensity_median_segmented_sort(
         max_region_size=max_region_size,
     )
     if params is None:
-        return eligible
+        return None
 
     label_indices, begin_offsets, end_offsets, hi, even = params
 
@@ -752,6 +755,9 @@ def _fill_intensity_median_segmented_sort(
         for channel in range(num_channels):
             keys = cp.ascontiguousarray(img1d[:, channel])
             medians[label_indices, channel] = sort_channel(keys)
+    if nan_labels is not None:
+        mask = eligible if num_channels == 1 else eligible[:, cp.newaxis]
+        medians[(nan_labels != 0) & mask] = cp.nan
     return eligible
 
 

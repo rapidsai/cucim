@@ -350,24 +350,50 @@ def test_median_intensity(precompute_max, ndim, image_dtype, num_channels):
 
 
 def test_median_intensity_hybrid_threshold_monkeypatch(monkeypatch):
-    labels = cp.array(
-        [[1, 1, 0, 2], [1, 0, 2, 2], [3, 3, 3, 3]], dtype=cp.uint8
-    )
-    intensity_image = cp.arange(labels.size, dtype=cp.float32).reshape(
-        labels.shape
-    )
+    extension = intensity_kernels._skimage_cpp_ext
+    if extension is None:
+        pytest.skip("cucim.skimage C++ extension is unavailable")
+
+    # Labels 1 and 4 fit the cutoff. Label 2 uses CuPy and label 3 is absent.
+    labels = np.array([[1] * 3 + [2] * 7 + [4] * 4], dtype=np.uint8)
+    image = np.arange(28, dtype=np.float32).reshape(1, 14, 2)
+    image[0, 1, 0] = np.nan
+    image[0, 5, 1] = np.nan
+    image[0, 13, 1] = np.nan
+    expected = np.full((4, 2), np.nan, dtype=np.float32)
+    for label in (1, 2, 4):
+        expected[label - 1] = np.median(image[labels == label], axis=0)
+    labels, image = cp.asarray(labels), cp.asarray(image)
 
     monkeypatch.setattr(intensity_kernels, "hybrid_size_threshold", 0)
-    fallback = regionprops_intensity_median(labels, intensity_image)[
-        "intensity_median"
-    ]
+    fallback = regionprops_intensity_median(labels, image)["intensity_median"]
 
+    native_calls = []
+    fallback_sizes = []
+    sort = extension.segmented_sort_keys_ranges_float32
+    median = cp.median
+
+    def record_sort(*args):
+        native_calls.append((args[4], args[5], args[-1]))
+        return sort(*args)
+
+    def record_median(values, **kwargs):
+        fallback_sizes.append(values.shape[0])
+        return median(values, **kwargs)
+
+    monkeypatch.setattr(
+        extension, "segmented_sort_keys_ranges_float32", record_sort
+    )
+    monkeypatch.setattr(cp, "median", record_median)
     monkeypatch.setattr(intensity_kernels, "hybrid_size_threshold", 4)
-    hybrid = regionprops_intensity_median(labels, intensity_image)[
-        "intensity_median"
-    ]
+    with cp.cuda.Stream(non_blocking=True) as stream:
+        hybrid = regionprops_intensity_median(labels, image)["intensity_median"]
+        stream.synchronize()
 
-    assert_allclose(hybrid, fallback)
+    assert native_calls == [(14, 2, stream.ptr)] * 2
+    assert fallback_sizes == [7]
+    assert_array_equal(fallback, expected)
+    assert_array_equal(hybrid, expected)
 
 
 @pytest.mark.parametrize("threshold", [0, 128000], ids=["fallback", "native"])
@@ -404,6 +430,56 @@ def test_median_intensity_empty_spatial_axis():
     result = measure.regionprops_table(labels, image, properties=properties)
     assert result.keys() == {"label", "intensity_median-0"}
     assert result["label"].shape == result["intensity_median-0"].shape == (0,)
+
+
+def test_median_intensity_falls_back_under_pool_limit():
+    if intensity_kernels._skimage_cpp_ext is None:
+        pytest.skip("cucim.skimage C++ extension is unavailable")
+
+    labels = cp.repeat(cp.arange(1, 129, dtype=cp.uint8), 1024).reshape(
+        256, 512
+    )
+    image = cp.tile(cp.arange(1024, dtype=cp.float32), 128).reshape(
+        labels.shape
+    )
+    pool = cp.cuda.MemoryPool()
+    pool.set_limit(size=800 * 1024)
+
+    with cp.cuda.using_allocator(pool.malloc):
+        result = measure.regionprops_table(
+            labels, image, properties=("intensity_median",)
+        )
+    assert_array_equal(result["intensity_median"], np.full(128, 511.5))
+
+
+def test_median_intensity_recovers_after_partial_sort(monkeypatch):
+    if intensity_kernels._skimage_cpp_ext is None:
+        pytest.skip("cucim.skimage C++ extension is unavailable")
+
+    labels = cp.asarray([[1, 1, 1, 0], [2, 2, 2, 2]], dtype=cp.uint8)
+    image = cp.arange(16, dtype=cp.float32).reshape((*labels.shape, 2))
+    properties = ("intensity_median",)
+    expected = measure_cpu.regionprops_table(
+        labels.get(), image.get(), properties=properties
+    )
+    extract = intensity_kernels._extract_segmented_medians
+    calls = 0
+
+    def fail_on_second_channel(*args):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise cp.cuda.memory.OutOfMemoryError(1, 1, 1)
+        # Mark the first channel so the test can tell if fallback rewrites it.
+        return extract(*args) + 100
+
+    monkeypatch.setattr(
+        intensity_kernels, "_extract_segmented_medians", fail_on_second_channel
+    )
+    result = measure.regionprops_table(labels, image, properties=properties)
+    assert calls == 2
+    for key in expected:
+        assert_array_equal(result[key], expected[key])
 
 
 @pytest.mark.parametrize("image_dtype", [cp.uint8, cp.uint16])

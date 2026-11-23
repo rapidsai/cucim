@@ -1157,9 +1157,11 @@ def regionprops_table(
         the properties. Leave this False if further handling of the outputs is
         planned on the GPU.
     disable_nan_check : bool, optional
-        If False, batch-computed intensity medians are set to NaN for regions
-        and channels containing a NaN intensity. Set to True to skip this
-        additional check. Ignored when ``batch_processing=False``.
+        If False, the batch segmented sort checks for NaNs and returns NaN
+        for each affected region and channel. Set to True only when the
+        intensity image contains no NaNs. The per-region median used as a
+        fallback still propagates NaNs. Ignored when
+        ``batch_processing=False``.
 
     Returns
     -------
