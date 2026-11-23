@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_API_H
-#define CUCIM_API_H
+#pragma once
 
 #if defined(__linux__)
 #    define CUCIM_PLATFORM_LINUX 1
@@ -81,5 +80,3 @@
 #        define CUCIM_NO_DEPRECATED
 #    endif
 #endif
-
-#endif /* CUCIM_API_H */

@@ -2,8 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef PYCUCIM_FILESYSTEM_INIT_H
-#define PYCUCIM_FILESYSTEM_INIT_H
+#pragma once
 
 #include <filesystem>
 #include <memory>
@@ -27,5 +26,3 @@ ssize_t py_pread(
 ssize_t py_pwrite(
     const std::shared_ptr<CuFileDriver>& fd, nb::handle buf, size_t count, off_t file_offset, off_t buf_offset = 0);
 } // namespace cucim::filesystem
-
-#endif // PYCUCIM_FILESYSTEM_INIT_H

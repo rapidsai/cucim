@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_IO_DEVICE_TYPE_H
-#define CUCIM_IO_DEVICE_TYPE_H
+#pragma once
 
 #include "cucim/macros/api_header.h"
 
@@ -55,6 +54,3 @@ EXPORT_VISIBLE std::string_view lookup_device_type_str(const DeviceType type);
 
 
 } // namespace cucim::io
-
-
-#endif // CUCIM_IO_DEVICE_TYPE_H

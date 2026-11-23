@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -85,8 +85,24 @@ ThreadBatchDataLoader::ThreadBatchDataLoader(LoadFunc load_func,
 
 ThreadBatchDataLoader::~ThreadBatchDataLoader()
 {
-    // Wait until all tasks are done.
-    while (wait_batch() > 0);
+    if (!stopped_)
+    {
+        try
+        {
+            while (wait_batch() > 0)
+            {
+            }
+        }
+        catch (...)
+        {
+            // An abandoned iterator has no caller to receive a decode error.
+        }
+        if (batch_data_processor_)
+        {
+            batch_data_processor_->shutdown();
+        }
+        thread_pool_.wait();
+    }
 
     cucim::io::DeviceType device_type = out_device_.type();
     for (auto& raster_ptr : raster_data_)
@@ -115,11 +131,6 @@ ThreadBatchDataLoader::~ThreadBatchDataLoader()
             break;
         }
         raster_ptr = nullptr;
-    }
-    if (batch_data_processor_)
-    {
-        stopped_ = true;
-        batch_data_processor_->shutdown();
     }
 }
 
@@ -282,7 +293,7 @@ uint8_t* ThreadBatchDataLoader::next_data()
         return batch_raster_ptr;
     }
 
-    if (processed_batch_count_ * batch_size_ >= location_len_)
+    if (stopped_ || processed_batch_count_ * batch_size_ >= location_len_)
     {
 #ifdef DEBUG
         fmt::print("🔍 next_data(): All batches processed, returning nullptr\n");
@@ -295,7 +306,21 @@ uint8_t* ThreadBatchDataLoader::next_data()
 #ifdef DEBUG
     fmt::print("🔍 next_data(): About to call wait_batch()\n");
 #endif // DEBUG
-    wait_batch();
+    try
+    {
+        wait_batch();
+    }
+    catch (...)
+    {
+        // No raster from a failed batch may be published or reused.
+        if (batch_data_processor_)
+        {
+            batch_data_processor_->shutdown();
+        }
+        thread_pool_.wait();
+        stopped_ = true;
+        throw;
+    }
 #ifdef DEBUG
     fmt::print("🔍 next_data(): wait_batch() completed\n");
 #endif // DEBUG

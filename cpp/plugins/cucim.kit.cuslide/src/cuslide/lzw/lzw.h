@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef CUSLIDE_LZW_H
-#define CUSLIDE_LZW_H
+#pragma once
 
 #include <cucim/io/device.h>
 
@@ -20,4 +19,3 @@ bool decode_lzw(int fd,
                 uint64_t dest_nbytes,
                 const cucim::io::Device& out_device);
 }
-#endif // CUSLIDE_LZW_H

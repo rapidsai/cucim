@@ -449,6 +449,9 @@ build_local() {
     fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cucim" ]; then
+        # Remove stale compiled cucim.skimage extension modules; the install
+        # step of the build puts the current ones into the cucim.skimage package
+        rm -f "${TOP}"/python/cucim/src/cucim/skimage/_cucim_skimage_*.so
         build_local_cucim_ "${TOP}"/python "${build_type}" ${build_type_str} "${prefix}"
     fi
 
