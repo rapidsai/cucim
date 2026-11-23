@@ -512,6 +512,30 @@ def test_median_intensity_segmented_sort_preserves_integer_dtype(
     assert_array_equal(result, cp.asarray([3, 5], dtype=cp.float32))
 
 
+@pytest.mark.parametrize("use_segmented_sort", [False, True])
+def test_median_intensity_canonicalizes_zero(monkeypatch, use_segmented_sort):
+    if use_segmented_sort and intensity_kernels._skimage_cpp_ext is None:
+        pytest.skip("cucim.skimage C++ extension is unavailable")
+    threshold = 4 if use_segmented_sort else 0
+    monkeypatch.setattr(intensity_kernels, "hybrid_size_threshold", threshold)
+
+    labels = cp.asarray([[1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 5]], dtype=cp.uint8)
+    # Use a subnormal on the native path to check that it stays nonzero.
+    fp32 = np.finfo(np.float32)
+    nonzero = -fp32.smallest_subnormal if use_segmented_sort else -fp32.tiny
+    # Odd and even all-negative zeros, mixed signed zeros, and nonzero data.
+    intensity = cp.asarray(
+        [[-0.0] * 8 + [0.0, 0.0, nonzero, cp.nan]], dtype=cp.float32
+    )
+
+    result = measure.regionprops_table(
+        labels, intensity, properties=["intensity_median"]
+    )["intensity_median"].get()
+
+    np.testing.assert_array_equal(result, [0.0, 0.0, 0.0, nonzero, np.nan])
+    np.testing.assert_array_equal(np.signbit(result[:3]), [False, False, False])
+
+
 @pytest.mark.parametrize("region_size", [3, 4])
 @pytest.mark.parametrize("num_channels", [1, 2])
 def test_median_intensity_nan_propagation(num_channels, region_size):

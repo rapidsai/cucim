@@ -467,6 +467,16 @@ def regionprops_intensity_mean(
     return props_dict
 
 
+# Read the unsigned representation so float32 subnormals stay intact.
+# Shifting out the sign bit is zero only for the two representations of zero.
+_canonicalize_median_zeros = cp.ElementwiseKernel(
+    "T bits",
+    "T result",
+    "result = (bits << 1) == 0 ? 0 : bits;",
+    "cucim_regionprops_canonicalize_median_zeros",
+)
+
+
 def regionprops_intensity_median(
     label_image,
     intensity_image,
@@ -565,6 +575,12 @@ def regionprops_intensity_median(
             )
             medians[label_index] = cp.median(values, axis=0)
         slice_start = slice_stop
+
+    if intensity_image.dtype.kind == "f":
+        bits = medians.view(
+            cp.uint32 if median_dtype == cp.float32 else cp.uint64
+        )
+        _canonicalize_median_zeros(bits, bits)
 
     if num_channels == 1 and intensity_image.ndim > label_image.ndim:
         medians = medians[:, cp.newaxis]

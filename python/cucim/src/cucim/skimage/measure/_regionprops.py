@@ -1194,6 +1194,10 @@ def regionprops_table(
     size), an object array will be used, with the corresponding property name
     as the key.
 
+    With ``batch_processing=True``, the ``intensity_median`` dtype is
+    ``cupy.promote_types(intensity_image.dtype, cupy.float32)``. A
+    real-valued median of zero is returned as ``+0.0``.
+
     References
     ----------
     .. [1] Wickham, H (2014) "Tidy Data" Journal of Statistical Software,
