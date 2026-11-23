@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef CUCIM_TIMER_H
-#define CUCIM_TIMER_H
+#pragma once
 
 #include "cucim/macros/defines.h"
 
@@ -30,6 +29,3 @@ private:
 };
 
 } // namespace cucim::logger
-
-
-#endif // CUCIM_TIMER_H

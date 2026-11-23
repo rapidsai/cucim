@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef CUMED_TESTS_CONFIG_H
-#define CUMED_TESTS_CONFIG_H
+#pragma once
 
 #include <string>
 #include <cstdlib>
@@ -47,5 +46,3 @@ struct AppConfig
 };
 
 extern AppConfig g_config;
-
-#endif // CUMED_TESTS_CONFIG_H

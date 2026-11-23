@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUSLIDE_IFD_H
-#define CUSLIDE_IFD_H
+#pragma once
 
 #include "types.h"
 
@@ -151,5 +150,3 @@ private:
     bool is_format_supported() const;
 };
 } // namespace cuslide::tiff
-
-#endif // CUSLIDE_IFD_H

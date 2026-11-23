@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_CACHE_IMAGE_CACHE_SHARED_MEMORY_H
-#define CUCIM_CACHE_IMAGE_CACHE_SHARED_MEMORY_H
+#pragma once
 
 #include "cucim/cache/image_cache.h"
 
@@ -186,5 +185,3 @@ private:
 };
 
 } // namespace cucim::cache
-
-#endif // CUCIM_CACHE_IMAGE_CACHE_SHARED_MEMORY_H

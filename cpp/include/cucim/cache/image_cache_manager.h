@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_CACHE_IMAGE_CACHE_MANAGER_H
-#define CUCIM_CACHE_IMAGE_CACHE_MANAGER_H
+#pragma once
 
 #include "cucim/core/framework.h"
 
@@ -82,5 +81,3 @@ private:
 };
 
 } // namespace cucim::cache
-
-#endif // CUCIM_CACHE_IMAGE_CACHE_MANAGER_H
