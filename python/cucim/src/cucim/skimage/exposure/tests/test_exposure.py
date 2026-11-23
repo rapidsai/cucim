@@ -56,6 +56,20 @@ def test_single_channel_float_histogram_bin_boundaries(dtype):
     assert_array_equal(centers, (edges[:-1] + edges[1:]) / 2)
 
 
+def test_single_channel_float16_histogram_overflow_reports_range():
+    image = cp.asarray([-65504, -1, 0, 1, 65504], dtype=cp.float16)
+    with pytest.raises(ValueError, match="Cannot create 7 finite-sized bins"):
+        exposure.histogram(image, nbins=7)
+
+
+def test_single_channel_float16_histogram_large_finite_range():
+    image = np.array([-32000, -1, 0, 1, 2047], dtype=np.float16)
+    expected_hist, edges = np.histogram(image, bins=7)
+    hist, centers = exposure.histogram(cp.asarray(image), nbins=7)
+    assert_array_equal(hist, expected_hist)
+    assert_array_equal(centers, (edges[:-1] + edges[1:]) / 2)
+
+
 def test_single_channel_float_histogram_subnormal_range():
     tiny = np.nextafter(np.float32(0), np.float32(1))
     image = cp.asarray([-tiny, 0, tiny], dtype=cp.float32)

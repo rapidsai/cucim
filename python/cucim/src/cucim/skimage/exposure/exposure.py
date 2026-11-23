@@ -382,6 +382,16 @@ def _histogram(image, bins, source_range, normalize, *, bin_range=None):
                 # its double-precision fast path, which can move bin edges.
                 first, last = map(image.dtype.type, hist_range)
                 delta = float(last) - float(first)
+                if image.dtype == np.float16:
+                    # NumPy subtracts the typed endpoints before dividing by
+                    # the bin count, so a finite delta can overflow in half.
+                    with np.errstate(over="ignore"):
+                        half_delta = last - first
+                    if not np.isfinite(half_delta):
+                        raise ValueError(
+                            "Too many bins for data range. "
+                            f"Cannot create {bins} finite-sized bins."
+                        )
                 tiny = np.finfo(np.float32).tiny
                 exceptional = not np.isfinite(delta) or (
                     image.dtype == np.float32
