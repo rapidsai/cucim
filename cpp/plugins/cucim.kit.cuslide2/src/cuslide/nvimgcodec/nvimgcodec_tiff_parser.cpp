@@ -71,31 +71,24 @@ namespace cuslide2::nvimgcodec
 // including older deployments where extension auto-discovery is incomplete.
 //
 
-// The range packaging pins, spelled out for diagnostics.  Not derived from the
-// constants below because the packed encoding cannot represent a two-digit
-// minor: see format_nvimgcodec_version().
-static constexpr const char* kSupportedNvimgcodecRange = ">=0.9.0,<0.10.0";
+// The range packaging pins, spelled out for diagnostics.
+static constexpr const char* kSupportedNvimgcodecRange = ">=0.10.0,<0.11.0";
 
 // Same range as packed semantic-version integers, so they can be compared
 // directly against nvimgcodecProperties_t::version.
-static constexpr uint32_t kMinNvimgcodecVersion = MAKE_SEMANTIC_VERSION(0, 9, 0);
-static constexpr uint32_t kFirstUnsupportedNvimgcodecVersion = MAKE_SEMANTIC_VERSION(0, 10, 0);
+static constexpr uint32_t kMinNvimgcodecVersion = NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 10, 0);
+static constexpr uint32_t kFirstUnsupportedNvimgcodecVersion = NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 11, 0);
 
 /**
  * @brief Render a packed nvImageCodec version for a diagnostic message.
  *
- * The 0.9 headers encode major * 1000 + minor * 100 + patch, so 0.10.0
- * and 1.0.0 both pack to 1000. Values at or above that boundary cannot be
- * decoded unambiguously with these headers. Report the raw value instead of
- * claiming an exact semantic version. The supported-range check still uses
- * the packed value and rejects these versions.
+ * 0.10 widened the packing to major * 10000 + minor * 100 + patch so that a
+ * two-digit minor no longer overflows into the major. Every released 0.x
+ * packs to the same value under both encodings, so a library older than 0.10
+ * reporting its version with the narrow encoding still decodes correctly here.
  */
 std::string format_nvimgcodec_version(uint32_t version)
 {
-    if (version >= kFirstUnsupportedNvimgcodecVersion)
-    {
-        return fmt::format("packed version {} (semantic version is ambiguous with the 0.9 headers)", version);
-    }
     return fmt::format("{}.{}.{}", NVIMGCODEC_MAJOR_FROM_SEMVER(version), NVIMGCODEC_MINOR_FROM_SEMVER(version),
                        NVIMGCODEC_PATCH_FROM_SEMVER(version));
 }
@@ -1329,7 +1322,9 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
         fmt::print(stderr,
                    "[cuslide2] No TIFF tags returned by nvImageCodec for '{}'. "
                    "OME/vendor metadata and pixel spacing will be unavailable. "
-                   "Tag retrieval requires a working decoder (CUDA device).\n",
+                   "Tag retrieval requires a working decoder (CUDA device) and the nvTIFF "
+                   "library. Check for a 'Failed to load nvtiff library' message from nvImageCodec; "
+                   "pip installs need the nvidia-nvimgcodec-cu* extras 'nvtiff' and 'nvjpeg2k'.\n",
                    file_path_);
     }
 
