@@ -27,7 +27,11 @@ from .._shared.utils import _supported_float_type
 from .._vendored import pad
 from ..color.adapt_rgb import adapt_rgb, hsv_value
 from ..util import img_as_uint
-from ._histogram_kernels import _bincount_rows
+from ._histogram_kernels import (
+    _MAX_CLIP_BINS,
+    _bincount_rows,
+    _clip_histogram_rows,
+)
 
 NR_OF_GRAY = 2**14  # number of grayscale levels to use in CLAHE algorithm
 
@@ -185,18 +189,19 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     # Gray values are already mapped into [0, nbins), so count all contextual
     # regions together without bincount's per-row validation/readbacks.
     hist = _bincount_rows(hist_blocks, nbins)
-    if isinstance(hist_blocks, cp.ndarray):
-        # CuPy Backend:
-        #    faster to loop over the arrays on the host
-        #    (hist is small and clip_histogram has too much overhead)
-        # TODO: implement clip_histogram kernel to avoid synchronization?
-        hist = cp.asarray(
-            np.apply_along_axis(  # synchronize!
-                clip_histogram, -1, cp.asnumpy(hist), clip_limit=clim
+    if clim < kernel_elements:
+        if (
+            nbins <= _MAX_CLIP_BINS
+            and kernel_elements <= np.iinfo(np.int32).max
+            and not cp.cuda.runtime.is_hip
+        ):
+            _clip_histogram_rows(hist, clim)
+        else:
+            hist = cp.asarray(
+                np.apply_along_axis(
+                    clip_histogram, -1, cp.asnumpy(hist), clip_limit=clim
+                )
             )
-        )
-    else:
-        hist = cp.apply_along_axis(clip_histogram, -1, hist, clip_limit=clim)
     hist = map_histogram(hist, 0, NR_OF_GRAY - 1, kernel_elements)
     hist = hist.reshape(hist_block_assembled_shape[:ndim] + (-1,))
 
@@ -274,7 +279,6 @@ def _clahe(image, kernel_size, clip_limit, nbins):
     return result
 
 
-# TODO: refactor this clip_histogram bottleneck.
 def clip_histogram(hist, clip_limit):
     """Perform clipping of the histogram and redistribution of bins.
 
