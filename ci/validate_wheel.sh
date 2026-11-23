@@ -13,6 +13,15 @@ pydistcheck \
     --inspect \
     "$(echo "${wheel_dir_relative_path}"/*.whl)"
 
+rapids-logger "check for an auditwheel-vendored copy of libcucim"
+
+vendored_libcucim=$(unzip -Z1 "${wheel_dir_relative_path}"/*.whl |
+    awk '/\.libs\/libcucim-[^/]+\.so(\.[^/]+)?$/')
+if [[ -n "$vendored_libcucim" ]]; then
+    printf 'Unexpected auditwheel-vendored libcucim in the wheel\n%s\n' "$vendored_libcucim" >&2
+    exit 1
+fi
+
 rapids-logger "validate packages with 'twine'"
 
 # shellcheck disable=SC2116
