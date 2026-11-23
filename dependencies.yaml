@@ -103,7 +103,7 @@ dependencies:
       #   python/cucim/src/cucim/clara/ before calling `pip install .`.
       - output_types: [conda, requirements, constraints]
         packages:
-          - cmake>=4.0
+          - cmake>=4.0,<4.5
           - nanobind>=3.1.0,<3.2.0a0
           - ninja
       - output_types: conda
@@ -241,7 +241,7 @@ dependencies:
         packages:
           - cuda-cudart-dev
           - libnvjpeg-dev
-          - libnvimgcodec-dev>=0.9.0,<0.10.0
+          - libnvimgcodec-dev>=0.10.0,<0.11.0
     specific:
       - output_types: conda
         matrices:
@@ -323,19 +323,33 @@ dependencies:
           - scipy>=1.11.2
       - output_types: conda
         packages:
-          - libnvimgcodec>=0.9.0,<0.10.0
-          - nvimgcodec>=0.9.0,<0.10.0
+          - libnvimgcodec>=0.10.0,<0.11.0
+          - nvimgcodec>=0.10.0,<0.11.0
     specific:
-      - output_types: [requirements, constraints, pyproject]
+      # The nvJPEG, nvJPEG2000 and nvTIFF libraries are optional extras of the
+      # nvImageCodec wheel. Without nvJPEG2000 and nvTIFF the cuslide2 plugin
+      # cannot decode JPEG 2000 TIFFs and reads their pyramids incorrectly.
+      # (Constraints files cannot contain extras.)
+      - output_types: [requirements, pyproject]
         matrices:
           - matrix:
               cuda: "12.*"
             packages:
-              - nvidia-nvimgcodec-cu12>=0.9.0,<0.10.0
+              - nvidia-nvimgcodec-cu12[nvjpeg,nvjpeg2k,nvtiff]>=0.10.0,<0.11.0
           # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
           - matrix:
             packages:
-              - nvidia-nvimgcodec-cu13>=0.9.0,<0.10.0
+              - nvidia-nvimgcodec-cu13[nvjpeg,nvjpeg2k,nvtiff]>=0.10.0,<0.11.0
+      - output_types: constraints
+        matrices:
+          - matrix:
+              cuda: "12.*"
+            packages:
+              - nvidia-nvimgcodec-cu12>=0.10.0,<0.11.0
+          # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
+          - matrix:
+            packages:
+              - nvidia-nvimgcodec-cu13>=0.10.0,<0.11.0
   depends_on_cupy:
     common:
       - output_types: conda

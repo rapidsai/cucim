@@ -71,31 +71,24 @@ namespace cuslide2::nvimgcodec
 // including older deployments where extension auto-discovery is incomplete.
 //
 
-// The range packaging pins, spelled out for diagnostics.  Not derived from the
-// constants below because the packed encoding cannot represent a two-digit
-// minor: see format_nvimgcodec_version().
-static constexpr const char* kSupportedNvimgcodecRange = ">=0.9.0,<0.10.0";
+// The range packaging pins, spelled out for diagnostics.
+static constexpr const char* kSupportedNvimgcodecRange = ">=0.10.0,<0.11.0";
 
 // Same range as packed semantic-version integers, so they can be compared
 // directly against nvimgcodecProperties_t::version.
-static constexpr uint32_t kMinNvimgcodecVersion = MAKE_SEMANTIC_VERSION(0, 9, 0);
-static constexpr uint32_t kFirstUnsupportedNvimgcodecVersion = MAKE_SEMANTIC_VERSION(0, 10, 0);
+static constexpr uint32_t kMinNvimgcodecVersion = NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 10, 0);
+static constexpr uint32_t kFirstUnsupportedNvimgcodecVersion = NVIMGCODEC_MAKE_SEMANTIC_VERSION(0, 11, 0);
 
 /**
  * @brief Render a packed nvImageCodec version for a diagnostic message.
  *
- * The 0.9 headers encode major * 1000 + minor * 100 + patch, so 0.10.0
- * and 1.0.0 both pack to 1000. Values at or above that boundary cannot be
- * decoded unambiguously with these headers. Report the raw value instead of
- * claiming an exact semantic version. The supported-range check still uses
- * the packed value and rejects these versions.
+ * 0.10 widened the packing to major * 10000 + minor * 100 + patch so that a
+ * two-digit minor no longer overflows into the major. Every released 0.x
+ * packs to the same value under both encodings, so a library older than 0.10
+ * reporting its version with the narrow encoding still decodes correctly here.
  */
 std::string format_nvimgcodec_version(uint32_t version)
 {
-    if (version >= kFirstUnsupportedNvimgcodecVersion)
-    {
-        return fmt::format("packed version {} (semantic version is ambiguous with the 0.9 headers)", version);
-    }
     return fmt::format("{}.{}.{}", NVIMGCODEC_MAJOR_FROM_SEMVER(version), NVIMGCODEC_MINOR_FROM_SEMVER(version),
                        NVIMGCODEC_PATCH_FROM_SEMVER(version));
 }
@@ -505,6 +498,7 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
                 return;
             }
             status_message_ = "nvImageCodec TIFF parser initialized in CPU-only mode";
+            cpu_only_mode_ = true;
         }
 
         initialized_ = true;
@@ -535,6 +529,59 @@ NvImageCodecTiffParserManager::NvImageCodecTiffParserManager()
         #endif // DEBUG
         initialized_ = false;
     }
+}
+
+nvimgcodecDecoder_t NvImageCodecTiffParserManager::get_decoder_for(const IfdInfo& ifd_info)
+{
+    const auto compression = ifd_info.tiff_tags.find("COMPRESSION");
+    const bool compression_known =
+        compression != ifd_info.tiff_tags.end() && std::holds_alternative<uint16_t>(compression->second);
+    const bool needs_gpu_decoder =
+        (ifd_info.codec == "jpeg2000") || (ifd_info.codec == "tiff" && !compression_known);
+    if (!needs_gpu_decoder || !initialized_ || cpu_only_mode_)
+    {
+        return decoder_;
+    }
+
+    std::lock_guard<std::mutex> lock(gpu_only_decoder_mutex_);
+    if (!gpu_only_decoder_created_)
+    {
+        gpu_only_decoder_created_ = true;
+
+        nvimgcodecBackend_t backends[3]{};
+        const nvimgcodecBackendKind_t kinds[3] = {NVIMGCODEC_BACKEND_KIND_GPU_ONLY,
+                                                  NVIMGCODEC_BACKEND_KIND_HYBRID_CPU_GPU,
+                                                  NVIMGCODEC_BACKEND_KIND_HW_GPU_ONLY};
+        for (int i = 0; i < 3; ++i)
+        {
+            backends[i].struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND;
+            backends[i].struct_size = sizeof(nvimgcodecBackend_t);
+            backends[i].struct_next = nullptr;
+            backends[i].kind = kinds[i];
+            backends[i].params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_BACKEND_PARAMS;
+            backends[i].params.struct_size = sizeof(nvimgcodecBackendParams_t);
+            backends[i].params.struct_next = nullptr;
+            backends[i].params.load_hint = 1.0f;
+            backends[i].params.load_hint_policy = NVIMGCODEC_LOAD_HINT_POLICY_FIXED;
+        }
+
+        nvimgcodecExecutionParams_t exec_params{};
+        exec_params.struct_type = NVIMGCODEC_STRUCTURE_TYPE_EXECUTION_PARAMS;
+        exec_params.struct_size = sizeof(nvimgcodecExecutionParams_t);
+        exec_params.struct_next = nullptr;
+        exec_params.max_num_cpu_threads = compute_max_decoder_threads();
+        exec_params.device_id = NVIMGCODEC_DEVICE_CURRENT;
+        exec_params.num_backends = 3;
+        exec_params.backends = backends;
+
+        if (nvimgcodecDecoderCreate(instance_, &gpu_only_decoder_, &exec_params, nullptr) !=
+            NVIMGCODEC_STATUS_SUCCESS)
+        {
+            gpu_only_decoder_ = nullptr;
+        }
+    }
+    // If the decoder could not be created, use the default one.
+    return gpu_only_decoder_ ? gpu_only_decoder_ : decoder_;
 }
 
 void NvImageCodecTiffParserManager::shutdown()
@@ -1329,7 +1376,9 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
         fmt::print(stderr,
                    "[cuslide2] No TIFF tags returned by nvImageCodec for '{}'. "
                    "OME/vendor metadata and pixel spacing will be unavailable. "
-                   "Tag retrieval requires a working decoder (CUDA device).\n",
+                   "Tag retrieval requires a working decoder (CUDA device) and the nvTIFF "
+                   "library. Check for a 'Failed to load nvtiff library' message from nvImageCodec; "
+                   "pip installs need the nvidia-nvimgcodec-cu* extras 'nvtiff' and 'nvjpeg2k'.\n",
                    file_path_);
     }
 
@@ -1338,30 +1387,6 @@ void TiffFileParser::extract_tiff_tags(IfdInfo& ifd_info)
     if (desc_it != ifd_info.tiff_tags.end() && ifd_info.image_description.empty())
     {
         ifd_info.image_description = tiff_tag_value_to_string(desc_it->second);
-    }
-
-    // Check if COMPRESSION tag was successfully extracted
-    if (ifd_info.tiff_tags.find("COMPRESSION") != ifd_info.tiff_tags.end())
-    {
-        return;  // Have compression info, no need for heuristics
-    }
-
-    // Fallback: file extension heuristics when the file carries no COMPRESSION tag
-#ifdef DEBUG
-    fmt::print("  ℹ️  COMPRESSION tag not available, using file extension heuristics\n");
-#endif // DEBUG
-
-    std::string ext;
-    size_t dot_pos = file_path_.rfind('.');
-    if (dot_pos != std::string::npos)
-    {
-        ext = file_path_.substr(dot_pos);
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-    }
-
-    if (ext == ".svs" || ext == ".scn" || ext == ".ndpi" || ext == ".bif")
-    {
-        ifd_info.tiff_tags["COMPRESSION"] = static_cast<uint16_t>(7);  // TIFF_COMPRESSION_JPEG
     }
 }
 

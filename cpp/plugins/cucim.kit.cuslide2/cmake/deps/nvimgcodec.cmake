@@ -9,8 +9,8 @@ if (NOT TARGET deps::nvimgcodec)
     set(NVIMGCODEC_LIB_PATH "")
     set(NVIMGCODEC_INCLUDE_PATH "")
 
-    # Packaging pins nvImageCodec to >=0.9.0,<0.10.0 and the vendored headers
-    # declare 0.9, so only 0.9 is supported here.  The unversioned entries are
+    # Packaging pins nvImageCodec to >=0.10.0,<0.11.0 and the vendored headers
+    # declare 0.10, so only 0.10 is supported here.  The unversioned entries are
     # kept for wheel and system layouts that ship just the symlinks.
     #
     # Those unversioned entries are also why the check below is not sufficient
@@ -20,7 +20,7 @@ if (NOT TARGET deps::nvimgcodec)
     # check_nvimgcodec_runtime_version() in nvimgcodec_tiff_parser.cpp asks the
     # loaded library for its version and is the authoritative check.
     set(NVIMGCODEC_SONAME_CANDIDATES
-        "libnvimgcodec.so.0.9.0"
+        "libnvimgcodec.so.0.10.0"
         "libnvimgcodec.so.0"
         "libnvimgcodec.so")
 
@@ -44,7 +44,7 @@ if (NOT TARGET deps::nvimgcodec)
         if(NOT EXISTS "${_version_header}")
             message(WARNING
                 "nvImageCodec: nvimgcodec_version.h not found under '${include_dir}' - "
-                "skipping version check. cuCIM requires >=0.9.0,<0.10.0.")
+                "skipping version check. cuCIM requires >=0.10.0,<0.11.0.")
             return()
         endif()
 
@@ -62,16 +62,17 @@ if (NOT TARGET deps::nvimgcodec)
             return()
         endif()
 
-        if(_major EQUAL 0 AND _minor LESS 9)
+        if(_major EQUAL 0 AND _minor LESS 10)
             message(FATAL_ERROR
                 "nvImageCodec ${_major}.${_minor} found at '${include_dir}', but cuCIM "
-                "requires >=0.9.0 (packaging pins >=0.9.0,<0.10.0). The 0.9 API is not "
-                "backward compatible and this build has no compile-time version guards, "
-                "so it would fail at runtime. Install libnvimgcodec-dev >=0.9.")
-        elseif(_major GREATER 0 OR _minor GREATER_EQUAL 10)
+                "requires >=0.10.0 (packaging pins >=0.10.0,<0.11.0). 0.10 grew "
+                "nvimgcodecExecutionParams_t and the library rejects an execution-parameter "
+                "struct_size that does not match its own header, so the two are not "
+                "interchangeable. Install libnvimgcodec-dev >=0.10.")
+        elseif(_major GREATER 0 OR _minor GREATER_EQUAL 11)
             message(WARNING
                 "nvImageCodec ${_major}.${_minor} is outside the pinned range "
-                "(>=0.9.0,<0.10.0) and is untested with this cuCIM build.")
+                "(>=0.10.0,<0.11.0) and is untested with this cuCIM build.")
         endif()
     endfunction()
 
@@ -81,14 +82,14 @@ if (NOT TARGET deps::nvimgcodec)
     if (nvimgcodec_FOUND)
         # Same policy as _cucim_check_nvimgcodec_version() applies to the header
         # path: reject below the minimum, warn above the pinned range.
-        if(DEFINED nvimgcodec_VERSION AND nvimgcodec_VERSION VERSION_LESS "0.9.0")
+        if(DEFINED nvimgcodec_VERSION AND nvimgcodec_VERSION VERSION_LESS "0.10.0")
             message(FATAL_ERROR
                 "nvImageCodec ${nvimgcodec_VERSION} found via find_package, but cuCIM "
-                "requires >=0.9.0 (packaging pins >=0.9.0,<0.10.0).")
-        elseif(DEFINED nvimgcodec_VERSION AND NOT nvimgcodec_VERSION VERSION_LESS "0.10.0")
+                "requires >=0.10.0 (packaging pins >=0.10.0,<0.11.0).")
+        elseif(DEFINED nvimgcodec_VERSION AND NOT nvimgcodec_VERSION VERSION_LESS "0.11.0")
             message(WARNING
                 "nvImageCodec ${nvimgcodec_VERSION} found via find_package is outside the "
-                "pinned range (>=0.9.0,<0.10.0) and is untested with this cuCIM build.")
+                "pinned range (>=0.10.0,<0.11.0) and is untested with this cuCIM build.")
         endif()
         add_library(deps::nvimgcodec INTERFACE IMPORTED GLOBAL)
         target_link_libraries(deps::nvimgcodec INTERFACE nvimgcodec::nvimgcodec)
