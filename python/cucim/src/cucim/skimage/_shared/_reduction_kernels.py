@@ -473,7 +473,6 @@ def _get_minmax_mse(image_true, image_test):
 @cp.memoize(for_each_device=True)
 def _get_error_statistics_kernels(normalization):
     """Build matching scan/merge kernels for error and one normalizer sum."""
-    normalizer_type = "T" if normalization == "mean" else "double"
     expression = {
         None: "0",
         "mean": "x",
@@ -481,16 +480,15 @@ def _get_error_statistics_kernels(normalization):
     }[normalization]
     preamble = """
     template<typename T> struct ErrorState {
-        typedef NORMALIZER N;
         double error;
-        N normalizer;
+        double normalizer;
         __device__ ErrorState() : error(0), normalizer(0) {}
         __device__ ErrorState(T x, T y) : normalizer(EXPRESSION) {
             T difference = x - y;
             T squared = difference * difference;
             error = static_cast<double>(squared);
         }
-        __device__ ErrorState(double e, N n, int) : error(e), normalizer(n) {}
+        __device__ ErrorState(double e, double n, int) : error(e), normalizer(n) {}
     };
     template<typename T>
     __device__ ErrorState<T> merge_error(ErrorState<T> a, ErrorState<T> b) {
@@ -498,21 +496,14 @@ def _get_error_statistics_kernels(normalization):
         a.normalizer += b.normalizer;
         return a;
     }
-    """.replace("NORMALIZER", normalizer_type).replace("EXPRESSION", expression)
-    normalizer_dtype = "T" if normalization == "mean" else "float64"
+    """.replace("EXPRESSION", expression)
     kernels = []
     for merge in (False, True):
-        state = (
-            "ErrorState<T>"
-            if not merge or normalization == "mean"
-            else "ErrorState<double>"
-        )
+        state = "ErrorState<double>" if merge else "ErrorState<T>"
         kernels.append(
             cp.ReductionKernel(
-                f"float64 error, {normalizer_dtype} normalizer"
-                if merge
-                else "T x, T y",
-                f"float64 squared_error, {normalizer_dtype} normalizer_sum",
+                "float64 error, float64 normalizer" if merge else "T x, T y",
+                "float64 squared_error, float64 normalizer_sum",
                 f"{state}(error, normalizer, 0)" if merge else f"{state}(x, y)",
                 "merge_error(a, b)",
                 "squared_error = a.error, normalizer_sum = a.normalizer",
@@ -534,14 +525,12 @@ def _get_error_statistics(image_true, image_test, normalization=None):
 
     Inputs have matching shapes and float32/float64 dtypes. Squared differences
     and reference squares retain that dtype before float64 accumulation. Mean
-    normalization retains the reference dtype for its sum, matching mean().
+    normalization also accumulates in float64 to preserve small residuals of
+    signed sums.
     """
-    normalizer_dtype = (
-        image_true.dtype if normalization == "mean" else cp.float64
-    )
 
     def allocate(shape):
-        return cp.empty(shape, cp.float64), cp.empty(shape, normalizer_dtype)
+        return cp.empty(shape, cp.float64), cp.empty(shape, cp.float64)
 
     result = allocate(())
     kernel, merge_kernel = _get_error_statistics_kernels(normalization)

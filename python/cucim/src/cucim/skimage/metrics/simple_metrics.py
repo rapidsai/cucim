@@ -84,12 +84,15 @@ def _nrmse_from_range(minimum, maximum, has_nan, squared_error, size):
 
 
 _nrmse_from_sums = cp.ElementwiseKernel(
-    "float64 squared_error, T normalizer_sum, int64 size, bool euclidean",
+    "float64 squared_error, float64 normalizer_sum, int64 size, "
+    "bool euclidean, bool float32_mean",
     "float64 result",
     """
-    // Mean normalization rounds both its sum and division in the input dtype.
-    T mean = normalizer_sum / T(size);
-    double denominator = euclidean ? sqrt(double(mean)) : double(mean);
+    double mean = normalizer_sum / double(size);
+    // Round the completed signed mean in the image working dtype.
+    double denominator = mean;
+    if (euclidean) denominator = sqrt(mean);
+    else if (float32_mean) denominator = double(float(mean));
     result = sqrt(squared_error / double(size)) / denominator;
     """,
     "cucim_nrmse_from_sums",
@@ -157,6 +160,7 @@ def normalized_root_mse(image_true, image_test, *, normalization="euclidean"):
             normalizer_sum,
             image_true.size,
             normalization == "euclidean",
+            image_true.dtype == cp.float32,
         )
     if normalization == "euclidean":
         denom = cp.sqrt(cp.mean((image_true * image_true), dtype=cp.float64))

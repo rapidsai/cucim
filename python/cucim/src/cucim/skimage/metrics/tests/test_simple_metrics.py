@@ -370,6 +370,21 @@ def test_large_error_statistics(dtype, values):
         cp.testing.assert_allclose(actual, expected, rtol=2e-6, equal_nan=True)
 
 
+@pytest.mark.parametrize("residual", [1e-8, -1e-8])
+def test_staged_mean_nrmse_preserves_signed_cancellation(residual):
+    # Use exactly the size at which the staged path starts. Each group
+    # has mean residual / 2 and MSE residual**2 / 2.
+    image_true = cp.tile(
+        cp.asarray([1, -1, residual, residual], dtype=cp.float32), 1 << 18
+    ).reshape(1024, 1024)
+    image_test = image_true.copy()
+    image_test[:, 2::4] = image_test[:, 3::4] = 0
+    actual = normalized_root_mse(image_true, image_test, normalization="mean")
+    assert actual.dtype == cp.float64
+    expected = math.copysign(math.sqrt(2.0), residual)
+    cp.testing.assert_allclose(actual, expected, rtol=1e-7)
+
+
 @pytest.mark.parametrize("normalization", [None, "mean", "euclidean"])
 def test_error_statistics_different_strides(normalization):
     from cucim.skimage._shared._reduction_kernels import _get_error_statistics
@@ -384,7 +399,7 @@ def test_error_statistics_different_strides(normalization):
     expected = cp.sum(difference * difference, dtype=cp.float64)
     cp.testing.assert_allclose(error, expected, rtol=1e-12)
     if normalization == "mean":
-        expected = image_true.sum()
+        expected = image_true.sum(dtype=cp.float64)
     elif normalization == "euclidean":
         expected = cp.sum(image_true * image_true, dtype=cp.float64)
     else:
