@@ -159,7 +159,13 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             #
             # At build time CCCL instead comes from the include directory added
             # further down, which can be ordered with BEFORE.
-            $<INSTALL_INTERFACE:CCCL::libcudacxx>
+            #
+            # CCCL::CCCL rather than CCCL::libcudacxx: when rapids-cmake adds
+            # CCCL to the build, CCCL::libcudacxx is an ALIAS of a target that
+            # is in no export set, which install(EXPORT) rejects. CCCL::CCCL is
+            # IMPORTED, and with the libcudacxx component that cucim-config
+            # asks for it links only CCCL::libcudacxx.
+            $<INSTALL_INTERFACE:CCCL::CCCL>
             $<INSTALL_INTERFACE:CUDA::cudart>
         PRIVATE
             CUDA::cudart_static
