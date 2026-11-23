@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_VERSION_INL
-#define CUCIM_VERSION_INL
+#pragma once
 
 #include "cucim/core/version.h"
 
@@ -48,6 +47,3 @@ constexpr bool is_version_semantically_compatible(const InterfaceVersion& minimu
     return true;
 }
 } // namespace cucim
-
-
-#endif // CUCIM_VERSION_INL

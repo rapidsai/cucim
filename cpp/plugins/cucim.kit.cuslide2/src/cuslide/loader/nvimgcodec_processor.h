@@ -3,8 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUSLIDE2_NVIMGCODEC_PROCESSOR_H
-#define CUSLIDE2_NVIMGCODEC_PROCESSOR_H
+#pragma once
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 
@@ -173,5 +172,3 @@ private:
 } // namespace cuslide2::loader
 
 #endif // CUCIM_HAS_NVIMGCODEC
-
-#endif // CUSLIDE2_NVIMGCODEC_PROCESSOR_H

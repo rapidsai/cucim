@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef CUCIM_METHODS_H
-#define CUCIM_METHODS_H
+#pragma once
 
 #include "cucim/macros/defines.h"
 
@@ -18,5 +17,3 @@ enum class CompressionMethod : uint16_t
 };
 
 } // namespace cucim::codec
-
-#endif // CUCIM_METHODS_H

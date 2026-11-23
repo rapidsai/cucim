@@ -2,8 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef PYCUCIM_CUFILE_PYDOC_H
-#define PYCUCIM_CUFILE_PYDOC_H
+#pragma once
 
 #include "../macros.h"
 
@@ -55,5 +54,3 @@ Closes opened file if not closed.
 )doc")
 
 } // namespace cucim::filesystem::doc::CuFileDriver
-
-#endif // PYCUCIM_CUFILE_PYDOC_H

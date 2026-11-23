@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef CUMED_CONFIG_H
-#define CUMED_CONFIG_H
+#pragma once
 
 #include <string>
 
@@ -31,5 +30,3 @@ struct AppConfig
     std::string benchmark_counters_tabular;
     std::string v; // <verbosity>
 };
-
-#endif // CUMED_CONFIG_H
