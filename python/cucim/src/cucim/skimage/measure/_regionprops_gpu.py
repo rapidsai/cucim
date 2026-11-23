@@ -380,7 +380,7 @@ def regionprops_dict(
 
     out = {}
     if max_label is None:
-        max_label = int(label_image.max())
+        max_label = int(label_image.max()) if label_image.size else 0
     label_dtype = _get_min_integer_dtype(max_label, signed=False)
     # For performance, shrink label's data type to the minimum possible
     # unsigned integer type.

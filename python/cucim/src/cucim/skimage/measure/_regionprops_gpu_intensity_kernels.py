@@ -489,7 +489,7 @@ def regionprops_intensity_median(
     if props_dict is None:
         props_dict = {}
     if max_label is None:
-        max_label = int(label_image.max())
+        max_label = int(label_image.max()) if label_image.size else 0
 
     num_channels = _check_intensity_image_shape(label_image, intensity_image)
 
@@ -501,6 +501,12 @@ def regionprops_intensity_median(
         )
 
     median_dtype = cp.promote_types(intensity_image.dtype, cp.float32)
+    if num_channels == 0:
+        props_dict["intensity_median"] = cp.empty(
+            (max_label, 0), dtype=median_dtype
+        )
+        return props_dict
+
     sort_dtype = (
         intensity_image.dtype
         if intensity_image.dtype in (cp.dtype(cp.uint8), cp.dtype(cp.uint16))
@@ -558,6 +564,8 @@ def regionprops_intensity_median(
             segmented_mask = segmented_mask[:, cp.newaxis]
         medians[(nan_labels != 0) & segmented_mask] = cp.nan
 
+    if num_channels == 1 and intensity_image.ndim > label_image.ndim:
+        medians = medians[:, cp.newaxis]
     props_dict["intensity_median"] = medians
     return props_dict
 

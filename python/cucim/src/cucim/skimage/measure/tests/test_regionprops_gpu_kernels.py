@@ -370,6 +370,42 @@ def test_median_intensity_hybrid_threshold_monkeypatch(monkeypatch):
     assert_allclose(hybrid, fallback)
 
 
+@pytest.mark.parametrize("threshold", [0, 128000], ids=["fallback", "native"])
+@pytest.mark.parametrize(
+    "channels", [None, 0, 1], ids=["scalar", "empty", "singleton"]
+)
+def test_median_intensity_channel_shape(monkeypatch, channels, threshold):
+    if threshold and intensity_kernels._skimage_cpp_ext is None:
+        pytest.skip("cucim.skimage C++ extension is unavailable")
+    monkeypatch.setattr(intensity_kernels, "hybrid_size_threshold", threshold)
+
+    labels = cp.asarray([[1, 1, 1, 0], [2, 2, 2, 2]], dtype=cp.uint8)
+    image = cp.arange(8, dtype=cp.float32).reshape(labels.shape)
+    if channels is not None:
+        image = image[..., cp.newaxis][..., :channels]
+    kwargs = dict(properties=("label", "intensity_median"), separator="_")
+    table = measure.regionprops_table(labels, image, **kwargs)
+    expected = measure_cpu.regionprops_table(
+        labels.get(), image.get(), **kwargs
+    )
+    assert table.keys() == expected.keys()
+    for key in expected:
+        assert_array_equal(table[key], expected[key])
+
+    result = measure.regionprops_table(labels, image, to_table=False, **kwargs)
+    shape = (2,) if channels is None else (2, channels)
+    assert result["intensity_median"].shape == shape
+
+
+def test_median_intensity_empty_spatial_axis():
+    labels = cp.empty((0, 4), dtype=cp.uint8)
+    image = cp.empty((0, 4, 1), dtype=cp.float32)
+    properties = ("label", "intensity_median")
+    result = measure.regionprops_table(labels, image, properties=properties)
+    assert result.keys() == {"label", "intensity_median-0"}
+    assert result["label"].shape == result["intensity_median-0"].shape == (0,)
+
+
 @pytest.mark.parametrize("image_dtype", [cp.uint8, cp.uint16])
 def test_median_intensity_segmented_sort_preserves_integer_dtype(
     monkeypatch, image_dtype
