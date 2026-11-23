@@ -60,7 +60,7 @@ target_link_libraries(cucim_tests
 target_include_directories(cucim_tests
         BEFORE
         PRIVATE
-            ${deps-cccl_SOURCE_DIR}/libcudacxx/include
+            ${CUCIM_CCCL_INCLUDE_DIRS}
         )
 
 include(Catch)

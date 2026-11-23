@@ -74,8 +74,6 @@ build:
       # skip installing C++ tests and benchmarks (they trigger overlinking errors)
       CUCIM_INSTALL_TESTS: "OFF"
       CUCIM_INSTALL_BENCHMARKS: "OFF"
-      # the `cccl` run dependency provides CCCL for installed consumers
-      CUCIM_INSTALL_CCCL: "OFF"
       CMAKE_C_COMPILER_LAUNCHER: ${{ env.get("CMAKE_C_COMPILER_LAUNCHER") }}
       CMAKE_CUDA_COMPILER_LAUNCHER: ${{ env.get("CMAKE_CUDA_COMPILER_LAUNCHER") }}
       CMAKE_CXX_COMPILER_LAUNCHER: ${{ env.get("CMAKE_CXX_COMPILER_LAUNCHER") }}
@@ -102,7 +100,6 @@ requirements:
       then: yasm
   host:
     - cuda-version =${{ cuda_version }}
-    - cccl >=3.4.2,<3.5.0a0
     - cuda-cudart-dev
     - libcufile-dev
     - libnvimgcodec-dev ${{ nvimgcodec_version }}  # nvImageCodec development headers and libraries
@@ -110,9 +107,6 @@ requirements:
     - nvtx-c >=3.1.0
     - openslide
   run:
-    # The installed cucim/memory/device_resources.h includes <cuda/memory_resource>,
-    # so anything compiling against libcucim needs CCCL's headers present.
-    - cccl >=3.4.2,<3.5.0a0
     - libcufile
     - libnvjpeg
     - libnvimgcodec ${{ nvimgcodec_version }}   # nvImageCodec metapackage (includes libnvimgcodec0 + run_exports)

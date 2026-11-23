@@ -189,7 +189,7 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
 target_include_directories(${CUCIM_PACKAGE_NAME}
         BEFORE
         PUBLIC
-            $<BUILD_INTERFACE:${deps-cccl_SOURCE_DIR}/libcudacxx/include>
+            $<BUILD_INTERFACE:${CUCIM_CCCL_INCLUDE_DIRS}>
         )
 
 if (CUCIM_STATIC_GDS)
