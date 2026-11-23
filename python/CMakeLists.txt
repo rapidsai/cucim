@@ -198,6 +198,34 @@ set_target_properties(cucim PROPERTIES
         OUTPUT_NAME cucim/_cucim
         )
 
+################################################################################
+# Add library: cucim_skimage_cpp
+################################################################################
+
+nanobind_add_module(cucim_skimage_cpp
+    STABLE_ABI
+    NB_STATIC
+    PROTECT_STACK
+    NOMINSIZE
+        nanobind/skimage/skimage_cpp_py.cpp
+        nanobind/skimage/contour_assembly.h
+        nanobind/skimage/segmented_sort.h
+        nanobind/skimage/segmented_sort.cu
+        )
+# Link the CUDA runtime statically, as libcucim and its plugins do, so that the
+# module does not need libcudart.so at run time (and auditwheel does not have
+# to bundle it into the wheel).
+target_link_libraries(cucim_skimage_cpp
+    PRIVATE
+        CCCL::CCCL
+        CUDA::cudart_static
+        )
+set_target_properties(cucim_skimage_cpp PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}
+        OUTPUT_NAME cucim/skimage/_cucim_skimage_cpp_ext
+        )
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}/cucim/skimage)
+list(APPEND CUCIM_SKIMAGE_EXTENSION_TARGETS cucim_skimage_cpp)
 
 ################################################################################
 # Install
