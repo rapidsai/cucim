@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -103,10 +103,12 @@ def test_salt_and_pepper():
 def test_clipping_application_consistency():
     """Ensure that clipping is not applied if 'clip' set to False regardless of 'mode' argument"""
 
-    img = (
-        cp.random.rand(1, 5, 5) * 10 - 5
-    )  # image array with c,h,w shape semantics and range [-5,5]
+    # image array with c,h,w shape semantics and range [-5,5]
     # we have float values outside of [-1,1], so we presumably don't want to clip
+    # The input is seeded: the checks below fail for about 0.15% of random
+    # inputs, those where every pixel left unchanged by the noise lies in
+    # [0, 1] (then the maximum is the salt value 1 even without clipping).
+    img = cp.random.default_rng(0).random((1, 5, 5)) * 10 - 5
 
     arr_out_pepper = random_noise(
         img, mode="pepper", rng=42, clip=False, amount=0.5

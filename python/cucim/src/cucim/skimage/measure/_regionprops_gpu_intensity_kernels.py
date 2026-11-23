@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -8,7 +8,9 @@ import cupy as cp
 from ._regionprops_gpu_utils import (
     _check_intensity_image_shape,
     _get_count_dtype,
+    _get_label_run_loop,
     _includes,
+    _warp_includes,
 )
 
 __all__ = [
@@ -28,10 +30,19 @@ intensity_deps["intensity_mean"] = ["num_pixels"]
 intensity_deps["intensity_std"] = ["num_pixels"]
 
 
+def _image_value(num_channels):
+    """Expression of channel c of the intensity at pixel ii.
+
+    A single-channel image is read through `img_value`, set by
+    get_intensity_measure_kernel.
+    """
+    if num_channels == 1:
+        return lambda c: "img_value"
+    return lambda c: f"img[{num_channels}*ii + {c}]"
+
+
 def _get_img_sums_code(
     c_sum_type,
-    pixels_per_thread,
-    array_size,
     num_channels=1,
     compute_num_pixels=True,
     compute_sum=True,
@@ -40,139 +51,204 @@ def _get_img_sums_code(
     """
     Notes
     -----
-    Local variables created:
+    Variables created (per run of a label):
 
-        - num_pixels : shape (array_size, )
-            The number of pixels encountered per label value
+        - num_pixels : the number of pixels in the run
+        - img_sum{c}, img_sum_sq{c} : sums of the intensities of channel c
+            and of their squares
 
     Output variables written to:
 
         - counts : shape (max_label,)
+        - sums : shape (max_label, num_channels)
+        - sumsqs : shape (max_label, num_channels)
     """
-    pixel_count_dtype = "int8_t" if pixels_per_thread < 256 else "int16_t"
-
     source_pre = ""
-    if compute_num_pixels:
-        source_pre += f"""
-    {pixel_count_dtype} num_pixels[{array_size}] = {{0}};"""
-    if compute_sum:
-        source_pre += f"""
-    {c_sum_type} img_sums[{array_size * num_channels}] = {{0}};"""
-    if compute_sum_sq:
-        source_pre += f"""
-    {c_sum_type} img_sum_sqs[{array_size * num_channels}] = {{0}};"""
-    if compute_sum or compute_sum_sq:
-        source_pre += f"""
-    {c_sum_type} v = 0;\n"""
-
-    # source_operation requires external variables:
-    #     ii : index into labels array
-    #     offset : index into local region's num_pixels array
-    #              (number of unique labels encountered so far by this thread)
+    source_start = ""
     source_operation = ""
+    source_flush = ""
+    reduce = []
     if compute_num_pixels:
+        reduce.append(("num_pixels", "sum"))
+        source_pre += """
+    uint32_t num_pixels;"""
+        source_start += """
+          num_pixels = 0;"""
         source_operation += """
-            num_pixels[offset] += 1;"""
-    nc = f"{num_channels}*" if num_channels > 1 else ""
+          num_pixels += 1;"""
+        source_flush += """
+          atomicAdd(&counts[lab - 1], num_pixels);"""
     if compute_sum or compute_sum_sq:
-        for c in range(num_channels):
+        source_pre += f"""
+    {c_sum_type} v;"""
+    # op uses external variables:
+    #     ii : index into labels array
+    # flush uses external variables:
+    #     lab : label value of the run
+    image_value = _image_value(num_channels)
+    nc = f"{num_channels}*" if num_channels > 1 else ""
+    for c in range(num_channels):
+        if compute_sum or compute_sum_sq:
             source_operation += f"""
-            v = static_cast<{c_sum_type}>(img[{nc}ii + {c}]);"""
-            if compute_sum:
-                source_operation += f"""
-            img_sums[{nc}offset + {c}] += v;"""
-            if compute_sum_sq:
-                source_operation += f"""
-            img_sum_sqs[{nc}offset + {c}] += v * v;\n"""
+          v = static_cast<{c_sum_type}>({image_value(c)});"""
+        if compute_sum:
+            reduce.append((f"img_sum{c}", "sum"))
+            source_pre += f"""
+    {c_sum_type} img_sum{c};"""
+            source_start += f"""
+          img_sum{c} = 0;"""
+            source_operation += f"""
+          img_sum{c} += v;"""
+            source_flush += f"""
+          atomicAdd(&sums[{nc}(lab - 1) + {c}], img_sum{c});"""
+        if compute_sum_sq:
+            reduce.append((f"img_sum_sq{c}", "sum"))
+            source_pre += f"""
+    {c_sum_type} img_sum_sq{c};"""
+            source_start += f"""
+          img_sum_sq{c} = 0;"""
+            source_operation += f"""
+          img_sum_sq{c} += v * v;"""
+            source_flush += f"""
+          atomicAdd(&sumsqs[{nc}(lab - 1) + {c}], img_sum_sq{c});"""
+    return source_pre, source_start, source_operation, source_flush, reduce
 
-    # post_operation requires external variables:
-    #     jj : index into num_pixels array
-    #     lab : label value that corresponds to location ii
-    #     num_pixels : output with shape (max_label,)
-    #     sums : output with shape (max_label, num_channels)
-    #     sumsqs : output with shape (max_label, num_channels)
-    source_post = ""
-    if compute_num_pixels:
-        source_post += """
-            atomicAdd(&counts[lab - 1], num_pixels[jj]);"""
-    if compute_sum:
-        for c in range(num_channels):
-            source_post += f"""
-            atomicAdd(&sums[{nc}(lab - 1) + {c}], img_sums[{nc}jj + {c}]);"""
-    if compute_sum_sq:
-        for c in range(num_channels):
-            source_post += f"""
-            atomicAdd(&sumsqs[{nc}(lab - 1) + {c}], img_sum_sqs[{nc}jj + {c}]);"""  # noqa: E501
-    return source_pre, source_operation, source_post
+
+def _get_centered_sums_code(num_channels=1):
+    """Code of the second pass of the standard deviation.
+
+    Accumulates, per run of a label, the sum of the deviations from the mean
+    of the region and the sum of their squares (in double precision).
+
+    Output variables written to:
+
+        - dsums : shape (max_label, num_channels)
+        - dsqs : shape (max_label, num_channels)
+    """
+    source_pre = """
+    double dv;"""
+    source_start = ""
+    source_operation = ""
+    source_flush = ""
+    reduce = []
+    image_value = _image_value(num_channels)
+    nc = f"{num_channels}*" if num_channels > 1 else ""
+    for c in range(num_channels):
+        reduce.append((f"d_sum{c}", "sum"))
+        reduce.append((f"d_sq{c}", "sum"))
+        source_pre += f"""
+    double m{c}, d_sum{c}, d_sq{c};"""
+        # the first run of a warp can be background (lab == 0)
+        source_start += f"""
+          m{c} = lab != 0 ? means[{nc}(lab - 1) + {c}] : 0.0;
+          d_sum{c} = 0;
+          d_sq{c} = 0;"""
+        source_operation += f"""
+          dv = static_cast<double>({image_value(c)}) - m{c};
+          d_sum{c} += dv;
+          d_sq{c} += dv * dv;"""
+        source_flush += f"""
+          atomicAdd(&dsums[{nc}(lab - 1) + {c}], d_sum{c});
+          atomicAdd(&dsqs[{nc}(lab - 1) + {c}], d_sq{c});"""
+    return source_pre, source_start, source_operation, source_flush, reduce
+
+
+@cp.memoize(for_each_device=True)
+def get_intensity_centered_kernel(
+    image_dtype, num_channels=1, pixels_per_thread=8
+):
+    """Second pass of the standard deviation: sums about the region means.
+
+    The kernel has the inputs ``labels``, ``labels_size``, ``img`` and
+    ``means`` (float64, shape (max_label, num_channels)) and the outputs
+    ``dsums`` and ``dsqs`` (float64, the same shape, initialized to zero).
+    """
+    pre, start, op, flush, reduce = _get_centered_sums_code(num_channels)
+    if num_channels == 1:
+        pre += f"""
+      cucim_sequential_reader<Y> img_reader(
+          &img[start_index], {pixels_per_thread}, full_thread);"""
+        op = (
+            """
+          Y img_value = img_reader.get(ii - start_index);"""
+            + op
+        )
+    source = _get_label_run_loop(
+        pixels_per_thread, pre, start, op, flush, warp_reduce=reduce
+    )
+    return cp.ElementwiseKernel(
+        "raw X labels, raw uint64 labels_size, raw Y img, raw float64 means",
+        "raw float64 dsums, raw float64 dsqs",
+        source,
+        preamble=_warp_includes,
+        name=f"cucim_intensity_centered_sums_batch{pixels_per_thread}",
+    )
 
 
 def _get_intensity_min_max_code(
-    min_max_dtype,
     c_min_max_type,
-    array_size,
     initial_min_val,
     initial_max_val,
     compute_min=True,
     compute_max=True,
     num_channels=1,
 ):
-    min_max_dtype = cp.dtype(min_max_dtype)
+    """
+    Notes
+    -----
+    Variables created (per run of a label):
+
+        - min_val{c}, max_val{c} : minimum and maximum intensity of channel c
+
+    Output variables written to:
+
+        - minimums : shape (max_label, num_channels)
+        - maximums : shape (max_label, num_channels)
+    """
     c_type = c_min_max_type
 
     # Note: CuPy provides atomicMin and atomicMax for float and double in
     #       cupy/_core/include/atomics.cuh
     #       The integer variants are part of CUDA itself.
+    #       The kernels call cucim_atomic_min and cucim_atomic_max (see
+    #       _includes), because CuPy's double overloads round to float.
 
-    source_pre = ""
-    if compute_min:
-        source_pre += f"""
-    {c_type} min_vals[{array_size * num_channels}];
-    // initialize minimum coordinate to array size
-    for (size_t ii = 0; ii < {array_size * num_channels}; ii++) {{
-      min_vals[ii] = {initial_min_val};
-    }}"""
-    if compute_max:
-        source_pre += f"""
-    {c_type} max_vals[{array_size * num_channels}];
-    // initialize minimum coordinate to array size
-    for (size_t ii = 0; ii < {array_size * num_channels}; ii++) {{
-      max_vals[ii] = {initial_max_val};
-    }}"""
-    source_pre += f"""
-    {c_type} v = 0;\n"""
-
-    # source_operation requires external variables:
-    #     ii : index into labels array
-    #     offset : index into local region's num_pixels array
-    #              (number of unique labels encountered so far by this thread)
+    source_pre = f"""
+    {c_type} v_mm;"""
+    source_start = ""
     source_operation = ""
+    source_flush = ""
+    reduce = []
+    # op uses external variables:
+    #     ii : index into labels array
+    # flush uses external variables:
+    #     lab : label value of the run
+    image_value = _image_value(num_channels)
     nc = f"{num_channels}*" if num_channels > 1 else ""
-    if compute_min or compute_max:
-        for c in range(num_channels):
+    for c in range(num_channels):
+        source_operation += f"""
+          v_mm = static_cast<{c_type}>({image_value(c)});"""
+        if compute_min:
+            reduce.append((f"min_val{c}", "min"))
+            source_pre += f"""
+    {c_type} min_val{c};"""
+            source_start += f"""
+          min_val{c} = {initial_min_val};"""
             source_operation += f"""
-            v = static_cast<{c_type}>(img[{nc}ii + {c}]);"""
-            if compute_min:
-                source_operation += f"""
-            min_vals[{nc}offset + {c}] = min(v, min_vals[{nc}offset + {c}]);"""
-            if compute_max:
-                source_operation += f"""
-            max_vals[{nc}offset + {c}] = max(v, max_vals[{nc}offset + {c}]);\n"""  # noqa: E501
-
-    # post_operation requires external variables:
-    #     jj : offset index into min_vals or max_vals array
-    #     lab : label value that corresponds to location ii
-    #     min_vals : output with shape (max_label, num_channels)
-    #     max_vals : output with shape (max_label, num_channels)
-    source_post = ""
-    if compute_min:
-        for c in range(num_channels):
-            source_post += f"""
-            atomicMin(&minimums[{nc}(lab - 1) + {c}], min_vals[{nc}jj + {c}]);"""  # noqa: E501
-    if compute_max:
-        for c in range(num_channels):
-            source_post += f"""
-            atomicMax(&maximums[{nc}(lab - 1) + {c}], max_vals[{nc}jj + {c}]);"""  # noqa: E501
-    return source_pre, source_operation, source_post
+          min_val{c} = min(v_mm, min_val{c});"""
+            source_flush += f"""
+          cucim_atomic_min(&minimums[{nc}(lab - 1) + {c}], min_val{c});"""
+        if compute_max:
+            reduce.append((f"max_val{c}", "max"))
+            source_pre += f"""
+    {c_type} max_val{c};"""
+            source_start += f"""
+          max_val{c} = {initial_max_val};"""
+            source_operation += f"""
+          max_val{c} = max(v_mm, max_val{c});"""
+            source_flush += f"""
+          cucim_atomic_max(&maximums[{nc}(lab - 1) + {c}], max_val{c});"""
+    return source_pre, source_start, source_operation, source_flush, reduce
 
 
 @cp.memoize()
@@ -255,86 +331,55 @@ def get_intensity_measure_kernel(
         c_min_max_type,
     ) = _get_intensity_img_kernel_dtypes(image_dtype)
 
-    array_size = pixels_per_thread
     any_sums = compute_num_pixels or compute_sum or compute_sum_sq
-
-    if any_sums:
-        sums_pre, sums_op, sums_post = _get_img_sums_code(
-            c_sum_type=c_sum_type,
-            pixels_per_thread=pixels_per_thread,
-            array_size=array_size,
-            num_channels=num_channels,
-            compute_num_pixels=compute_num_pixels,
-            compute_sum=compute_sum,
-            compute_sum_sq=compute_sum_sq,
-        )
-
     any_min_max = compute_min or compute_max
+    if not (any_min_max or any_sums):
+        raise ValueError("no output values requested")
+
+    fragments = []
+    if any_sums:
+        fragments.append(
+            _get_img_sums_code(
+                c_sum_type=c_sum_type,
+                num_channels=num_channels,
+                compute_num_pixels=compute_num_pixels,
+                compute_sum=compute_sum,
+                compute_sum_sq=compute_sum_sq,
+            )
+        )
     if any_min_max:
         if min_max_dtype is None:
             raise ValueError("min_max_dtype must be specified")
         range_min, range_max = _get_intensity_range(min_max_dtype)
-        min_max_pre, min_max_op, min_max_post = _get_intensity_min_max_code(
-            min_max_dtype=min_max_dtype,
-            c_min_max_type=c_min_max_type,
-            array_size=array_size,
-            num_channels=num_channels,
-            initial_max_val=range_min,
-            initial_min_val=range_max,
-            compute_min=compute_min,
-            compute_max=compute_max,
+        fragments.append(
+            _get_intensity_min_max_code(
+                c_min_max_type=c_min_max_type,
+                num_channels=num_channels,
+                initial_max_val=range_min,
+                initial_min_val=range_max,
+                compute_min=compute_min,
+                compute_max=compute_max,
+            )
+        )
+    pre, start, op, flush = ("".join(f[i] for f in fragments) for i in range(4))
+    reduce = [r for f in fragments for r in f[4]]
+
+    if num_channels == 1 and (compute_sum or compute_sum_sq or any_min_max):
+        # read the image with 16-byte loads (see _get_label_run_loop)
+        pre += f"""
+      cucim_sequential_reader<Y> img_reader(
+          &img[start_index], {pixels_per_thread}, full_thread);"""
+        op = (
+            """
+          Y img_value = img_reader.get(ii - start_index);"""
+            + op
         )
 
-    if not (any_min_max or any_sums):
-        raise ValueError("no output values requested")
-
     # store only counts for label > 0  (label = 0 is the background)
-    source = f"""
-      uint64_t start_index = {pixels_per_thread}*i;
-    """
+    source = _get_label_run_loop(
+        pixels_per_thread, pre, start, op, flush, warp_reduce=reduce
+    )
 
-    if any_sums:
-        source += sums_pre
-    if any_min_max:
-        source += min_max_pre
-
-    inner_op = ""
-    if any_sums:
-        inner_op += sums_op
-    if any_min_max:
-        inner_op += min_max_op
-
-    source += f"""
-      X encountered_labels[{array_size}] = {{0}};
-      X current_label;
-      X prev_label = labels[start_index];
-      int offset = 0;
-      encountered_labels[0] = prev_label;
-      uint64_t ii_max = min(start_index + {pixels_per_thread}, labels_size);
-      for (uint64_t ii = start_index; ii < ii_max; ii++) {{
-        current_label = labels[ii];
-        if (current_label == 0) {{ continue; }}
-        if (current_label != prev_label) {{
-            offset += 1;
-            prev_label = current_label;
-            encountered_labels[offset] = current_label;
-        }}
-        {inner_op}
-      }}"""
-    source += """
-      for (size_t jj = 0; jj <= offset; jj++) {
-        X lab = encountered_labels[jj];
-        if (lab != 0) {"""
-
-    if any_sums:
-        source += sums_post
-    if any_min_max:
-        source += min_max_post
-    source += """
-        }
-      }\n"""
-
-    # print(source)
     inputs = "raw X labels, raw uint64 labels_size, raw Y img"
     outputs = []
     name = "cucim_"
@@ -360,8 +405,176 @@ def get_intensity_measure_kernel(
     outputs = ", ".join(outputs)
     name += f"_batch{pixels_per_thread}"
     return cp.ElementwiseKernel(
-        inputs, outputs, source, preamble=_includes, name=name
+        inputs, outputs, source, preamble=_warp_includes, name=name
     )
+
+
+def _regionprops_intensity(
+    label_image,
+    intensity_image,
+    max_label=None,
+    *,
+    compute_mean=False,
+    compute_std=False,
+    compute_min=False,
+    compute_max=False,
+    mean_dtype=cp.float32,
+    std_dtype=cp.float64,
+    sample_std=False,
+    pixels_per_thread=16,
+    props_dict=None,
+):
+    """Compute the requested intensity statistics in one pass over the image.
+
+    reuses "num_pixels" from `props_dict` if it exists
+
+    writes "intensity_mean" to `props_dict` if `compute_mean` or `compute_std`
+    writes "intensity_std" to `props_dict` if `compute_std`
+    writes "intensity_min" to `props_dict` if `compute_min`
+    writes "intensity_max" to `props_dict` if `compute_max`
+    writes "num_pixels" to `props_dict` if it was not already present and the
+    mean or standard deviation was computed
+
+    When `compute_std` is True, the mean is returned with dtype `std_dtype`
+    rather than `mean_dtype`.
+    """
+    if not (compute_mean or compute_std or compute_min or compute_max):
+        raise ValueError("Nothing to compute")
+    if props_dict is None:
+        props_dict = {}
+    if max_label is None:
+        max_label = int(label_image.max())
+    num_counts = max_label
+
+    num_channels = _check_intensity_image_shape(label_image, intensity_image)
+
+    image_dtype = intensity_image.dtype
+    sum_dtype, _, min_max_dtype, _ = _get_intensity_img_kernel_dtypes(
+        image_dtype
+    )
+    count_dtype, int32_count = _get_count_dtype(label_image.size)
+    out_shape = (
+        (num_counts,) if num_channels == 1 else (num_counts, num_channels)
+    )
+
+    # the outputs are passed in the order of the kernel's parameters
+    compute_sums = compute_mean or compute_std
+    compute_num_pixels = False
+    # The standard deviation of 8 and 16-bit integer images is computed
+    # exactly from the sums of the values and of their squares. For other
+    # images it takes a second pass over the image (see below).
+    exact_std = compute_std and _has_exact_sums(image_dtype)
+    outputs = []
+    if compute_sums:
+        if "num_pixels" in props_dict:
+            counts = props_dict["num_pixels"]
+            if counts.dtype != count_dtype:
+                counts = counts.astype(count_dtype, copy=False)
+        else:
+            counts = cp.zeros(num_counts, dtype=count_dtype)
+            compute_num_pixels = True
+            outputs.append(counts)
+        sums = cp.zeros(out_shape, dtype=sum_dtype)
+        outputs.append(sums)
+        if exact_std:
+            sumsqs = cp.zeros(out_shape, dtype=sum_dtype)
+            outputs.append(sumsqs)
+    if compute_min or compute_max:
+        # use an appropriate data type supported by atomicMin and atomicMax
+        range_min, range_max = _get_intensity_range(image_dtype)
+        if compute_min:
+            minimums = cp.full(out_shape, range_max, dtype=min_max_dtype)
+            outputs.append(minimums)
+        if compute_max:
+            maximums = cp.full(out_shape, range_min, dtype=min_max_dtype)
+            outputs.append(maximums)
+
+    kernel = get_intensity_measure_kernel(
+        int32_count=int32_count,
+        image_dtype=image_dtype,
+        num_channels=num_channels,
+        compute_num_pixels=compute_num_pixels,
+        compute_sum=compute_sums,
+        compute_sum_sq=exact_std,
+        compute_min=compute_min,
+        compute_max=compute_max,
+        pixels_per_thread=pixels_per_thread,
+    )
+
+    # make a copy if the inputs are not already C-contiguous
+    if not label_image.flags.c_contiguous:
+        label_image = cp.ascontiguousarray(label_image)
+    if not intensity_image.flags.c_contiguous:
+        intensity_image = cp.ascontiguousarray(intensity_image)
+
+    kernel(
+        label_image,
+        label_image.size,
+        intensity_image,
+        *outputs,
+        size=math.ceil(label_image.size / pixels_per_thread),
+    )
+
+    if compute_std:
+        if cp.dtype(std_dtype).kind != "f":
+            raise ValueError("std_dtype must be a floating point type")
+
+        counts_b = counts[..., cp.newaxis] if num_channels > 1 else counts
+        means = cp.empty(out_shape, dtype=cp.float64)
+        stds = cp.empty(out_shape, dtype=cp.float64)
+        if exact_std:
+            # the sums are exact, so are the squared deviations
+            get_exact_mean_std_kernel(sample_std)(
+                counts_b,
+                sums.view(cp.int64),
+                sumsqs.view(cp.uint64),
+                means,
+                stds,
+            )
+        else:
+            # The sum of squares minus the squared mean loses all accuracy
+            # when the mean is large compared to the standard deviation
+            # (relative error about eps * (mean / std)**2). Instead, sum the
+            # deviations from the means of the first pass in a second pass.
+            first_means = sums / counts_b
+            dsums = cp.zeros(out_shape, dtype=cp.float64)
+            dsqs = cp.zeros(out_shape, dtype=cp.float64)
+            centered_kernel = get_intensity_centered_kernel(
+                image_dtype=image_dtype,
+                num_channels=num_channels,
+                pixels_per_thread=pixels_per_thread,
+            )
+            centered_kernel(
+                label_image,
+                label_image.size,
+                intensity_image,
+                first_means,
+                dsums,
+                dsqs,
+                size=math.ceil(label_image.size / pixels_per_thread),
+            )
+            get_mean_std_kernel(sample_std)(
+                counts_b, sums, dsums, dsqs, means, stds
+            )
+
+        means = means.astype(std_dtype, copy=False)
+        stds = stds.astype(std_dtype, copy=False)
+        props_dict["intensity_std"] = stds
+        props_dict["intensity_mean"] = means
+    elif compute_mean:
+        if num_channels > 1:
+            means = sums / counts[:, cp.newaxis]
+        else:
+            means = sums / counts
+        means = means.astype(mean_dtype, copy=False)
+        props_dict["intensity_mean"] = means
+    if compute_sums and "num_pixels" not in props_dict:
+        props_dict["num_pixels"] = counts
+    if compute_min:
+        props_dict["intensity_min"] = minimums
+    if compute_max:
+        props_dict["intensity_max"] = maximums
+    return props_dict
 
 
 def regionprops_intensity_mean(
@@ -379,115 +592,126 @@ def regionprops_intensity_mean(
     writes "intensity_mean" to `props_dict`
     writes "num_pixels" to `props_dict` if it was not already present
     """
-    if props_dict is None:
-        props_dict = {}
-    if max_label is None:
-        max_label = int(label_image.max())
-    num_counts = max_label
-
-    num_channels = _check_intensity_image_shape(label_image, intensity_image)
-
-    count_dtype, int32_count = _get_count_dtype(label_image.size)
-
-    image_dtype = intensity_image.dtype
-    sum_dtype, _, _, _ = _get_intensity_img_kernel_dtypes(image_dtype)
-
-    if "num_pixels" in props_dict:
-        counts = props_dict["num_pixels"]
-        if counts.dtype != count_dtype:
-            counts = counts.astype(count_dtype, copy=False)
-        compute_num_pixels = False
-    else:
-        counts = cp.zeros(num_counts, dtype=count_dtype)
-        compute_num_pixels = True
-
-    sum_shape = (
-        (num_counts,) if num_channels == 1 else (num_counts, num_channels)
-    )
-    sums = cp.zeros(sum_shape, dtype=sum_dtype)
-
-    kernel = get_intensity_measure_kernel(
-        int32_count=int32_count,
-        image_dtype=image_dtype,
-        num_channels=num_channels,
-        compute_num_pixels=compute_num_pixels,
-        compute_sum=True,
-        compute_sum_sq=False,
-        pixels_per_thread=pixels_per_thread,
-    )
-
-    # make a copy if the inputs are not already C-contiguous
-    if not label_image.flags.c_contiguous:
-        label_image = cp.ascontiguousarray(label_image)
-    if not intensity_image.flags.c_contiguous:
-        intensity_image = cp.ascontiguousarray(intensity_image)
-
-    if compute_num_pixels:
-        outputs = (counts, sums)
-    else:
-        outputs = (sums,)
-
-    kernel(
+    return _regionprops_intensity(
         label_image,
-        label_image.size,
         intensity_image,
-        *outputs,
-        size=math.ceil(label_image.size / pixels_per_thread),
+        max_label=max_label,
+        compute_mean=True,
+        mean_dtype=mean_dtype,
+        pixels_per_thread=pixels_per_thread,
+        props_dict=props_dict,
     )
 
-    if num_channels > 1:
-        means = sums / counts[:, cp.newaxis]
+
+def _std_finalize_source(mean_code, ssd_code, sample_std):
+    """Code that turns per-region sums into a mean and standard deviation.
+
+    `mean_code` and `ssd_code` assign the double variables `mean` and `ssd`,
+    the sum of the squared deviations from the mean, for a region with at
+    least two pixels. The variance is clipped at 0 before the square root,
+    because rounding can leave a small negative `ssd` for constant regions;
+    the clip is a comparison rather than max(), which is fmax in CUDA and
+    would also replace a NaN (from NaN or inf values) by 0.
+    """
+    if sample_std:
+        few = """
+            if (count == 1) {
+              m = static_cast<double>(sum);
+              s = CUDART_NAN;
+            } else {"""
+        divisor = "(static_cast<double>(count) - 1.0)"
     else:
-        means = sums / counts
-    means = means.astype(mean_dtype, copy=False)
-    props_dict["intensity_mean"] = means
-    if "num_pixels" not in props_dict:
-        props_dict["num_pixels"] = counts
-    return props_dict
+        few = """
+            if (count == 0) {
+              m = static_cast<double>(sum);
+              s = CUDART_NAN;
+            } else if (count == 1) {
+              m = static_cast<double>(sum);
+              s = 0.0;
+            } else {"""
+        divisor = "static_cast<double>(count)"
+    return f"""{few}
+              double mean, ssd;
+              {mean_code}
+              {ssd_code}
+              double v = ssd / {divisor};
+              m = mean;
+              s = sqrt(v < 0.0 ? 0.0 : v);
+            }}\n"""
 
 
 @cp.memoize(for_each_device=True)
-def get_mean_var_kernel(dtype, sample_std=False):
-    dtype = cp.dtype(dtype)
+def get_mean_std_kernel(sample_std=False):
+    """Mean and standard deviation from the sums about the first-pass mean.
 
-    if dtype.kind != "f":
-        raise ValueError("dtype must be a floating point type")
-    if dtype == cp.float64:
-        c_type = "double"
-        nan_val = "CUDART_NAN"
-    else:
-        c_type = "float"
-        nan_val = "CUDART_NAN_F"
-
-    if sample_std:
-        source = f"""
-            if (count == 1) {{
-              m = static_cast<{c_type}>(sum);
-              var = {nan_val};
-            }} else {{
-              m = static_cast<double>(sum) / count;
-              var = sqrt(
-                  (static_cast<double>(sumsq) - m * m * count) / (count - 1));
-            }}\n"""
-    else:
-        source = f"""
-            if (count == 0) {{
-              m = static_cast<{c_type}>(sum);
-              var = {nan_val};
-            }} else if (count == 1) {{
-              m = static_cast<{c_type}>(sum);
-              var = 0.0;
-            }} else {{
-              m = static_cast<double>(sum) / count;
-              var = sqrt(
-                  (static_cast<double>(sumsq) - m * m * count) / count);
-            }}\n"""
-    inputs = "X count, Y sum, Y sumsq"
-    outputs = "Z m, Z var"
-    name = f"cucim_sample_std_naive_{dtype.name}"
-    return cp.ElementwiseKernel(
-        inputs, outputs, source, preamble=_includes, name=name
+    With d = x - m0 for the first-pass mean m0, the mean is m0 + Σd / n and
+    the sum of squared deviations is Σd² - (Σd)² / n. Because Σd is nearly
+    zero, the result is accurate however large the mean is relative to the
+    standard deviation (the "corrected two-pass algorithm").
+    """
+    source = _std_finalize_source(
+        mean_code="""
+              double n = static_cast<double>(count);
+              mean = static_cast<double>(sum) / n + dsum / n;""",
+        ssd_code="ssd = dsq - dsum * dsum / n;",
+        sample_std=sample_std,
     )
+    return cp.ElementwiseKernel(
+        "X count, Y sum, float64 dsum, float64 dsq",
+        "float64 m, float64 s",
+        source,
+        preamble=_includes,
+        name=f"cucim_mean_std_twopass_{'sample' if sample_std else 'pop'}",
+    )
+
+
+@cp.memoize(for_each_device=True)
+def get_exact_mean_std_kernel(sample_std=False):
+    """Mean and standard deviation from the exact integer sums.
+
+    For the sums Σx and Σx² of integer pixels, n Σx² - (Σx)² is exactly
+    n² times the variance, and is evaluated in 128-bit integer arithmetic,
+    so the cancellation does not lose accuracy. It uses the 64-bit
+    multiply-high instruction rather than the `__int128` type, so it also
+    compiles where NVRTC does not have that type (Windows).
+    """
+    source = _std_finalize_source(
+        mean_code="mean = static_cast<double>(sum) / count;",
+        ssd_code="""
+              // |sum| as unsigned, n * sumsq and sum**2 as (hi, lo) pairs
+              unsigned long long n = count;
+              unsigned long long a = sum < 0 ? 0ULL - (unsigned long long)sum
+                                             : (unsigned long long)sum;
+              unsigned long long nq_lo = n * sumsq;
+              unsigned long long nq_hi = __umul64hi(n, sumsq);
+              unsigned long long aa_lo = a * a;
+              unsigned long long aa_hi = __umul64hi(a, a);
+              // n * sumsq >= sum**2 (Cauchy-Schwarz), so there is no borrow
+              // out of the high word
+              unsigned long long lo = nq_lo - aa_lo;
+              unsigned long long hi = nq_hi - aa_hi - (nq_lo < aa_lo ? 1 : 0);
+              double num = static_cast<double>(hi) * 18446744073709551616.0
+                           + static_cast<double>(lo);
+              ssd = num / count;""",
+        sample_std=sample_std,
+    )
+    return cp.ElementwiseKernel(
+        "X count, int64 sum, uint64 sumsq",
+        "float64 m, float64 s",
+        source,
+        preamble=_includes,
+        name=f"cucim_mean_std_exact_{'sample' if sample_std else 'pop'}",
+    )
+
+
+def _has_exact_sums(image_dtype):
+    """Whether the sums of the values and squares are exact integers.
+
+    True for the 8 and 16-bit integer types (and bool): the sum of squares
+    of up to 2**32 pixels does not overflow 64 bits.
+    """
+    image_dtype = cp.dtype(image_dtype)
+    return image_dtype.kind in "biu" and image_dtype.itemsize <= 2
 
 
 def regionprops_intensity_std(
@@ -507,84 +731,16 @@ def regionprops_intensity_std(
     writes "intensity_std" to `props_dict`
     writes "num_pixels" to `props_dict` if it was not already present
     """
-    if props_dict is None:
-        props_dict = {}
-    if max_label is None:
-        max_label = int(label_image.max())
-    num_counts = max_label
-
-    num_channels = _check_intensity_image_shape(label_image, intensity_image)
-
-    image_dtype = intensity_image.dtype
-    sum_dtype, _, _, _ = _get_intensity_img_kernel_dtypes(image_dtype)
-
-    count_dtype, int32_count = _get_count_dtype(label_image.size)
-
-    if "num_pixels" in props_dict:
-        counts = props_dict["num_pixels"]
-        if counts.dtype != count_dtype:
-            counts = counts.astype(count_dtype, copy=False)
-        compute_num_pixels = False
-    else:
-        counts = cp.zeros(num_counts, dtype=count_dtype)
-        compute_num_pixels = True
-
-    sum_shape = (
-        (num_counts,) if num_channels == 1 else (num_counts, num_channels)
-    )
-    sums = cp.zeros(sum_shape, dtype=sum_dtype)
-    sumsqs = cp.zeros(sum_shape, dtype=sum_dtype)
-
-    # make a copy if the inputs are not already C-contiguous
-    if not label_image.flags.c_contiguous:
-        label_image = cp.ascontiguousarray(label_image)
-    if not intensity_image.flags.c_contiguous:
-        intensity_image = cp.ascontiguousarray(intensity_image)
-
-    # TODO(grelee): May want to provide an approach with better numerical
-    # stability (i.e.like the two-pass algorithm or Welford's online algorithm)
-    kernel = get_intensity_measure_kernel(
-        int32_count=int32_count,
-        image_dtype=image_dtype,
-        num_channels=num_channels,
-        compute_num_pixels=compute_num_pixels,
-        compute_sum=True,
-        compute_sum_sq=True,
-        pixels_per_thread=pixels_per_thread,
-    )
-    if compute_num_pixels:
-        outputs = (counts, sums, sumsqs)
-    else:
-        outputs = (sums, sumsqs)
-    kernel(
+    return _regionprops_intensity(
         label_image,
-        label_image.size,
         intensity_image,
-        *outputs,
-        size=math.ceil(label_image.size / pixels_per_thread),
+        max_label=max_label,
+        compute_std=True,
+        std_dtype=std_dtype,
+        sample_std=sample_std,
+        pixels_per_thread=pixels_per_thread,
+        props_dict=props_dict,
     )
-
-    if cp.dtype(std_dtype).kind != "f":
-        raise ValueError("mean_dtype must be a floating point type")
-
-    # compute means and standard deviations from the counts, sums and
-    # squared sums (use float64 here since the numerical stability of this
-    # approach is poor)
-    means = cp.zeros(sum_shape, dtype=cp.float64)
-    stds = cp.zeros(sum_shape, dtype=cp.float64)
-    kernel2 = get_mean_var_kernel(stds.dtype, sample_std=sample_std)
-    if num_channels > 1:
-        kernel2(counts[..., cp.newaxis], sums, sumsqs, means, stds)
-    else:
-        kernel2(counts, sums, sumsqs, means, stds)
-
-    means = means.astype(std_dtype, copy=False)
-    stds = stds.astype(std_dtype, copy=False)
-    props_dict["intensity_std"] = stds
-    props_dict["intensity_mean"] = means
-    if "num_pixels" not in props_dict:
-        props_dict["num_pixels"] = counts
-    return props_dict
 
 
 def regionprops_intensity_min_max(
@@ -601,58 +757,12 @@ def regionprops_intensity_min_max(
     writes "intensity_min" to `props_dict` if `compute_min` is True
     writes "intensity_max" to `props_dict` if `compute_max` is True
     """
-    if not (compute_min or compute_max):
-        raise ValueError("Nothing to compute")
-    if props_dict is None:
-        props_dict = {}
-
-    if max_label is None:
-        max_label = int(label_image.max())
-    num_counts = max_label
-
-    num_channels = _check_intensity_image_shape(label_image, intensity_image)
-
-    # use an appropriate data type supported by atomicMin and atomicMax
-    image_dtype = intensity_image.dtype
-    _, _, min_max_dtype, _ = _get_intensity_img_kernel_dtypes(image_dtype)
-    range_min, range_max = _get_intensity_range(image_dtype)
-    out_shape = (
-        (num_counts,) if num_channels == 1 else (num_counts, num_channels)
-    )
-    if compute_min:
-        minimums = cp.full(out_shape, range_max, dtype=min_max_dtype)
-    if compute_max:
-        maximums = cp.full(out_shape, range_min, dtype=min_max_dtype)
-
-    kernel = get_intensity_measure_kernel(
-        image_dtype=image_dtype,
-        num_channels=num_channels,
-        compute_num_pixels=False,
-        compute_sum=False,
-        compute_sum_sq=False,
+    return _regionprops_intensity(
+        label_image,
+        intensity_image,
+        max_label=max_label,
         compute_min=compute_min,
         compute_max=compute_max,
         pixels_per_thread=pixels_per_thread,
+        props_dict=props_dict,
     )
-
-    # make a copy if the inputs are not already C-contiguous
-    if not label_image.flags.c_contiguous:
-        label_image = cp.ascontiguousarray(label_image)
-    if not intensity_image.flags.c_contiguous:
-        intensity_image = cp.ascontiguousarray(intensity_image)
-
-    lab_size = label_image.size
-    sz = math.ceil(label_image.size / pixels_per_thread)
-    if compute_min and compute_max:
-        outputs = (minimums, maximums)
-    elif compute_min:
-        outputs = (minimums,)
-    else:
-        outputs = (maximums,)
-
-    kernel(label_image, lab_size, intensity_image, *outputs, size=sz)  # noqa: E501
-    if compute_min:
-        props_dict["intensity_min"] = minimums
-    if compute_max:
-        props_dict["intensity_max"] = maximums
-    return props_dict
