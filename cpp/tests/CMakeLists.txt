@@ -18,6 +18,7 @@ add_executable(cucim_tests
         test_metadata.cpp
         test_image_cache.cpp
         test_device_resource.cpp
+        test_print.cpp
         )
 
 set_target_properties(cucim_tests

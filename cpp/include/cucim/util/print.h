@@ -5,18 +5,24 @@
 
 #pragma once
 
+#include <cerrno>
 #include <cstdio>
 #include <format>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace cucim
 {
 
+// Throws std::system_error when the stream accepts fewer bytes than were formatted, as fmt::print did.
 inline void vprint(std::FILE* stream, std::string_view fmt, std::format_args args)
 {
     const std::string formatted = std::vformat(fmt, args);
-    [[maybe_unused]] const auto written = std::fwrite(formatted.data(), 1, formatted.size(), stream);
+    if (std::fwrite(formatted.data(), 1, formatted.size(), stream) < formatted.size())
+    {
+        throw std::system_error(errno, std::generic_category(), "cannot write to file");
+    }
 }
 
 template <typename... Args>
