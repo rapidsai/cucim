@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -21,7 +21,7 @@ from skimage.draw.draw import circle_perimeter_aa
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.feature.peak import peak_local_max
-from cucim.skimage.morphology import binary_erosion
+from cucim.skimage.morphology import erosion
 from cucim.skimage.transform._geometric import (
     AffineTransform,
     ProjectiveTransform,
@@ -1238,7 +1238,7 @@ def test_rotate_batch(order, mode):
         # couple of pixels
         mask = cp.any(rotated_individual > 1, axis=-1)
         footprint = cp.ones((5, 5), dtype=bool)
-        interior_mask = binary_erosion(mask, footprint=footprint)
+        interior_mask = erosion(mask, footprint=footprint, mode="ignore")
 
         cp.testing.assert_allclose(
             rotated_batch * interior_mask[..., cp.newaxis],
