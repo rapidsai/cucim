@@ -71,6 +71,10 @@ void segmented_sort_keys_ranges(std::uintptr_t keys_in,
     {
         return;
     }
+    if (keys_in == 0 || keys_out == 0 || begin_offsets == 0 || end_offsets == 0)
+    {
+        throw std::invalid_argument("key and offset buffers must be non-null device pointers");
+    }
     // A null temp_storage would turn the call below into a silent size query.
     if (temp_storage == 0)
     {
@@ -84,24 +88,8 @@ void segmented_sort_keys_ranges(std::uintptr_t keys_in,
                "cub::DeviceSegmentedSort::SortKeys failed");
 }
 
-template <typename T>
-void segmented_sort_keys(std::uintptr_t keys_in,
-                         std::uintptr_t keys_out,
-                         std::uintptr_t segment_offsets,
-                         std::int64_t num_items,
-                         std::int64_t num_segments,
-                         std::uintptr_t temp_storage,
-                         std::size_t temp_storage_bytes,
-                         std::uintptr_t stream_ptr)
-{
-    segmented_sort_keys_ranges<T>(keys_in, keys_out, segment_offsets, segment_offsets + sizeof(SegmentOffset),
-                                  num_items, num_segments, temp_storage, temp_storage_bytes, stream_ptr);
-}
-
 #define CUCIM_INSTANTIATE_SEGMENTED_SORT(T)                                                                            \
     template std::size_t segmented_sort_keys_temp_storage_bytes<T>(std::int64_t, std::int64_t);                        \
-    template void segmented_sort_keys<T>(std::uintptr_t, std::uintptr_t, std::uintptr_t, std::int64_t, std::int64_t,   \
-                                         std::uintptr_t, std::size_t, std::uintptr_t);                                 \
     template void segmented_sort_keys_ranges<T>(std::uintptr_t, std::uintptr_t, std::uintptr_t, std::uintptr_t,        \
                                                 std::int64_t, std::int64_t, std::uintptr_t, std::size_t,               \
                                                 std::uintptr_t);

@@ -20,22 +20,12 @@ namespace cucim::skimage
 template <typename T>
 std::size_t segmented_sort_keys_temp_storage_bytes(std::int64_t num_items, std::int64_t num_segments);
 
-// Sort keys within the segments [segment_offsets[i], segment_offsets[i + 1]).
-// The sort is enqueued on stream_ptr without synchronizing. temp_storage must
-// point to at least segmented_sort_keys_temp_storage_bytes<T>() bytes of
-// device memory that stays valid until the sort completes.
-template <typename T>
-void segmented_sort_keys(std::uintptr_t keys_in,
-                         std::uintptr_t keys_out,
-                         std::uintptr_t segment_offsets,
-                         std::int64_t num_items,
-                         std::int64_t num_segments,
-                         std::uintptr_t temp_storage,
-                         std::size_t temp_storage_bytes,
-                         std::uintptr_t stream_ptr);
-
-// Same as segmented_sort_keys, but with independent begin/end offsets
-// so that only selected ranges are sorted.
+// Sort selected [begin, end) ranges asynchronously on stream_ptr. The caller
+// supplies non-overlapping device buffers on the current device: num_items
+// keys of type T in each key buffer, num_segments uint64_t offsets in each
+// offset buffer, and the queried number of bytes of temporary storage. The
+// ranges must be within [0, num_items) and the buffers must remain valid until
+// work on the stream completes.
 template <typename T>
 void segmented_sort_keys_ranges(std::uintptr_t keys_in,
                                 std::uintptr_t keys_out,
