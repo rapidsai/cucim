@@ -595,6 +595,11 @@ ssize_t CuFileDriver::pread(void* buf, size_t count, off_t file_offset, off_t bu
                     fmt::print(stderr, "Cannot read the remaining file content block! ({})\n", std::strerror(errno));
                     return finish_read(-1);
                 }
+                if (read_cnt == 0)
+                {
+                    return finish_read(total_read_cnt);
+                }
+                remaining = std::min(remaining, static_cast<size_t>(read_cnt));
                 // Copy a buffer to read, from the intermediate remaining block (buf_pos)
                 if (memory_type == cudaMemoryTypeUnregistered)
                 {

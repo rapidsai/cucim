@@ -278,6 +278,61 @@ def test_filesystem_odirect_tail_offset(tmp_path, count, write, device):
         np.testing.assert_array_equal(buffer, expected)
 
 
+@pytest.mark.parametrize("tail_size", [0, 8], ids=["eof", "short-tail"])
+@pytest.mark.parametrize(
+    "block_size", [0, 4096], ids=["tail", "block-and-tail"]
+)
+@pytest.mark.parametrize("device", ["host", "cuda"])
+def test_filesystem_odirect_tail_eof(tmp_path, tail_size, block_size, device):
+    page_size = 4096
+    file_offset = page_size
+    count = block_size + 16
+    available = block_size + tail_size
+    sentinel = 173
+    path = tmp_path / "short-tail.bin"
+    path.write_bytes(bytes([31]) * (file_offset + available))
+
+    if device == "cuda":
+        array_module = pytest.importorskip("cupy")
+        if not array_module.cuda.is_available():
+            pytest.skip("CUDA device is unavailable")
+    else:
+        array_module = np
+    storage = array_module.empty(count + page_size - 1, dtype=np.uint8)
+    address = storage.data.ptr if device == "cuda" else storage.ctypes.data
+    start = (-address) % page_size
+    buffer = storage[start : start + count]
+    buffer.fill(sentinel)
+    if device == "cuda":
+        consumer = array_module.cuda.Stream(non_blocking=True)
+        host_buffer = np.frombuffer(
+            array_module.cuda.alloc_pinned_memory(count),
+            dtype=np.uint8,
+            count=count,
+        )
+        array_module.cuda.get_current_stream().synchronize()
+
+    if not hasattr(os, "O_DIRECT"):
+        pytest.skip("O_DIRECT is unavailable")
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECT)
+    except OSError as error:
+        if error.errno in (errno.EINVAL, errno.EOPNOTSUPP):
+            pytest.skip("test filesystem does not support O_DIRECT")
+        raise
+    try:
+        with filesystem.CuFileDriver(fd, no_gds=True, file_path=path) as driver:
+            assert driver.pread(buffer, count, file_offset) == available
+            if device == "cuda":
+                buffer = buffer.get(stream=consumer, out=host_buffer)
+    finally:
+        os.close(fd)
+
+    expected = np.full(count, sentinel, dtype=np.uint8)
+    expected[:available] = 31
+    np.testing.assert_array_equal(buffer, expected)
+
+
 def test_device_cache():
     assert isinstance(CuImage.device_cache(), cache.ImageCache)
 
