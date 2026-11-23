@@ -138,11 +138,16 @@ configure_file(${CMAKE_CURRENT_LIST_DIR}/examples/cpp/CMakeLists.txt.examples.re
 ################################################################################
 # Install
 ################################################################################
+option(CUCIM_INSTALL_BENCHMARKS "Install the C++ benchmark executables" ON)
+
 set(INSTALL_TARGETS
         ${CUCIM_PACKAGE_NAME}
         fmt-header-only
-        cucim_benchmarks
         )
+
+if(CUCIM_INSTALL_BENCHMARKS)
+    list(APPEND INSTALL_TARGETS cucim_benchmarks)
+endif()
 
 install(TARGETS ${INSTALL_TARGETS}
         EXPORT ${CUCIM_PACKAGE_NAME}-targets

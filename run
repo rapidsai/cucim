@@ -285,6 +285,7 @@ build_local_libcucim_() {
         -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
         -DCMAKE_PREFIX_PATH="${prefix}" \
         -DCMAKE_BUILD_TYPE="${build_type_str}" \
+        -DCUCIM_INSTALL_BENCHMARKS="${CUCIM_INSTALL_BENCHMARKS:-ON}" \
         -DCMAKE_INSTALL_PREFIX="${source_folder}/install"
     ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target cucim -- -j "$(nproc)"
     ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target install -- -j "$(nproc)"
@@ -306,6 +307,8 @@ build_local_cuslide_() {
         -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
         -DCMAKE_BUILD_TYPE="${build_type_str}" \
         -DCMAKE_PREFIX_PATH="${prefix}" \
+        -DCUCIM_INSTALL_TESTS="${CUCIM_INSTALL_TESTS:-ON}" \
+        -DCUCIM_INSTALL_BENCHMARKS="${CUCIM_INSTALL_BENCHMARKS:-ON}" \
         -DCMAKE_INSTALL_PREFIX="${source_folder}/install"
     ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target cucim.kit.cuslide -- -j "$(nproc)"
     ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target install -- -j "$(nproc)"
@@ -327,6 +330,8 @@ build_local_cuslide2_() {
         -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
         -DCMAKE_BUILD_TYPE="${build_type_str}" \
         -DCMAKE_PREFIX_PATH="${prefix}" \
+        -DCUCIM_INSTALL_TESTS="${CUCIM_INSTALL_TESTS:-ON}" \
+        -DCUCIM_INSTALL_BENCHMARKS="${CUCIM_INSTALL_BENCHMARKS:-ON}" \
         -DCMAKE_INSTALL_PREFIX="${source_folder}/install"
     ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target cucim.kit.cuslide2 -- -j "$(nproc)"
     ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target install -- -j "$(nproc)"
@@ -348,6 +353,8 @@ build_local_cumed_() {
         -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
         -DCMAKE_BUILD_TYPE="${build_type_str}" \
         -DCMAKE_PREFIX_PATH="${prefix}" \
+        -DCUCIM_INSTALL_TESTS="${CUCIM_INSTALL_TESTS:-ON}" \
+        -DCUCIM_INSTALL_BENCHMARKS="${CUCIM_INSTALL_BENCHMARKS:-ON}" \
         -DCMAKE_INSTALL_PREFIX="${source_folder}/install"
     ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target cucim.kit.cumed -- -j "$(nproc)"
     ${CMAKE_CMD} --build "${build_folder}" --config "${build_type_str}" --target install -- -j "$(nproc)"

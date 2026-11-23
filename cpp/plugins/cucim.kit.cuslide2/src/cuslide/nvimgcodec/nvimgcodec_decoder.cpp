@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -80,11 +80,26 @@ struct BatchDecodeStateImpl
     bool use_device_memory = false;
     bool owns_buffers = true;                         // false when caller provides output buffers
     cudaStream_t cuda_stream = nullptr;
+    bool scheduled = false;
+    bool completed = false;
+
+    bool wait_for_completion()
+    {
+        if (!completed)
+        {
+            const auto status = nvimgcodecFutureWaitForAll(future);
+            const auto stream_status = use_device_memory ? cudaStreamSynchronize(cuda_stream) : cudaSuccess;
+            completed = status == NVIMGCODEC_STATUS_SUCCESS && stream_status == cudaSuccess;
+        }
+        return completed;
+    }
 
     ~BatchDecodeStateImpl()
     {
         if (future)
         {
+            // A discarded prefetch can still be writing into a loader buffer.
+            wait_for_completion();
             nvimgcodecFutureDestroy(future);
             future = nullptr;
         }
@@ -127,7 +142,7 @@ BatchDecodeState& BatchDecodeState::operator=(BatchDecodeState&& other) noexcept
 
 bool BatchDecodeState::is_valid() const
 {
-    return impl && impl->future;
+    return impl && impl->scheduled && impl->future;
 }
 
 // RAII wrapper for nvimgcodecFuture_t
@@ -318,10 +333,11 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         std::string device_str = std::string(out_device);
         bool target_is_cpu = (device_str.find("cpu") != std::string::npos);
 
-        // Use the default decoder with all backends enabled.  For CPU output
+        // Use the default decoder with all backends enabled (a decoder without
+        // the CPU-only backends for JPEG 2000, see get_decoder_for()).  For CPU output
         // requests, the buffer_kind is set to STRIDED_HOST below and nvImageCodec
         // handles the GPU decode → host copy internally.
-        nvimgcodecDecoder_t decoder = manager.get_decoder();
+        nvimgcodecDecoder_t decoder = manager.get_decoder_for(ifd_info);
 
         #ifdef DEBUG
         fmt::print("  💡 Decoding with default decoder (output buffer: {})\n", target_is_cpu ? "host" : "device");
@@ -614,7 +630,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
 
         // Always use the primary GPU-enabled decoder (handles both GPU and
         // CPU output via buffer_kind).
-        nvimgcodecDecoder_t decoder = manager.get_decoder();
+        nvimgcodecDecoder_t decoder = manager.get_decoder_for(ifd_info);
 
         // Step 1: Create ROI sub-streams for each region
 
@@ -915,7 +931,7 @@ BatchDecodeState schedule_batch_decode(
         }
 
         // Always use the primary GPU-enabled decoder
-        nvimgcodecDecoder_t decoder = manager.get_decoder();
+        nvimgcodecDecoder_t decoder = manager.get_decoder_for(ifd_info);
 
         // Step 1: Create ROI sub-streams for each region
         impl->roi_streams_raii.reserve(impl->batch_size);
@@ -1088,6 +1104,7 @@ BatchDecodeState schedule_batch_decode(
             return state;
         }
 
+        impl->scheduled = true;
         #ifdef DEBUG
         fmt::print("✅ Scheduled batch decode of {} regions\n", impl->roi_streams.size());
         #endif
@@ -1110,32 +1127,15 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
         result.success = false;
     }
 
-    if (!impl->future || impl->roi_streams.empty())
+    if (!state.is_valid() || !impl->wait_for_completion())
     {
         return results;
-    }
-
-    // Wait for all decode operations to complete
-    nvimgcodecStatus_t status = nvimgcodecFutureWaitForAll(impl->future);
-    if (status != NVIMGCODEC_STATUS_SUCCESS)
-    {
-        #ifdef DEBUG
-        fmt::print("❌ Failed to wait for batch decode (status: {})\n", static_cast<int>(status));
-        #endif
-        // No manual cleanup — ~BatchDecodeStateImpl handles it.
-        return results;
-    }
-
-    // Synchronize stream if using GPU
-    if (impl->use_device_memory)
-    {
-        cudaStreamSynchronize(impl->cuda_stream);
     }
 
     // Get processing status for each image
     std::vector<nvimgcodecProcessingStatus_t> decode_statuses(impl->roi_streams.size(), NVIMGCODEC_PROCESSING_STATUS_UNKNOWN);
     size_t status_size = impl->roi_streams.size();
-    status = nvimgcodecFutureGetProcessingStatus(impl->future, decode_statuses.data(), &status_size);
+    const auto status = nvimgcodecFutureGetProcessingStatus(impl->future, decode_statuses.data(), &status_size);
 
     if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
@@ -1149,7 +1149,7 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
     for (size_t vi = 0; vi < impl->valid_indices.size(); ++vi)
     {
         size_t i = impl->valid_indices[vi];
-        if (vi < decode_statuses.size() && decode_statuses[vi] == NVIMGCODEC_PROCESSING_STATUS_SUCCESS)
+        if (vi < status_size && vi < decode_statuses.size() && decode_statuses[vi] == NVIMGCODEC_PROCESSING_STATUS_SUCCESS)
         {
             if (impl->owns_buffers)
             {

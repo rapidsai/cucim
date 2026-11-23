@@ -318,11 +318,20 @@ add_subdirectory(benchmarks)
 # Install
 ################################################################################
 
+option(CUCIM_INSTALL_TESTS "Install the C++ test executables" ON)
+option(CUCIM_INSTALL_BENCHMARKS "Install the C++ benchmark executables" ON)
+
 set(INSTALL_TARGETS
         ${CUCIM_PLUGIN_NAME}
-        cuslide2_tests
-        cuslide2_benchmarks
         )
+
+if(CUCIM_INSTALL_TESTS)
+    list(APPEND INSTALL_TARGETS cuslide2_tests)
+endif()
+
+if(CUCIM_INSTALL_BENCHMARKS)
+    list(APPEND INSTALL_TARGETS cuslide2_benchmarks)
+endif()
 
 # Add nvimgcodec_dynlink to install targets if dynamic loading is enabled
 if(WITH_DYNAMIC_NVIMGCODEC)
