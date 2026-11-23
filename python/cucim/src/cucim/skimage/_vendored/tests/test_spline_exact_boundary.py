@@ -361,29 +361,15 @@ def test_sampler_fill_output_precision(dtype, cval, expected):
 
 
 @pytest.mark.parametrize("dtype", [cp.uint8, cp.int16])
-@pytest.mark.parametrize(
-    "cval, literal",
-    [
-        (np.nan, "CUDART_NAN"),
-        (np.inf, "CUDART_INF"),
-        (-np.inf, "(-CUDART_INF)"),
-    ],
-)
-def test_grid_constant_nonfinite_integer_fill(dtype, cval, literal):
-    # Reproduce the old output-type conversion on the running CUDA compiler.
-    legacy_cast = cp.ElementwiseKernel(
-        "",
-        "Y out",
-        f"out = (Y){literal};",
-        "test_interp_legacy_integer_fill",
-        preamble="#include <cupy/math_constants.h>",
-    )
-    fill = cp.empty(1, dtype=dtype)
-    legacy_cast(fill)
-    expected = cp.rint(fill.astype(cp.float64) * 0.5).astype(dtype)
+@pytest.mark.parametrize("cval", [0.0, 1.6, 2.5, 255.0])
+def test_grid_constant_integer_fill(dtype, cval):
+    # NaN/Inf-to-integer casts are undefined and cannot serve as an oracle:
+    # constant folding can differ between CUDA compilers and kernel contexts.
+    # Finite fills must retain their fractional part until after interpolation.
+    expected = np.rint([cval, cval * 0.5, 0.0]).astype(dtype)
     actual = cndi.map_coordinates(
         cp.zeros(2, dtype=cp.float64),
-        cp.asarray([[-0.5]]),
+        cp.asarray([[-1.0, -0.5, 0.5]]),
         order=1,
         mode="grid-constant",
         cval=cval,
