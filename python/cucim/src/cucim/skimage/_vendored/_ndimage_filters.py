@@ -858,7 +858,9 @@ def _cached_gaussian_kernel1d(sigma, order, radius, dtype):
     kernel = _cached_gaussian_kernel1d_for_device(
         device_id, sigma, order, radius, dtype
     )
-    return _util._record_cache_array_use(kernel, caller)
+    if _util._record_cache_array_use(kernel, caller) is None:
+        return _gaussian_kernel1d(sigma, order, radius, cupy.dtype(dtype))
+    return kernel
 
 
 @lru_cache(maxsize=_MAX_CACHED_GAUSSIAN_KERNELS)

@@ -21,6 +21,8 @@ except ImportError:
 import cupy
 
 _cache_array_streams = {}
+_cache_array_streams_lock = threading.Lock()
+_MAX_STREAMS_PER_CACHE_ARRAY = 32
 # ids of live cache arrays known to contain no zero entries
 _nonzero_cache_array_ids = set()
 _retired_cache_allocations = {}
@@ -117,8 +119,15 @@ def _coefficient_cache_stream():
 
 
 def _record_cache_array_use(array, stream):
-    """Track a consumer stream for retirement after its queued work."""
-    _cache_array_streams[id(array)].setdefault(stream.ptr, stream)
+    """Return the shared array, or None if the caller needs private storage."""
+    streams = _cache_array_streams[id(array)]
+    ptr = stream.ptr
+    if ptr not in streams:
+        with _cache_array_streams_lock:
+            if ptr not in streams:
+                if len(streams) >= _MAX_STREAMS_PER_CACHE_ARRAY:
+                    return None
+                streams[ptr] = stream
     return array
 
 
@@ -146,7 +155,9 @@ def _cached_filter_weights(weights, dtype, divisor=1):
     array = _cached_filter_weights_for_device(
         device_id, weights, cupy.dtype(dtype).str, divisor
     )
-    return _record_cache_array_use(array, caller)
+    if _record_cache_array_use(array, caller) is None:
+        return _make_filter_weights(weights, dtype, divisor)
+    return array
 
 
 def _make_filter_weights(weights, dtype, divisor):

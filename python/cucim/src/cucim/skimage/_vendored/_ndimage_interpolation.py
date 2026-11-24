@@ -34,7 +34,9 @@ def _cached_zoom_factors(zoom, dtype):
     factors = _cached_zoom_factors_for_device(
         device_id, tuple(zoom), cupy.dtype(dtype).str
     )
-    return _util._record_cache_array_use(factors, caller)
+    if _util._record_cache_array_use(factors, caller) is None:
+        return cupy.asarray(zoom, dtype=dtype)
+    return factors
 
 
 @lru_cache(maxsize=_MAX_CACHED_ZOOM_FACTORS)

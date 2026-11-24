@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import weakref
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
@@ -227,6 +228,30 @@ _COEFFICIENT_CASES = [
         ((1, 2, 1), "float32", 2),
     ),
 ]
+
+
+@pytest.mark.parametrize("get,cache,args", _COEFFICIENT_CASES)
+def test_cache_bounds_retained_streams(get, cache, args, monkeypatch):
+    monkeypatch.setattr(util, "_MAX_STREAMS_PER_CACHE_ARRAY", 1)
+    cache.cache_clear()
+    tracked = cp.cuda.Stream(non_blocking=True)
+    try:
+        with tracked:
+            shared = get(*args)
+            assert get(*args) is shared
+        for _ in range(3):
+            caller = cp.cuda.Stream(non_blocking=True)
+            caller_ref = weakref.ref(caller)
+            with caller:
+                private = get(*args)
+                assert private is not shared
+                assert get(*args) is not private
+                cp.testing.assert_array_equal(private, shared)
+            del caller
+            assert caller_ref() is None
+        assert len(util._cache_array_streams[id(shared)]) == 1
+    finally:
+        cache.cache_clear()
 
 
 @pytest.mark.skipif(cp.cuda.runtime.is_hip, reason="CUDA per-thread stream")
