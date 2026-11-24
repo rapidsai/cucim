@@ -1,6 +1,7 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileCopyrightText: Copyright: (c) 2019 School of Computing, National University of Singapore
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0 AND MIT
  */
 
 // Euclidean Distance Transform
@@ -8,6 +9,7 @@
 // Kernels for the 3D version of the Parallel Banding Algorithm (PBA+).
 //
 // MIT license: see 3rdparty/LICENSE.pba+
+// Copyright: (c) 2019 School of Computing, National University of Singapore
 //
 // Modifications by Gregory Lee (2022) (NVIDIA)
 // - allow user-defined ENCODED_INT_TYPE, ENCODE, DECODE
@@ -17,6 +19,10 @@
 //   indicating the pixel size along the x, y and z axes. The kernels are
 //   identical except that the `dominate` function is replaced by
 //   `dominate_sp` and the physical spacings are used when computing distances.
+// - The kernels take a separate extent along each axis (size_x, size_y, size_z)
+//   instead of a single size, so the array does not have to have the same size
+//   along every axis. The `TOID` macro takes the row length and the number of
+//   rows per slice.
 
 
 // START OF DEFINITIONS OVERRIDDEN BY THE PYTHON SCRIPT
@@ -39,6 +45,16 @@
 
 #ifndef BLOCKSIZE
 #define BLOCKSIZE  32
+#endif
+
+// The type that is used for the pixel spacing, and for the distances computed
+// with it, in the kernels that take a pixel spacing
+#ifndef SPACING_T
+#define SPACING_T double
+#endif
+
+#ifndef IMAGE_T
+#define IMAGE_T unsigned char
 #endif
 
 #ifndef ENCODE
@@ -96,30 +112,35 @@ __device__ bool dominate_sp(int _x_1, int _y_1, int _z_1, int _x_2, int _y_2, in
             ((y_2 + y_3) * k_2 + ((x_3 - x_2) * (x_2 + x_3 - (x_0_2)) + (z_3 - z_2) * (z_2 + z_3 - (z_0_2)))) * k_1);
 }
 
-#define TOID(x, y, z, size)    ((((z) * (size)) + (y)) * (size) + (x))
+// Row-major index into an array with `sy` rows of length `sx` per z slice.
+#define TOID(x, y, z, sy, sx)    ((((z) * (sy)) + (y)) * (sx) + (x))
 
 
 extern "C"{
 
-__global__ void kernelFloodZ(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *output, int size)
+// Phase 1: find the nearest site along z in every pencil of voxels.
+//
+// This reads the image, not packed coordinates (the sites are the voxels that
+// are 0), so the image does not have to be packed in a separate kernel. The
+// strides are in elements of the image, which can be any array of type IMAGE_T.
+__global__ void kernelFloodZ(const IMAGE_T *image, long long stride_z, long long stride_y, long long stride_x, ENCODED_INT_TYPE *output, int size_x, int size_y, int size_z)
 {
 
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int ty = blockIdx.y * blockDim.y + threadIdx.y;
     int tz = 0;
 
-    int plane = size * size;
-    int id = TOID(tx, ty, tz, size);
+    int plane = size_x * size_y;
+    int id = TOID(tx, ty, tz, size_y, size_x);
+    const IMAGE_T *voxel = image + ty * stride_y + tx * stride_x;
     ENCODED_INT_TYPE pixel1, pixel2;
 
     pixel1 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO);
 
     // Sweep down
-    for (int i = 0; i < size; i++, id += plane) {
-        pixel2 = input[id];
-
-        if (!NOTSITE(pixel2))
-            pixel1 = pixel2;
+    for (int i = 0; i < size_z; i++, id += plane, voxel += stride_z) {
+        if (*voxel == 0)
+            pixel1 = ENCODE(static_cast<ENCODED_INT_TYPE>(tx), static_cast<ENCODED_INT_TYPE>(ty), static_cast<ENCODED_INT_TYPE>(i), ZERO, ZERO);
 
         output[id] = pixel1;
     }
@@ -129,7 +150,7 @@ __global__ void kernelFloodZ(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *output, 
     id -= plane + plane;
 
     // Sweep up
-    for (int i = size - 2; i >= 0; i--, id -= plane) {
+    for (int i = size_z - 2; i >= 0; i--, id -= plane) {
         nz = GET_Z(pixel1);
         dist1 = abs(nz - (tz + i));
 
@@ -145,20 +166,20 @@ __global__ void kernelFloodZ(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *output, 
 }
 
 
-__global__ void kernelMaurerAxis(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *stack, int size)
+__global__ void kernelMaurerAxis(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *stack, int size_x, int size_y, int size_z)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int tz = blockIdx.y * blockDim.y + threadIdx.y;
     int ty = 0;
 
-    int id = TOID(tx, ty, tz, size);
+    int id = TOID(tx, ty, tz, size_y, size_x);
 
     ENCODED_INT_TYPE lasty = 0;
     ENCODED_INT_TYPE x1, y1, z1, x2, y2, z2, nx, ny, nz;
     ENCODED_INT_TYPE p = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO), s1 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO), s2 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO);
     ENCODED_INT_TYPE flag = 0;
 
-    for (ty = 0; ty < size; ++ty, id += size) {
+    for (ty = 0; ty < size_y; ++ty, id += size_x) {
         p = input[id];
 
         if (!NOTSITE(p)) {
@@ -174,7 +195,7 @@ __global__ void kernelMaurerAxis(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *stac
                 lasty = y2; s2 = s1; y2 = y1;
 
                 if (HASNEXT(s2))
-                    s1 = stack[TOID(tx, y2, tz, size)];
+                    s1 = stack[TOID(tx, y2, tz, size_y, size_x)];
             }
 
             DECODE(p, nx, ny, nz);
@@ -190,23 +211,23 @@ __global__ void kernelMaurerAxis(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *stac
     }
 
     if (NOTSITE(p))
-        stack[TOID(tx, ty - 1, tz, size)] = ENCODE(ZERO, lasty, ZERO, ONE, flag);
+        stack[TOID(tx, ty - 1, tz, size_y, size_x)] = ENCODE(ZERO, lasty, ZERO, ONE, flag);
 }
 
-__global__ void kernelMaurerAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *stack, int size, double sx, double sy, double sz)
+__global__ void kernelMaurerAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *stack, int size_x, int size_y, int size_z, SPACING_T sx, SPACING_T sy, SPACING_T sz)
 {
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
     int tz = blockIdx.y * blockDim.y + threadIdx.y;
     int ty = 0;
 
-    int id = TOID(tx, ty, tz, size);
+    int id = TOID(tx, ty, tz, size_y, size_x);
 
     ENCODED_INT_TYPE lasty = 0;
     ENCODED_INT_TYPE x1, y1, z1, x2, y2, z2, nx, ny, nz;
     ENCODED_INT_TYPE p = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO), s1 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO), s2 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO);
     ENCODED_INT_TYPE flag = 0;
 
-    for (ty = 0; ty < size; ++ty, id += size) {
+    for (ty = 0; ty < size_y; ++ty, id += size_x) {
         p = input[id];
 
         if (!NOTSITE(p)) {
@@ -222,7 +243,7 @@ __global__ void kernelMaurerAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT
                 lasty = y2; s2 = s1; y2 = y1;
 
                 if (HASNEXT(s2))
-                    s1 = stack[TOID(tx, y2, tz, size)];
+                    s1 = stack[TOID(tx, y2, tz, size_y, size_x)];
             }
 
             DECODE(p, nx, ny, nz);
@@ -238,10 +259,10 @@ __global__ void kernelMaurerAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT
     }
 
     if (NOTSITE(p))
-        stack[TOID(tx, ty - 1, tz, size)] = ENCODE(ZERO, lasty, ZERO, ONE, flag);
+        stack[TOID(tx, ty - 1, tz, size_y, size_x)] = ENCODE(ZERO, lasty, ZERO, ONE, flag);
 }
 
-__global__ void kernelColorAxis(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *output, int size)
+__global__ void kernelColorAxis(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *output, int size_x, int size_y, int size_z)
 {
     __shared__ ENCODED_INT_TYPE block[BLOCKSIZE][BLOCKSIZE];
 
@@ -254,28 +275,28 @@ __global__ void kernelColorAxis(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *outpu
     ENCODED_INT_TYPE last1 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO), last2 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO), lasty;
     long long dx, dy, dz, best, dist;
 
-    lasty = size - 1;
+    lasty = size_y - 1;
 
-    last2 = input[TOID(tx, lasty, tz, size)];
+    last2 = input[TOID(tx, lasty, tz, size_y, size_x)];
     DECODE(last2, x2, y2, z2);
 
     if (NOTSITE(last2)) {
         lasty = y2;
         if(HASNEXT(last2)) {
-            last2 = input[TOID(tx, lasty, tz, size)];
+            last2 = input[TOID(tx, lasty, tz, size_y, size_x)];
             DECODE(last2, x2, y2, z2);
         }
     }
 
     if (HASNEXT(last2)) {
-        last1 = input[TOID(tx, y2, tz, size)];
+        last1 = input[TOID(tx, y2, tz, size_y, size_x)];
         DECODE(last1, x1, y1, z1);
     }
 
-    int y_start, y_end, n_step = size / blockDim.x;
+    int y_start, y_end, n_step = size_y / blockDim.x;
     for(int step = 0; step < n_step; ++step) {
-        y_start = size - step * blockDim.x - 1;
-        y_end = size - (step + 1) * blockDim.x;
+        y_start = size_y - step * blockDim.x - 1;
+        y_end = size_y - (step + 1) * blockDim.x;
 
         for (int ty = y_start - tid; ty >= y_end; ty -= blockDim.y) {
             dx = x2 - tx; dy = lasty - ty; dz = z2 - tz;
@@ -291,7 +312,7 @@ __global__ void kernelColorAxis(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *outpu
                 DECODE(last2, x2, y2, z2);
 
                 if (HASNEXT(last2)) {
-                    last1 = input[TOID(tx, y2, tz, size)];
+                    last1 = input[TOID(tx, y2, tz, size_y, size_x)];
                     DECODE(last1, x1, y1, z1);
                 }
             }
@@ -302,8 +323,10 @@ __global__ void kernelColorAxis(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *outpu
         __syncthreads();
 
         if(!threadIdx.y) {
-            int id = TOID(y_end + threadIdx.x, blockIdx.x * blockDim.x, tz, size);
-            for(int i = 0; i < blockDim.x; i++, id+=size) {
+            // the output layout is (z, x, y): `size_x` rows of length `size_y`
+            // per z slice
+            int id = TOID(y_end + threadIdx.x, blockIdx.x * blockDim.x, tz, size_x, size_y);
+            for(int i = 0; i < blockDim.x; i++, id += size_y) {
                 output[id] = block[i][threadIdx.x];
             }
         }
@@ -313,7 +336,7 @@ __global__ void kernelColorAxis(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *outpu
 }
 
 
-__global__ void kernelColorAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *output, int size, double sx, double sy, double sz)
+__global__ void kernelColorAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT_TYPE *output, int size_x, int size_y, int size_z, SPACING_T sx, SPACING_T sy, SPACING_T sz)
 {
     __shared__ ENCODED_INT_TYPE block[BLOCKSIZE][BLOCKSIZE];
 
@@ -324,41 +347,41 @@ __global__ void kernelColorAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT_
 
     ENCODED_INT_TYPE x1, y1, z1, x2, y2, z2;
     ENCODED_INT_TYPE last1 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO), last2 = ENCODE(ZERO,ZERO,ZERO,ONE,ZERO), lasty;
-    double dx, dy, dz, best, dist;
+    SPACING_T dx, dy, dz, best, dist;
 
-    lasty = size - 1;
+    lasty = size_y - 1;
 
-    last2 = input[TOID(tx, lasty, tz, size)];
+    last2 = input[TOID(tx, lasty, tz, size_y, size_x)];
     DECODE(last2, x2, y2, z2);
 
     if (NOTSITE(last2)) {
         lasty = y2;
         if(HASNEXT(last2)) {
-            last2 = input[TOID(tx, lasty, tz, size)];
+            last2 = input[TOID(tx, lasty, tz, size_y, size_x)];
             DECODE(last2, x2, y2, z2);
         }
     }
 
     if (HASNEXT(last2)) {
-        last1 = input[TOID(tx, y2, tz, size)];
+        last1 = input[TOID(tx, y2, tz, size_y, size_x)];
         DECODE(last1, x1, y1, z1);
     }
 
-    int y_start, y_end, n_step = size / blockDim.x;
+    int y_start, y_end, n_step = size_y / blockDim.x;
     for(int step = 0; step < n_step; ++step) {
-        y_start = size - step * blockDim.x - 1;
-        y_end = size - (step + 1) * blockDim.x;
+        y_start = size_y - step * blockDim.x - 1;
+        y_end = size_y - (step + 1) * blockDim.x;
 
         for (int ty = y_start - tid; ty >= y_end; ty -= blockDim.y) {
-            dx = static_cast<double>(x2 - tx) * sx;
-            dy = static_cast<double>(lasty - ty) * sy;
-            dz = static_cast<double>(z2 - tz) * sz;
+            dx = static_cast<SPACING_T>(x2 - tx) * sx;
+            dy = static_cast<SPACING_T>(lasty - ty) * sy;
+            dz = static_cast<SPACING_T>(z2 - tz) * sz;
             best = dx * dx + dy * dy + dz * dz;
 
             while (HASNEXT(last2)) {
-                dx = static_cast<double>(x1 - tx) * sx;
-                dy = static_cast<double>(y2 - ty) * sy;
-                dz = static_cast<double>(z1 - tz) * sz;
+                dx = static_cast<SPACING_T>(x1 - tx) * sx;
+                dy = static_cast<SPACING_T>(y2 - ty) * sy;
+                dz = static_cast<SPACING_T>(z1 - tz) * sz;
                 dist = dx * dx + dy * dy + dz * dz;
 
                 if(dist > best) break;
@@ -367,7 +390,7 @@ __global__ void kernelColorAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT_
                 DECODE(last2, x2, y2, z2);
 
                 if (HASNEXT(last2)) {
-                    last1 = input[TOID(tx, y2, tz, size)];
+                    last1 = input[TOID(tx, y2, tz, size_y, size_x)];
                     DECODE(last1, x1, y1, z1);
                 }
             }
@@ -378,8 +401,10 @@ __global__ void kernelColorAxisWithSpacing(ENCODED_INT_TYPE *input, ENCODED_INT_
         __syncthreads();
 
         if(!threadIdx.y) {
-            int id = TOID(y_end + threadIdx.x, blockIdx.x * blockDim.x, tz, size);
-            for(int i = 0; i < blockDim.x; i++, id+=size) {
+            // the output layout is (z, x, y): `size_x` rows of length `size_y`
+            // per z slice
+            int id = TOID(y_end + threadIdx.x, blockIdx.x * blockDim.x, tz, size_x, size_y);
+            for(int i = 0; i < blockDim.x; i++, id += size_y) {
                 output[id] = block[i][threadIdx.x];
             }
         }
