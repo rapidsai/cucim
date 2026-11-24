@@ -1878,3 +1878,57 @@ def test_filled_negative_labels_are_background(dtype, all_negative):
     )
     assert_array_equal(result["label_filled"], expected)
     assert_array_equal(result["area_filled"], [] if all_negative else [1])
+
+
+@pytest.mark.parametrize("large_id", [2**30, 2**53 + 1])
+@pytest.mark.parametrize("ring", [False, True])
+def test_label_filled_sparse_ids_use_bounded_scratch(large_id, ring):
+    from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
+        regionprops_label_filled,
+    )
+
+    if ring:
+        labels = cp.zeros((7, 7), dtype=cp.uint64)
+        labels[1:6, 1:6] = large_id
+        labels[2:5, 2:5] = 0
+        expected = labels.copy()
+        expected[2:5, 2:5] = large_id
+    else:
+        labels = cp.asarray([[1, large_id]], dtype=cp.uint64)
+        expected = labels.copy()
+    pool = cp.cuda.MemoryPool()
+    pool.set_limit(size=256 * 1024**2)
+    with cp.cuda.using_allocator(pool.malloc):
+        direct = regionprops_label_filled(labels)
+        public = regionprops_dict(labels, properties=["label_filled"])[
+            "label_filled"
+        ]
+    assert_array_equal(direct, expected)
+    assert_array_equal(public, expected)
+
+
+def test_filled_erosion_kernel_reused_across_label_counts(monkeypatch):
+    from cucim.skimage._vendored import _ndimage_filters as filters
+
+    get_kernel = filters._get_min_or_max_kernel
+    minimum_kernels = []
+
+    def record(*args, **kwargs):
+        kernel = get_kernel(*args, **kwargs)
+        if args[2] == "min":
+            minimum_kernels.append(kernel)
+        return kernel
+
+    monkeypatch.setattr(filters, "_get_min_or_max_kernel", record)
+    previous = None
+    for lab in (1, 2, 3):
+        minimum_kernels.clear()
+        labels = cp.zeros((7, 7), dtype=cp.uint8)
+        labels[1:6, 1:6] = lab
+        labels[2:5, 2:5] = 0
+        filled, _ = _fill_holes_by_label(labels, lab)
+        assert_array_equal(filled[1:6, 1:6], cp.full((5, 5), lab))
+        assert minimum_kernels
+        if previous is not None:
+            assert minimum_kernels == previous
+        previous = minimum_kernels.copy()

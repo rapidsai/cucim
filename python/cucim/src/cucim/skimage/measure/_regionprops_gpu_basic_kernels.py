@@ -965,6 +965,19 @@ def _fill_holes_by_label(labels, max_label, bbox=None):
     """
     if labels.dtype.kind == "i":
         labels = cp.maximum(labels, 0)
+    if labels.size and max_label > labels.size:
+        # Scratch arrays must scale with present labels, not the largest ID.
+        # Compact before grey filters, which can also round wide integer IDs.
+        values, codes = cp.unique(labels, return_inverse=True)
+        if int(values[0]) != 0:
+            values = cp.concatenate((cp.zeros(1, dtype=values.dtype), values))
+            codes += 1
+        dense = codes.reshape(labels.shape).astype(
+            cp.int32 if values.size <= 2**31 else cp.int64
+        )
+        filled, inexact = _fill_holes_by_label(dense, values.size - 1)
+        return values[filled], cp.asnumpy(values[cp.asarray(inexact)])
+
     ndim = labels.ndim
     footprint = ndi.generate_binary_structure(ndim, ndim)
     # with the padding, all background outside of the regions is a single
@@ -984,8 +997,7 @@ def _fill_holes_by_label(labels, max_label, bbox=None):
     nb_min = ndi.grey_erosion(
         cp.where(background, no_label, padded).astype(work_dtype, copy=False),
         size=3,
-        mode="constant",
-        cval=no_label,
+        mode="nearest",
     )
 
     # labels bordering each background component
