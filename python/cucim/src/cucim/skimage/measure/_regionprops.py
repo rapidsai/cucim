@@ -1050,18 +1050,21 @@ def _props_to_dict(
                     column_buffer = [regions[k][prop] for k in range(n)]
                     if isinstance(rp, cp.ndarray):
                         out[orig_prop] = cp.stack(column_buffer, axis=0)
+                    elif len(shape) > 1:
+                        # Stack the array components for all regions at once.
+                        out[orig_prop] = (
+                            cp.stack(
+                                [
+                                    cp.asarray(component)
+                                    for value in column_buffer
+                                    for component in value
+                                ]
+                            )
+                            .reshape((n,) + shape)
+                            .astype(dtype, copy=False)
+                        )
                     else:
-                        out[orig_prop] = cp.stack(
-                            [
-                                cp.stack(
-                                    [
-                                        cp.asarray(component)
-                                        for component in value
-                                    ]
-                                )
-                                for value in column_buffer
-                            ]
-                        ).astype(dtype, copy=False)
+                        out[orig_prop] = cp.asarray(column_buffer, dtype=dtype)
                 continue
 
             # precompute property column names and locations
@@ -1085,7 +1088,7 @@ def _props_to_dict(
                 column_data = cp.empty((n, n_columns), dtype=dtype)
                 for k in range(n):
                     rp = regions[k][prop]
-                    if not isinstance(rp, cp.ndarray):
+                    if not isinstance(rp, cp.ndarray) and len(shape) > 1:
                         rp = cp.stack(
                             [cp.asarray(component) for component in rp]
                         )
