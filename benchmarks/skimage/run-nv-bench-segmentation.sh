@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # Use env var if set/non-empty, otherwise default to 10
@@ -28,6 +28,17 @@ for shape in "${param_shape[@]}"; do
     for filt in "${param_filt[@]}"; do
         for dt in "${param_dt[@]}"; do
             python cucim_segmentation_bench.py -f "$filt" -i "$shape" -d "$dt" -t "$MAX_DURATION"
+        done
+    done
+done
+
+# these do not require an integer-valued input image
+param_filt=(slic)
+param_dt=(uint8)
+for shape in "${param_shape[@]}"; do
+    for filt in "${param_filt[@]}"; do
+        for dt in "${param_dt[@]}"; do
+            python cucim_segmentation_bench.py -f $filt -i $shape -d $dt -t "$MAX_DURATION"
         done
     done
 done
