@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import functools
+import inspect
 import math
 import warnings
 from copy import deepcopy
@@ -1986,11 +1987,12 @@ def test_filled_erosion_kernel_reused_across_label_counts(monkeypatch):
     from cucim.skimage._vendored import _ndimage_filters as filters
 
     get_kernel = filters._get_min_or_max_kernel
+    signature = inspect.signature(get_kernel)
     minimum_kernels = []
 
     def record(*args, **kwargs):
         kernel = get_kernel(*args, **kwargs)
-        if args[2] == "min":
+        if signature.bind(*args, **kwargs).arguments["func"] == "min":
             minimum_kernels.append(kernel)
         return kernel
 
