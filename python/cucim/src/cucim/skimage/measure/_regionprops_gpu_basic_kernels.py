@@ -1101,10 +1101,8 @@ def regionprops_label_filled(
     label_filled : cupy.ndarray
         The label image, but with the holes in each region filled.
     """
-    if labels.dtype.kind == "i":
-        labels = cp.maximum(labels, 0)
     if max_label is None:
-        max_label = int(labels.max()) if labels.size else 0
+        max_label = max(0, int(labels.max())) if labels.size else 0
     label_filled, _ = _fill_holes_by_label(labels, max_label)
     if props_dict is not None:
         props_dict["label_filled"] = label_filled
