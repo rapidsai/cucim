@@ -26,6 +26,7 @@ _MAX_STREAMS_PER_CACHE_ARRAY = 32
 # ids of live cache arrays known to contain no zero entries
 _nonzero_cache_array_ids = set()
 _retired_cache_allocations = {}
+_CACHE_RETIREMENT_POLL_LIMIT = 8
 # A finalizer can reenter cleanup on a thread that already holds this lock.
 _retired_cache_lock = threading.RLock()
 
@@ -34,13 +35,20 @@ def _release_completed_cache_allocations(device_id):
     """Reclaim evicted storage after all queued consumers have finished."""
     with _retired_cache_lock:
         allocations = _retired_cache_allocations.get(device_id)
-        while allocations:
-            entry = allocations[0]
-            if not all(event.done for event in entry[1]):
+        if not allocations:
+            return
+        # Give pending allocations another turn without letting one busy
+        # stream block cleanup of its peers or scanning the entire queue.
+        for _ in range(min(len(allocations), _CACHE_RETIREMENT_POLL_LIMIT)):
+            if not allocations:  # A nested cleanup can drain the queue.
                 break
-            # A nested cleanup may already have removed this entry.
-            if allocations and allocations[0] is entry:
-                allocations.popleft()
+            entry = allocations.popleft()
+            complete = False
+            try:
+                complete = all(event.done for event in entry[1])
+            finally:
+                if not complete:
+                    allocations.append(entry)
 
 
 def _retire_cache_allocation(array_id, device_id, memory, streams):

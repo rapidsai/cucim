@@ -40,6 +40,24 @@ def test_reentrant_cache_cleanup_keeps_pending_allocation(monkeypatch):
     assert list(retired) == [busy]
 
 
+def test_cache_cleanup_rotates_past_pending_allocation(monkeypatch):
+    device = 0
+    limit = util._CACHE_RETIREMENT_POLL_LIMIT
+    pending = SimpleNamespace(done=False)
+    completed = SimpleNamespace(done=True)
+    busy = (object(), [pending])
+    retired = deque([busy] + [(object(), [completed]) for _ in range(limit)])
+    monkeypatch.setattr(util, "_retired_cache_allocations", {device: retired})
+
+    util._release_completed_cache_allocations(device)
+    assert len(retired) == 2
+    util._release_completed_cache_allocations(device)
+    assert list(retired) == [busy]
+    pending.done = True
+    util._release_completed_cache_allocations(device)
+    assert not retired
+
+
 @pytest.fixture
 def delay_kernel():
     delay = cp.RawKernel(
@@ -158,8 +176,13 @@ def test_cache_eviction_preserves_queued_consumers(kind, delay_kernel):
     for stream, output in zip(streams, outputs):
         stream.synchronize()
         cp.testing.assert_array_equal(output, expected)
-    util._release_completed_cache_allocations(cp.cuda.runtime.getDevice())
-    assert not util._retired_cache_allocations[cp.cuda.runtime.getDevice()]
+    device = cp.cuda.runtime.getDevice()
+    retired = util._retired_cache_allocations[device]
+    for _ in range(len(retired)):
+        util._release_completed_cache_allocations(device)
+        if not retired:
+            break
+    assert not retired
 
 
 @pytest.mark.filterwarnings(
