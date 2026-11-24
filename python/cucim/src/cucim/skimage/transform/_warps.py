@@ -173,7 +173,11 @@ def resize(
     For spline orders above 1, 'constant' and 'edge' use exact boundary
     extension instead of SciPy's prepadding. Short axes, complex input, and
     nonfinite constant fill values use prepadding. An axis is short when it
-    has fewer samples than the spline order plus one.
+    has fewer samples than the spline order plus one. With exact extension
+    and 'constant', NaN or infinite image values also make samples outside
+    the image nonfinite out to where the boundary terms underflow (about
+    50-100 samples in float32 and 400-900 in float64, depending on the
+    order). SciPy's prepadding limits them to about 14 samples.
 
     Examples
     --------
@@ -529,7 +533,11 @@ def rotate(
     For spline orders above 1, 'constant' and 'edge' use exact boundary
     extension instead of SciPy's prepadding. Short axes, complex input, and
     nonfinite constant fill values use prepadding. An axis is short when it
-    has fewer samples than the spline order plus one.
+    has fewer samples than the spline order plus one. With exact extension
+    and 'constant', NaN or infinite image values also make samples outside
+    the image nonfinite out to where the boundary terms underflow (about
+    50-100 samples in float32 and 400-900 in float64, depending on the
+    order). SciPy's prepadding limits them to about 14 samples.
 
     Examples
     --------
@@ -1067,7 +1075,11 @@ def warp(
     For spline orders above 1, 'constant' and 'edge' use exact boundary
     extension instead of SciPy's prepadding. Short axes, complex input, and
     nonfinite constant fill values use prepadding. An axis is short when it
-    has fewer samples than the spline order plus one.
+    has fewer samples than the spline order plus one. With exact extension
+    and 'constant', NaN or infinite image values also make samples outside
+    the image nonfinite out to where the boundary terms underflow (about
+    50-100 samples in float32 and 400-900 in float64, depending on the
+    order). SciPy's prepadding limits them to about 14 samples.
 
     Examples
     --------

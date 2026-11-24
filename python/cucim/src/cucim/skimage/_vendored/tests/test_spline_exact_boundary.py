@@ -339,6 +339,20 @@ def test_exact_grid_constant_exterior_weight_underflow(dtype):
     assert not cp.isfinite(actual[1])
 
 
+def test_exact_grid_constant_nonfinite_exterior_band():
+    # Exact extension carries a NaN coefficient into the exterior until the
+    # folded weights underflow (65 samples for a cubic float32 line), well
+    # beyond the 14 samples reached through SciPy's 12-sample padding.
+    image = cp.ones(32, dtype=cp.float32)
+    image[10] = cp.nan
+    coords = cp.asarray([[-30.37, -200.37, 31 + 30.37, 31 + 200.37]])
+    actual = cndi.map_coordinates(
+        image, coords, order=3, mode="grid-constant", cval=3
+    )
+    assert cp.isnan(actual[::2]).all()
+    cp.testing.assert_array_equal(actual[1::2], [3, 3])
+
+
 @pytest.mark.parametrize(
     "mode, edge_value", [("constant", 4.0), ("grid-constant", 1.0)]
 )
