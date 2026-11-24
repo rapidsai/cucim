@@ -340,6 +340,23 @@ def test_exact_grid_constant_exterior_weight_underflow(dtype):
     assert not cp.isfinite(actual[1])
 
 
+@pytest.mark.parametrize(
+    "mode, edge_value", [("constant", 4.0), ("grid-constant", 1.0)]
+)
+@pytest.mark.filterwarnings(
+    "ignore:It is recommended to use mode = grid-constant"
+)
+def test_zoom_linear_nonzero_grid_fill(mode, edge_value):
+    # The endpoints sample at -0.25 and 2.25 in a three-pixel row.
+    image = cp.zeros((1, 3), dtype=cp.float64)
+    actual = cndi.zoom(
+        image, (1, 2), order=1, mode=mode, cval=4, grid_mode=True
+    )
+    cp.testing.assert_array_equal(
+        actual, [[edge_value, 0, 0, 0, 0, edge_value]]
+    )
+
+
 @pytest.mark.parametrize("channels", [None, 3])
 @pytest.mark.parametrize("force_serial", [False, True])
 def test_zoom_reuses_interpolation_and_prefilter_kernels(
