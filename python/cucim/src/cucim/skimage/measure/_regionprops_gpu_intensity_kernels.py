@@ -257,6 +257,10 @@ def get_intensity_measure_kernel(
         min_max_dtype,
         c_min_max_type,
     ) = _get_intensity_img_kernel_dtypes(image_dtype)
+    if compute_sum_sq:
+        # Even uint32 squares can overflow a uint64 sum for a tiny region.
+        sum_dtype = cp.dtype(cp.float64)
+        c_sum_type = "double"
 
     array_size = pixels_per_thread
     any_sums = compute_num_pixels or compute_sum or compute_sum_sq
@@ -525,7 +529,7 @@ def regionprops_intensity_std(
     num_channels = _check_intensity_image_shape(label_image, intensity_image)
 
     image_dtype = intensity_image.dtype
-    sum_dtype, _, _, _ = _get_intensity_img_kernel_dtypes(image_dtype)
+    sum_dtype = cp.dtype(cp.float64)
 
     count_dtype, int32_count = _get_count_dtype(label_image.size)
 

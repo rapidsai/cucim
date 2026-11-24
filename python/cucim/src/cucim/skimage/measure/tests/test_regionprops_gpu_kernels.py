@@ -1907,6 +1907,18 @@ def test_label_filled_sparse_ids_use_bounded_scratch(large_id, ring):
     assert_array_equal(public, expected)
 
 
+@pytest.mark.parametrize("dtype", [cp.uint32, cp.int32, cp.uint64, cp.int64])
+@pytest.mark.parametrize("sample_std", [False, True])
+def test_intensity_std_wide_integer_square_sum(dtype, sample_std):
+    info = np.iinfo(dtype)
+    low = 0 if info.min == 0 else info.min
+    image = cp.asarray([[low, info.max, info.max]], dtype=dtype)
+    labels = cp.ones(image.shape, dtype=cp.uint8)
+    result = regionprops_intensity_std(labels, image, sample_std=sample_std)
+    expected = np.std(image.get().astype(np.float64), ddof=int(sample_std))
+    assert_allclose(result["intensity_std"], [expected], rtol=1e-12)
+
+
 def test_filled_erosion_kernel_reused_across_label_counts(monkeypatch):
     from cucim.skimage._vendored import _ndimage_filters as filters
 
