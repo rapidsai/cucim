@@ -1,15 +1,16 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
 
 import cupy as cp
+import pytest
 from cupy.testing import assert_array_equal
 from skimage import data
 
 # TODO: change to cucim.skimage.feature.BRIEF once implemented
-from skimage.feature import BRIEF
+from skimage.feature import BRIEF, match_descriptors as match_descriptors_cpu
 
 from cucim.skimage import transform
 from cucim.skimage._shared import testing
@@ -42,7 +43,7 @@ def test_binary_descriptors():
 
 def test_binary_descriptors_rotation_crosscheck_false():
     """Verify matched keypoints and their corresponding masks results between
-    image and its rotated version with the expected keypoint pairs with
+    image and its rotated version against the CPU reference with
     cross_check disabled."""
     img = cp.array(data.astronaut())
     img = rgb2gray(img)
@@ -70,36 +71,30 @@ def test_binary_descriptors_rotation_crosscheck_false():
 
     matches = match_descriptors(descriptors1, descriptors2, cross_check=False)
 
-    exp_matches1 = cp.arange(47)
-    # fmt: off
-    exp_matches2 = cp.array([0, 2, 1, 3, 4, 5, 7, 8, 14, 9, 11, 13,
-                             23, 15, 16, 22, 17, 19, 37, 18, 24, 27,
-                             30, 25, 26, 32, 28, 35, 37, 42, 29, 38,
-                             33, 40, 36, 39, 10, 36, 43, 15, 35, 41,
-                             6, 37, 32, 24, 8])
-    # fmt: on
-
-    assert_array_equal(matches[:, 0], exp_matches1)
-    assert_array_equal(matches[:, 1], exp_matches2)
+    # Image interpolation and BRIEF comparisons can change a descriptor bit
+    # across GPUs. Test matching against the CPU using the same descriptors.
+    expected = match_descriptors_cpu(
+        cp.asnumpy(descriptors1), cp.asnumpy(descriptors2), cross_check=False
+    )
+    assert len(expected) > 0
+    assert_array_equal(matches, expected)
 
     # minkowski takes a different code path, therefore we test it explicitly
     matches = match_descriptors(
         descriptors1, descriptors2, metric="minkowski", cross_check=False
     )
-    assert_array_equal(matches[:, 0], exp_matches1)
-    assert_array_equal(matches[:, 1], exp_matches2)
+    assert_array_equal(matches, expected)
 
     # it also has an extra parameter
     matches = match_descriptors(
         descriptors1, descriptors2, metric="minkowski", p=4, cross_check=False
     )
-    assert_array_equal(matches[:, 0], exp_matches1)
-    assert_array_equal(matches[:, 1], exp_matches2)
+    assert_array_equal(matches, expected)
 
 
 def test_binary_descriptors_rotation_crosscheck_true():
     """Verify matched keypoints and their corresponding masks results between
-    image and its rotated version with the expected keypoint pairs with
+    image and its rotated version against the CPU reference with
     cross_check enabled."""
     img = cp.array(data.astronaut())
     img = rgb2gray(img)
@@ -127,18 +122,26 @@ def test_binary_descriptors_rotation_crosscheck_true():
 
     matches = match_descriptors(descriptors1, descriptors2, cross_check=True)
 
-    # fmt: off
-    exp_matches1 = cp.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-                             13, 14, 15, 16, 17, 19, 20, 21, 22, 23,
-                             24, 26, 27, 28, 29, 30, 31, 32, 33,
-                             34, 38, 41, 42])
-    exp_matches2 = cp.array([0, 2, 1, 3, 4, 5, 7, 8, 14, 9, 11, 13,
-                             23, 15, 16, 22, 17, 19, 18, 24, 27, 30,
-                             25, 26, 28, 35, 37, 42, 29, 38, 33,
-                             40, 36, 43, 41, 6])
-    # fmt: on
-    assert_array_equal(matches[:, 0], exp_matches1)
-    assert_array_equal(matches[:, 1], exp_matches2)
+    expected = match_descriptors_cpu(
+        cp.asnumpy(descriptors1), cp.asnumpy(descriptors2), cross_check=True
+    )
+    assert len(expected) > 0
+    assert_array_equal(matches, expected)
+
+
+@pytest.mark.parametrize("cross_check", [False, True])
+@pytest.mark.parametrize(
+    "metric, p", [(None, 2), ("minkowski", 2), ("minkowski", 4)]
+)
+def test_binary_descriptors_ties(cross_check, metric, p):
+    descriptors1 = cp.array([[False, False], [False, False], [True, True]])
+    descriptors2 = cp.array([[False, True], [True, False], [True, True]])
+    matches = match_descriptors(
+        descriptors1, descriptors2, metric=metric, p=p, cross_check=cross_check
+    )
+    # Equal distances choose the first index in both matching directions.
+    expected = [[0, 0], [2, 2]] if cross_check else [[0, 0], [1, 0], [2, 2]]
+    assert_array_equal(matches, expected)
 
 
 def test_max_distance():
