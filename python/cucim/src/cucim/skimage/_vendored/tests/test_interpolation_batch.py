@@ -1295,7 +1295,7 @@ class TestLoopBatchNonContiguousOutput:
 
 
 class TestLoopBatchIntegerOutputRounding:
-    def test_constant_cval_uses_rint_for_integer_output(self):
+    def test_constant_cval_rounds_for_integer_output(self):
         a = testing.shaped_random((5, 6, 3), cupy, cupy.float32, scale=1)
         result = vendored_ndimage.shift(
             a,
@@ -1310,7 +1310,7 @@ class TestLoopBatchIntegerOutputRounding:
         expected = cupy.full(a.shape, 2, dtype=cupy.uint8)
         cupy.testing.assert_array_equal(result, expected)
 
-    def test_grid_constant_cval_uses_rint_for_integer_output(self):
+    def test_grid_constant_cval_rounds_for_integer_output(self):
         a = testing.shaped_random((5, 6, 3), cupy, cupy.float32, scale=1)
         result = vendored_ndimage.shift(
             a,
@@ -1325,7 +1325,7 @@ class TestLoopBatchIntegerOutputRounding:
         expected = cupy.full(a.shape, 2, dtype=cupy.uint8)
         cupy.testing.assert_array_equal(result, expected)
 
-    def test_order0_samples_use_rint_for_integer_output(self):
+    def test_order0_samples_round_for_integer_output(self):
         a = cupy.asarray(
             [
                 [[1.6, 2.6, 3.6], [4.6, 5.6, 6.6]],

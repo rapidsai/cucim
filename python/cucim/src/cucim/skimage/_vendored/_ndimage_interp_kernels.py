@@ -532,11 +532,47 @@ def _unravel_loop_index(ndim, uint_t, array_size):
     return "\n".join(code)
 
 
+# Integer outputs follow SciPy's conversion (CASE_INTERP_OUT_UINT and
+# CASE_INTERP_OUT_INT in scipy/ndimage/src/ni_interpolation.c): round half away
+# from zero, then saturate at the type's limits. A plain ``(Y)rint(value)``
+# rounds half to even and wraps out-of-range values. NaN becomes 0, as SciPy
+# gives for unsigned outputs; SciPy's signed conversion of NaN is undefined.
+# The limit test is exact, so 64-bit outputs saturate at 2**63 and 2**64
+# where SciPy's double comparison lets those values wrap.
+_INTEGER_OUTPUT_PREAMBLE = """
+template <typename Y>
+__device__ __forceinline__ Y _ndi_integer_output(double t)
+{
+    const bool is_signed = static_cast<Y>(-1) < static_cast<Y>(0);
+    const int value_bits =
+        8 * static_cast<int>(sizeof(Y)) - (is_signed ? 1 : 0);
+    const unsigned long long max_value = ~0ULL >> (64 - value_bits);
+    // One past the largest value, exact in double for every integer type.
+    const double limit = ldexp(1.0, value_bits);
+    if (t > 0) {
+        t += 0.5;
+        return t >= limit ? static_cast<Y>(max_value) : static_cast<Y>(t);
+    }
+    if (!is_signed || !(t < 0)) {
+        return static_cast<Y>(0);  // nonpositive unsigned value, zero or NaN
+    }
+    t -= 0.5;
+    return t <= -limit
+        ? static_cast<Y>(-static_cast<long long>(max_value) - 1)
+        : static_cast<Y>(t);
+}
+"""
+
+
+def _integer_output_value(value):
+    return f"_ndi_integer_output<Y>(static_cast<double>({value}))"
+
+
 def _generate_loop_batch_output_write(
-    value, integer_output, float_type, indent="                "
+    value, integer_output, indent="                "
 ):
     if integer_output:
-        value = f"(Y)rint(({float_type})({value}))"
+        value = _integer_output_value(value)
     else:
         value = f"(Y)({value})"
     return f"{indent}y[out_base_idx + batch_idx] = {value};"
@@ -662,7 +698,6 @@ def _generate_interp_custom(
     batch_axes=None,
     loop_batch_size=None,
     exact_boundary=False,
-    nonfinite_integer_fill=None,
     use_coefficient_dtype=False,
 ):
     """
@@ -787,12 +822,7 @@ def _generate_interp_custom(
         loop_batch_axis=loop_batch_axis,
     )
 
-    if nonfinite_integer_fill is None:
-        cval = f"({internal_dtype})fill_value"
-    else:
-        # The padded grid-constant path historically casts these constants
-        # to the output integer type before evaluating the footprint.
-        cval = f"(Y){nonfinite_integer_fill}"
+    cval = f"({internal_dtype})fill_value"
 
     if mode == "constant":
         # use cval if coordinate is outside the bounds of x
@@ -812,7 +842,7 @@ def _generate_interp_custom(
         {{
             #pragma unroll 4
             for ({uint_t} batch_idx = 0; batch_idx < batch_size; batch_idx++) {{
-{_generate_loop_batch_output_write(cval, integer_output, float_type)}
+{_generate_loop_batch_output_write(cval, integer_output)}
             }}
         }}
         else
@@ -889,13 +919,13 @@ def _generate_interp_custom(
             if mode == "grid-constant":
                 _cond = " || ".join([f"(ic_{j} < 0)" for j in spatial_axes])
                 _cval_write = _generate_loop_batch_output_write(
-                    cval, integer_output, float_type, "                    "
+                    cval, integer_output, "                    "
                 )
                 _sample = (
                     f"({internal_dtype})x_ptr[{_base_coord_idx} + batch_idx]"
                 )
                 _sample_write = _generate_loop_batch_output_write(
-                    _sample, integer_output, float_type, "                    "
+                    _sample, integer_output, "                    "
                 )
                 ops.append(
                     f"""
@@ -916,7 +946,7 @@ def _generate_interp_custom(
                     f"({internal_dtype})x_ptr[{_base_coord_idx} + batch_idx]"
                 )
                 _sample_write = _generate_loop_batch_output_write(
-                    _sample, integer_output, float_type
+                    _sample, integer_output
                 )
                 ops.append(
                     f"""
@@ -1084,7 +1114,7 @@ def _generate_interp_custom(
                     f"""
             #pragma unroll 4
             for ({uint_t} batch_idx = 0; batch_idx < batch_size; batch_idx++) {{
-                y[out_base_idx + batch_idx] = (Y)rint(({float_type})out_batch[batch_idx]);
+                y[out_base_idx + batch_idx] = {_integer_output_value("out_batch[batch_idx]")};
             }}"""
                 )
             else:
@@ -1293,7 +1323,7 @@ def _generate_interp_custom(
                     f"""
             #pragma unroll 4
             for ({uint_t} batch_idx = 0; batch_idx < batch_size; batch_idx++) {{
-                y[out_base_idx + batch_idx] = (Y)rint(({float_type})out_batch[batch_idx]);
+                y[out_base_idx + batch_idx] = {_integer_output_value("out_batch[batch_idx]")};
             }}"""
                 )
             else:
@@ -1369,7 +1399,7 @@ def _generate_interp_custom(
     # Output writing (for non-looped cases - looped cases write inside their batch loops)
     if not loop_batch_axis:
         if integer_output:
-            ops.append(f"y = (Y)rint(({float_type})out);")
+            ops.append(f"y = {_integer_output_value('out')};")
         else:
             ops.append("y = (Y)out;")
     operation = "\n".join(ops)
@@ -1438,7 +1468,6 @@ def _get_interp_kernel(
     batch_axes,
     loop_batch_size,
     exact_boundary,
-    nonfinite_integer_fill,
     fill_dtype,
     use_coefficient_dtype,
 ):
@@ -1462,20 +1491,14 @@ def _get_interp_kernel(
         batch_axes=batch_axes,
         loop_batch_size=loop_batch_size,
         exact_boundary=exact_boundary,
-        nonfinite_integer_fill=nonfinite_integer_fill,
         use_coefficient_dtype=use_coefficient_dtype,
     )
     # The operation uses the multidimensional output index or CArray shape.
-    preamble = (
-        "#include <cupy/math_constants.h>"
-        if nonfinite_integer_fill is not None
-        else ""
-    )
     return cupy.ElementwiseKernel(
         in_params,
         out_params,
         operation,
         name,
-        preamble=preamble,
+        preamble=_INTEGER_OUTPUT_PREAMBLE if integer_output else "",
         reduce_dims=False,
     )

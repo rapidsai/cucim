@@ -43,14 +43,6 @@ def _launch_interpolation(
         batch_axes, filtered.ndim, output.shape, output.flags.c_contiguous
     )
     loop_batch_size = output.shape[-1] if loop_batch_axis else None
-    nonfinite_integer_fill = None
-    if integer_output and mode == "grid-constant" and not math.isfinite(cval):
-        if math.isnan(cval):
-            nonfinite_integer_fill = "CUDART_NAN"
-        else:
-            nonfinite_integer_fill = (
-                "CUDART_INF" if cval > 0 else "(-CUDART_INF)"
-            )
     inputs = (filtered,) + transform_args
     # A narrower destination can overflow on individual coefficients or the
     # fill even when their weighted sum is representable.
@@ -85,7 +77,6 @@ def _launch_interpolation(
         batch_axes or (),
         loop_batch_size,
         exact_boundary,
-        nonfinite_integer_fill,
         fill_dtype,
         use_coefficient_dtype,
     )

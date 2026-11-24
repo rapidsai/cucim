@@ -193,12 +193,11 @@ def test_integer_output(mode):
     expected = _exact_map_coordinates(
         image.astype(float), coords, 3, mode, cval=10
     )
-    # Spline overshoot outside [0, 255] is cast without clipping (as for the
-    # other modes), so compare only representable values.
-    valid = (expected > 0.5) & (expected < 254.5)
-    expected = np.rint(expected)
+    assert (expected < 0).any() and (expected > 255).any()
+    # As in SciPy, round half away from zero and saturate spline overshoot.
+    expected = np.clip(np.floor(expected + 0.5), 0, 255)
     # float32 working precision may flip a few exact .5 roundings
-    diff = np.abs(out.get().astype(int) - expected.astype(int))[valid]
+    diff = np.abs(out.get().astype(int) - expected.astype(int))
     assert int(diff.max()) <= 1
 
 
@@ -461,19 +460,22 @@ def test_sampler_fill_output_precision(dtype, cval, expected):
 
 
 @pytest.mark.parametrize("dtype", [cp.uint8, cp.int16])
-@pytest.mark.parametrize("cval", [0.0, 1.6, 2.5, 255.0])
+@pytest.mark.parametrize(
+    "cval", [0.0, 1.6, 2.5, 255.0, 1e6, np.nan, np.inf, -np.inf]
+)
 def test_grid_constant_integer_fill(dtype, cval):
-    # NaN/Inf-to-integer casts are undefined and cannot serve as an oracle:
-    # constant folding can differ between CUDA compilers and kernel contexts.
-    # Finite fills must retain their fractional part until after interpolation.
-    expected = np.rint([cval, cval * 0.5, 0.0]).astype(dtype)
-    actual = cndi.map_coordinates(
-        cp.zeros(2, dtype=cp.float64),
-        cp.asarray([[-1.0, -0.5, 0.5]]),
+    # Fills keep their fractional part and nonfinite values until the
+    # interpolated sample is rounded and saturated, as in SciPy.
+    coords = np.asarray([[-1.0, -0.5, 0.5]])
+    kwargs = dict(
         order=1,
         mode="grid-constant",
         cval=cval,
         output=dtype,
         prefilter=False,
+    )
+    expected = scipy_ndi.map_coordinates(np.zeros(2), coords, **kwargs)
+    actual = cndi.map_coordinates(
+        cp.zeros(2, dtype=cp.float64), cp.asarray(coords), **kwargs
     )
     cp.testing.assert_array_equal(actual, expected)
