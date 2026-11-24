@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef CUSLIDE_LIBOPENJPEG_H
-#define CUSLIDE_LIBOPENJPEG_H
+#pragma once
 
 #include <cucim/io/device.h>
 
@@ -33,5 +32,3 @@ bool decode_libopenjpeg(int fd,
                         ColorSpace color_space);
 
 } // namespace cuslide::jpeg2k
-
-#endif // CUSLIDE_LIBOPENJPEG_H

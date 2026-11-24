@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_DEFINES_H
-#define CUCIM_DEFINES_H
+#pragma once
 
 #include "cucim/macros/api_header.h"
 
@@ -66,5 +65,3 @@
 // Check float type size
 #include <climits>
 static_assert(sizeof(float) * CHAR_BIT == 32, "float data type is not 32 bits!");
-
-#endif // CUCIM_DEFINES_H

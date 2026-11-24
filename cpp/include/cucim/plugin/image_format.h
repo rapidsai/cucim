@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_PLUGIN_IMAGE_FORMAT_H
-#define CUCIM_PLUGIN_IMAGE_FORMAT_H
+#pragma once
 
 #include "cucim/filesystem/file_path.h"
 #include "cucim/io/format/image_format.h"
@@ -32,5 +31,3 @@ private:
 };
 
 } // namespace cucim::plugin
-
-#endif // CUCIM_PLUGIN_IMAGE_FORMAT_H

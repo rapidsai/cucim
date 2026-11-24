@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUSLIDE_TYPES_H
-#define CUSLIDE_TYPES_H
+#pragma once
 
 #include <cstdint>
 
@@ -72,5 +71,3 @@ struct AssociatedImageBufferDesc
 
 
 } // namespace cuslide::tiff
-
-#endif // CUSLIDE_TYPES_H

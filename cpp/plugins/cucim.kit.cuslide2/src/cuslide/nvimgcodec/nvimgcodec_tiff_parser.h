@@ -9,6 +9,7 @@
 #include <nvimgcodec.h>
 #endif
 
+#include <mutex>
 #include <string>
 #include <vector>
 #include <memory>
@@ -292,12 +293,7 @@ private:
     void extract_ifd_metadata(IfdInfo& ifd_info);
 
     /**
-     * @brief Extract TIFF tags using file extension heuristics
-     *
-     * Fallback path: infers compression type from file extension for common WSI formats
-     * when TIFF tag metadata is not available from nvImageCodec.
-     *
-     * Populates ifd_info.tiff_tags map with inferred tags (primarily COMPRESSION).
+     * @brief Extract TIFF tags returned by nvImageCodec
      *
      * @param ifd_info IFD to extract TIFF tags for
      */
@@ -376,6 +372,23 @@ public:
     nvimgcodecDecoder_t get_decoder() const { return decoder_; }
 
     /**
+     * @brief Get the decoder to use for an IFD with the given codec
+     *
+     * The default decoder allows all backends, including the CPU-only fallbacks
+     * of nvImageCodec (libtiff, OpenCV). They cannot decode JPEG 2000 in TIFF
+     * (compression 33003, 33005 and 34712), but they accept such a stream and
+     * report success after every tile failed, which gives an all-zero image.
+     * For JPEG 2000, or when nvImageCodec did not return a valid TIFF
+     * Compression tag, use a decoder
+     * without the CPU-only backends. If the nvJPEG2000 or nvTIFF library is
+     * missing, decoding then fails with an error status.
+     *
+     * @param ifd_info Codec and retrieved TIFF tags for the requested IFD
+     * @return nvImageCodec decoder handle
+     */
+    nvimgcodecDecoder_t get_decoder_for(const IfdInfo& ifd_info);
+
+    /**
      * @brief Check if nvImageCodec is available and initialized
      *
      * @return true if available
@@ -410,6 +423,10 @@ private:
 
     nvimgcodecInstance_t instance_;
     nvimgcodecDecoder_t decoder_;
+    nvimgcodecDecoder_t gpu_only_decoder_ = nullptr;  // created on first use
+    bool gpu_only_decoder_created_ = false;
+    bool cpu_only_mode_ = false;
+    std::mutex gpu_only_decoder_mutex_;
     bool initialized_;
     std::string status_message_;
 };

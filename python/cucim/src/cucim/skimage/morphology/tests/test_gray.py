@@ -547,3 +547,22 @@ def test_tuple_as_footprint(function, ndim, odd_only):
     expected = func(img, footprint=footprint_ndarray)
     out = func(img, footprint=footprint_shape)
     testing.assert_array_equal(expected, out)
+
+
+@pytest.mark.parametrize("dtype", [bool, cp.uint8, cp.float32])
+@pytest.mark.parametrize("layout", ["view", "reversed", "partial"])
+def test_white_tophat_overlapping_output(dtype, layout):
+    storage = cp.asarray([0, 0, 1, 0, 0, 0], dtype=dtype)
+    image = storage[:-1]
+    if layout == "view":
+        out = image.view()
+    elif layout == "reversed":
+        out = image[::-1]
+    else:
+        out = storage[1:]
+    original = image.copy()
+    # An isolated bright pixel survives the top hat unchanged. This oracle
+    # does not depend on upstream's handling of overlapping output arrays.
+    actual = morphology.white_tophat(image, (3,), out=out)
+    assert actual is out
+    cp.testing.assert_array_equal(actual, original)

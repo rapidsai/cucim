@@ -8,6 +8,7 @@ include LICENSE-3rdparty.md
 include README.md
 
 include src/cucim/clara/*.so*
+include src/cucim/skimage/*.so*
 
 recursive-include src/cucim *.py *.pyi *.cu *.h *.npy *.txt *.md
 

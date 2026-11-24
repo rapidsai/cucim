@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUSLIDE_TIFF_CONSTANTS_H
-#define CUSLIDE_TIFF_CONSTANTS_H
+#pragma once
 
 #include <cstdint>
 
@@ -51,5 +50,3 @@ constexpr uint16_t PLANARCONFIG_SEPARATE = 2;
 constexpr uint32_t TIFF_ISTILED = 0x00000004;
 
 } // namespace cuslide::tiff
-
-#endif // CUSLIDE_TIFF_CONSTANTS_H
