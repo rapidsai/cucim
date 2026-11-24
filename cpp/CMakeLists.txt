@@ -152,10 +152,12 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             # older libcudacxx, and the include directory searched first is the
             # one that decides whether cuda::mr exists.
             #
-            # CUDA::cudart rather than headers alone because CCCL emits calls
-            # into the runtime (cudaGetErrorString among them) in the
-            # consumer's own objects. Shared rather than the cudart_static
-            # linked privately below, which is hidden inside libcucim.
+            # The CUDA runtime rather than headers alone because CCCL emits
+            # calls into it (cudaGetErrorString among them) in the consumer's
+            # own objects; the copy linked privately below is hidden inside
+            # libcucim. Static, like everything else cuCIM ships: the conda
+            # package ignores cuda-cudart's run_exports, so a plugin that
+            # linked the shared runtime would fail the overlinking check.
             #
             # At build time CCCL instead comes from the include directory added
             # further down, which can be ordered with BEFORE.
@@ -166,7 +168,7 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             # IMPORTED, and with the libcudacxx component that cucim-config
             # asks for it links only CCCL::libcudacxx.
             $<INSTALL_INTERFACE:CCCL::CCCL>
-            $<INSTALL_INTERFACE:CUDA::cudart>
+            $<INSTALL_INTERFACE:CUDA::cudart_static>
         PRIVATE
             CUDA::cudart_static
             deps::abseil
