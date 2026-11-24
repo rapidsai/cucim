@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -63,6 +63,94 @@ def _bincount_histogram_centers(image, source_range):
     return bin_centers
 
 
+_HISTOGRAM_1BYTE_CODE = r"""
+// Histogram of the values of an image of 1-byte integers. ``flip`` is 0x80 for
+// int8 (the bin of the value v is v + 128) and 0 for uint8. Every warp of a
+// block has its own copy of the 256 counts in shared memory (fewer conflicts of
+// the atomic additions); the copies are added to the global histogram.
+extern "C" __global__ void histogram_1byte(
+        const unsigned char* image, const long long n, const int flip,
+        unsigned int* hist)
+{
+    __shared__ unsigned int counts[8][256];
+    const int tid = threadIdx.x;
+    for (int i = tid; i < 8 * 256; i += blockDim.x) {
+        (&counts[0][0])[i] = 0;
+    }
+    __syncthreads();
+
+    unsigned int* mine = counts[(tid >> 5) & 7];
+    const long long stride = static_cast<long long>(gridDim.x) * blockDim.x;
+    long long i = static_cast<long long>(blockIdx.x) * blockDim.x + tid;
+    // 4 bytes per load where the image is aligned
+    const long long n4 = n >> 2;
+    const unsigned int* image4 = reinterpret_cast<const unsigned int*>(image);
+    if ((reinterpret_cast<unsigned long long>(image) & 3) == 0) {
+        for (long long j = i; j < n4; j += stride) {
+            const unsigned int word = image4[j];
+            atomicAdd(&mine[(word & 0xFF) ^ flip], 1u);
+            atomicAdd(&mine[((word >> 8) & 0xFF) ^ flip], 1u);
+            atomicAdd(&mine[((word >> 16) & 0xFF) ^ flip], 1u);
+            atomicAdd(&mine[(word >> 24) ^ flip], 1u);
+        }
+        for (long long j = (n4 << 2) + i; j < n; j += stride) {
+            atomicAdd(&mine[image[j] ^ flip], 1u);
+        }
+    } else {
+        for (long long j = i; j < n; j += stride) {
+            atomicAdd(&mine[image[j] ^ flip], 1u);
+        }
+    }
+    __syncthreads();
+
+    for (int b = tid; b < 256; b += blockDim.x) {
+        unsigned int total = 0;
+        for (int w = 0; w < 8; ++w) {
+            total += counts[w][b];
+        }
+        if (total) {
+            atomicAdd(&hist[b], total);
+        }
+    }
+}
+"""
+
+
+def _histogram_1byte(image, source_range):
+    """Histogram of a flat image of ``uint8`` or ``int8`` values in one pass.
+
+    Returns the same ``hist`` and ``bin_centers`` as `_bincount_histogram`
+    (``int64`` arrays) without the passes that find the minimum and maximum of
+    the image: the 256 counts are computed for the whole range of the type and
+    the range of the image is found from them.
+    """
+    flip = 0x80 if image.dtype == np.int8 else 0
+    offset = -128 if flip else 0
+    hist = cp.zeros(256, dtype=cp.uint32)
+    kernel = _get_histogram_1byte_kernel()
+    threads = 256
+    n_sm = cp.cuda.Device().attributes["MultiProcessorCount"]
+    blocks = min(-(-image.size // (threads * 16)), 16 * n_sm)
+    kernel(
+        (max(blocks, 1),),
+        (threads,),
+        (image, np.int64(image.size), np.int32(flip), hist),
+    )
+    counts = cp.asnumpy(hist)  # synchronize
+    if source_range == "image":
+        nonzero = np.flatnonzero(counts)
+        first, last = int(nonzero[0]), int(nonzero[-1])
+    else:  # the range of the type
+        first, last = 0, 255
+    bin_centers = cp.arange(first + offset, last + offset + 1)
+    return cp.asarray(counts[first : last + 1].astype(np.int64)), bin_centers
+
+
+@cp.memoize(for_each_device=True)
+def _get_histogram_1byte_kernel():
+    return cp.RawKernel(_HISTOGRAM_1BYTE_CODE, "histogram_1byte")
+
+
 def _bincount_histogram(image, source_range, bin_centers=None):
     """
     Efficient histogram calculation for an image of integers.
@@ -86,6 +174,18 @@ def _bincount_histogram(image, source_range, bin_centers=None):
     bin_centers : array
         The values at the center of the bins.
     """
+    if (
+        bin_centers is None
+        and image.dtype in (np.uint8, np.int8)
+        and image.ndim == 1
+        and image.flags.c_contiguous
+        and image.size > 0
+    ):
+        if source_range not in ["image", "dtype"]:
+            raise ValueError(
+                f"Incorrect value for `source_range` argument: {source_range}"
+            )
+        return _histogram_1byte(image, source_range)
     if bin_centers is None:
         bin_centers = _bincount_histogram_centers(image, source_range)
     image_min, image_max = bin_centers[0].item(), bin_centers[-1].item()
