@@ -1,6 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+from .batched_photometric import (
+    batched_color_jitter,
+    batched_photometric_augment,
+)
 from .jitter import color_jitter, rand_color_jitter
 from .stain_normalizer import (
     absorbance_to_image,
@@ -10,6 +14,8 @@ from .stain_normalizer import (
 )
 
 __all__ = [
+    "batched_color_jitter",
+    "batched_photometric_augment",
     "color_jitter",
     "rand_color_jitter",
     "absorbance_to_image",
