@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef CUSLIDE_JPEG2K_COLOR_CONVERSION_H
-#define CUSLIDE_JPEG2K_COLOR_CONVERSION_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -19,5 +18,3 @@ void fast_sycc444_to_rgb(opj_image_t* image, uint8_t* dest, size_t dest_nbytes);
 void fast_image_to_rgb(opj_image_t* image, uint8_t* dest, size_t dest_nbytes);
 
 } // namespace cuslide::jpeg2k
-
-#endif // CUSLIDE_JPEG2K_COLOR_CONVERSION_H

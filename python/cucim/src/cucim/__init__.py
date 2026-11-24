@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -20,6 +20,9 @@ skimage
     Functions from scikit-image.
 
 """
+
+import ctypes
+from pathlib import Path
 
 _is_cupy_available = False
 _is_clara_available = False
@@ -60,7 +63,23 @@ if _is_cupy_available:
     except ImportError:
         pass
 
+def _preload_bundled_libcucim():
+    """Load the wheel's libcucim before any other cuCIM native modules."""
+    major_version = __version__.split(".", 1)[0]
+    library = Path(__file__).resolve().parent / "clara" / f"libcucim.so.{major_version}"
+    if not library.is_file():
+        # Conda and source installs can resolve libcucim when importing _cucim.
+        return None
+    try:
+        # Later DT_NEEDED entries can resolve to this SONAME without exporting
+        # the library's symbols into the global namespace.
+        return ctypes.CDLL(str(library), mode=ctypes.RTLD_LOCAL)
+    except OSError as exc:
+        raise ImportError(f"Could not load {library}") from exc
+
+
 try:
+    _libcucim = _preload_bundled_libcucim()
     from .clara import CuImage, cli
 
     _is_clara_available = True

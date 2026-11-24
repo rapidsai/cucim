@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_FILE_HANDLE_H
-#define CUCIM_FILE_HANDLE_H
+#pragma once
 
 
 #include "../macros/defines.h"
@@ -92,5 +91,3 @@ struct EXPORT_VISIBLE CuCIMFileHandle : public std::enable_shared_from_this<CuCI
 #else
 #    error "This platform is not supported!"
 #endif
-
-#endif // CUCIM_FILE_HANDLE_H

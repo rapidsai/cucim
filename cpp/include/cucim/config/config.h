@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_CONFIG_CONFIG_H
-#define CUCIM_CONFIG_CONFIG_H
+#pragma once
 
 #include "cucim/macros/api_header.h"
 #include "cucim/cache/cache_type.h"
@@ -52,5 +51,3 @@ private:
 };
 
 } // namespace cucim::config
-
-#endif // CUCIM_CONFIG_CONFIG_H

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -322,8 +322,11 @@ def _label2rgb_overlay(
             sequential_labels,
         )
 
-    if bg_color is None:
-        bg_color = cp.zeros((0,) * 3, dtype=colors.dtype)
+    # If no background color was specified, the background is not painted
+    remove_background = bg_color is None
+    if remove_background:
+        # placeholder (for image=None the background is left as zeros)
+        bg_color = cp.zeros((3,), dtype=colors.dtype)
     else:
         bg_color = cp.asarray(_rgb_vector(bg_color), dtype=colors.dtype)
     num_colors = colors.shape[0]
@@ -333,7 +336,6 @@ def _label2rgb_overlay(
         _colorize_labels(label, colors, bg_label, bg_color, num_colors, out)
     else:
         out = cp.zeros(label.shape + (3,), dtype=float_dtype)
-        remove_background = cp.any(label == bg_label) and bg_color is None
         _colorize_labels_and_blend(
             label,
             image,

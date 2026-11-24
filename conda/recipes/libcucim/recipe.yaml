@@ -59,7 +59,7 @@ build:
       cp -P -r install/include/* "$PREFIX/include/" || true
 
       # Build plugins
-      for plugin_name in cuslide cumed; do
+      for plugin_name in cuslide cuslide2 cumed; do
           echo "Building cucim.kit.${plugin_name} ..."
           ./run build_local ${plugin_name} "${CUCIM_BUILD_TYPE}" "${PREFIX}"
           mkdir -p "$PREFIX/bin" "$PREFIX/lib" "$PREFIX/include"

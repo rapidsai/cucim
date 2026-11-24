@@ -1,15 +1,14 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUSLIDE2_NVIMGCODEC_PROCESSOR_H
-#define CUSLIDE2_NVIMGCODEC_PROCESSOR_H
+#pragma once
 
 #ifdef CUCIM_HAS_NVIMGCODEC
 
 #include <atomic>
-#include <queue>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -150,9 +149,6 @@ private:
     // nvImageCodec thread safety (nvImageCodec is not thread-safe)
     std::mutex nvimgcodec_mutex_;
 
-    // Request queue
-    std::mutex request_mutex_;
-
     // Output buffer provider (set by ThreadBatchDataLoader after construction)
     OutputBufferProvider output_buffer_provider_;
 
@@ -163,12 +159,16 @@ private:
     // Decode batch tracking
     uint64_t next_decode_index_ = 0;
 
-    // Asynchronous batch decode state (FIFO queue)
-    std::queue<cuslide2::nvimgcodec::BatchDecodeState> pending_batches_;
+    // The loader submits the next output batch after consuming the previous
+    // one. An output batch can contain multiple nvImageCodec decode calls.
+    struct PendingBatch
+    {
+        std::vector<cuslide2::nvimgcodec::BatchDecodeState> chunks;
+        std::exception_ptr submission_error;
+    };
+    PendingBatch pending_batch_;
 };
 
 } // namespace cuslide2::loader
 
 #endif // CUCIM_HAS_NVIMGCODEC
-
-#endif // CUSLIDE2_NVIMGCODEC_PROCESSOR_H

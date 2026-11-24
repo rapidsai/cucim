@@ -1,10 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CUCIM_DLPACK_H
-#define CUCIM_DLPACK_H
+#pragma once
 
 #include "dlpack/dlpack.h"
 #include <fmt/format.h>
@@ -140,5 +139,3 @@ private:
 };
 
 } // namespace cucim::memory
-
-#endif // CUCIM_DLPACK_H

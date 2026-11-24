@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef CUSLIDE_LIBJPEG_TURBO_H
-#define CUSLIDE_LIBJPEG_TURBO_H
+#pragma once
 
 #include <cucim/io/device.h>
 
@@ -50,6 +49,3 @@ int jpeg_decode_buffer(const void* handle,
 bool get_dimension(const void* image_buf, uint64_t offset, uint64_t size, int* out_width, int* out_height);
 
 } // namespace cuslide::jpeg
-
-
-#endif // CUSLIDE_LIBJPEG_TURBO_H
