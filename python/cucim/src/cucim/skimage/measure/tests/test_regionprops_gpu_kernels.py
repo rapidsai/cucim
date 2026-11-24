@@ -1919,6 +1919,26 @@ def test_intensity_std_wide_integer_square_sum(dtype, sample_std):
     assert_allclose(result["intensity_std"], [expected], rtol=1e-12)
 
 
+@pytest.mark.parametrize(
+    "values",
+    [
+        [np.inf, np.inf],
+        [-np.inf, -np.inf],
+        [1, np.inf],
+        [-np.inf, 1],
+        [np.finfo(np.float64).max, np.inf],
+    ],
+)
+def test_intensity_extrema_float64_infinities(values):
+    image = cp.asarray([values], dtype=cp.float64)
+    labels = cp.ones(image.shape, dtype=cp.uint8)
+    result = regionprops_intensity_min_max(
+        labels, image, max_label=2, compute_min=True, compute_max=True
+    )
+    assert_array_equal(result["intensity_min"], [np.min(values), np.inf])
+    assert_array_equal(result["intensity_max"], [np.max(values), -np.inf])
+
+
 def test_filled_erosion_kernel_reused_across_label_counts(monkeypatch):
     from cucim.skimage._vendored import _ndimage_filters as filters
 

@@ -281,6 +281,8 @@ def get_intensity_measure_kernel(
         if min_max_dtype is None:
             raise ValueError("min_max_dtype must be specified")
         range_min, range_max = _get_intensity_range(min_max_dtype)
+        if min_max_dtype == cp.float64:
+            range_min, range_max = "-CUDART_INF", "CUDART_INF"
         min_max_pre, min_max_op, min_max_post = _get_intensity_min_max_code(
             min_max_dtype=min_max_dtype,
             c_min_max_type=c_min_max_type,
@@ -629,6 +631,9 @@ def regionprops_intensity_min_max(
     image_dtype = intensity_image.dtype
     _, _, min_max_dtype, _ = _get_intensity_img_kernel_dtypes(image_dtype)
     range_min, range_max = _get_intensity_range(image_dtype)
+    if min_max_dtype == cp.float64:
+        # Empty rows retain the natural min/max reduction identities.
+        range_min, range_max = -math.inf, math.inf
     out_shape = (
         (num_counts,) if num_channels == 1 else (num_counts, num_channels)
     )
