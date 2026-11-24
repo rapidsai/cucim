@@ -39,6 +39,7 @@ from ._regionprops_gpu_convex import (
 from ._regionprops_gpu_intensity_kernels import (
     intensity_deps,
     regionprops_intensity_mean,
+    regionprops_intensity_median,
     regionprops_intensity_min_max,
     regionprops_intensity_std,
 )
@@ -82,6 +83,7 @@ __all__ = [
     "regionprops_inertia_tensor",
     "regionprops_inertia_tensor_eigvals",
     "regionprops_intensity_mean",
+    "regionprops_intensity_median",
     "regionprops_intensity_min_max",
     "regionprops_intensity_std",
     "regionprops_moments",
@@ -110,6 +112,7 @@ PROPS_GPU = copy(PROPS)
 # extra properties not currently in scikit-image
 PROPS_GPU_EXTRA = {
     "axis_lengths": "axis_lengths",
+    "intensity_median": "intensity_median",
     "inertia_tensor_eigenvectors": "inertia_tensor_eigenvectors",
     "num_pixels_filled": "num_pixels_filled",
     # a few extra parameters as in ITK
@@ -239,6 +242,7 @@ def regionprops_dict(
     max_label=None,
     pixels_per_thread=16,
     robust_perimeter=True,
+    disable_nan_check=False,
     to_table=False,
     table_separator="-",
     table_on_host=False,
@@ -299,6 +303,11 @@ def regionprops_dict(
         overhead so can optionally be disabled. This parameter affects the
         following regionprops: {"perimeter", "perimeter_crofton",
         "euler_number"}.
+    disable_nan_check : bool, optional
+        If False, detect NaNs in intensity values and ensure that
+        ``intensity_median`` is NaN for every affected region and channel.
+        Set to True to skip this additional check. This only affects the
+        batch-computed ``intensity_median`` property.
     to_table : bool, optional
         If true, split up vector/matrix properties into separate keys for
         the individual elements to match the output format of
@@ -318,13 +327,6 @@ def regionprops_dict(
     valid_names = properties & supported_properties
     invalid_names = set(properties) - valid_names
     valid_names = list(valid_names)
-
-    # TODO(grelee): implement batch kernel for efficient intensity median
-    # computation.
-    if "intensity_median" in properties:
-        raise NotImplementedError(
-            "Batch computation of 'intensity_median' is not yet supported"
-        )
 
     # Use only the modern names internally, but keep list of mappings back to
     # any deprecated names in restore_legacy_names and use that at the end to
@@ -399,7 +401,7 @@ def regionprops_dict(
     if label_image.dtype.kind == "i":
         label_image = cp.maximum(label_image, 0)
     if max_label is None:
-        max_label = int(label_image.max())
+        max_label = int(label_image.max()) if label_image.size else 0
     label_dtype = _get_min_integer_dtype(max_label, signed=False)
     # For performance, shrink label's data type to the minimum possible
     # unsigned integer type.
@@ -463,6 +465,15 @@ def regionprops_dict(
                 mean_dtype=cp.float32,
                 **perf_kwargs,
                 props_dict=out,
+            )
+
+        if "intensity_median" in required_props:
+            regionprops_intensity_median(
+                label_image,
+                intensity_image,
+                max_label=max_label,
+                props_dict=out,
+                disable_nan_check=disable_nan_check,
             )
 
         compute_min = "intensity_min" in required_props

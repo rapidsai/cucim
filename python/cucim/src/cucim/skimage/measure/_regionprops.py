@@ -128,7 +128,7 @@ COL_DTYPES = {
     "inertia_tensor_eigvals": float,
     "intensity_max": float,
     "intensity_mean": float,
-    # 'intensity_median': float,  # TODO: uncomment once supported
+    "intensity_median": float,
     "intensity_min": float,
     "intensity_std": float,
     "label": int,
@@ -1113,6 +1113,7 @@ def regionprops_table(
     batch_processing=True,
     to_table=True,
     copy_output_to_host=False,
+    disable_nan_check=False,
 ):
     """Compute region properties and return them as a pandas-compatible table.
 
@@ -1190,6 +1191,12 @@ def regionprops_table(
         to the host. This is desired if planning to do host-side analysis of
         the properties. Leave this False if further handling of the outputs is
         planned on the GPU.
+    disable_nan_check : bool, optional
+        If False, the batch segmented sort checks for NaNs and returns NaN
+        for each affected region and channel. Set to True only when the
+        intensity image contains no NaNs. The per-region median used as a
+        fallback still propagates NaNs. Ignored when
+        ``batch_processing=False``.
 
     Returns
     -------
@@ -1221,6 +1228,10 @@ def regionprops_table(
     "image" (the image of a region varies in size depending on the region
     size), an object array will be used, with the corresponding property name
     as the key.
+
+    With ``batch_processing=True``, the ``intensity_median`` dtype is
+    ``cupy.promote_types(intensity_image.dtype, cupy.float32)``. A
+    real-valued median of zero is returned as ``+0.0``.
 
     References
     ----------
@@ -1303,6 +1314,7 @@ def regionprops_table(
             to_table=to_table,
             table_separator=separator,
             table_on_host=copy_output_to_host,
+            disable_nan_check=disable_nan_check,
         )
         if copy_output_to_host and not to_table:
             for key, value in table.items():

@@ -30,6 +30,9 @@ else
     DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends libopenslide0
 fi
 
+# Require the wheel's native median backend so that its dispatch tests run.
+python -c 'import cucim.skimage._cucim_skimage_cpp_ext'
+
 python -m pytest \
   --junitxml="${RAPIDS_TESTS_DIR}/junit-cucim.xml" \
   --numprocesses=8 \

@@ -430,6 +430,7 @@ build_local() {
         rm -rf "${TOP}"/cpp/plugins/cucim.kit.cuslide2/install
         rm -rf "${TOP}"/python/build-*
         rm -rf "${TOP}"/python/install
+        rm -f "${TOP}"/python/cucim/src/cucim/skimage/_cucim_skimage_*.so
     fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "libcucim" ]; then
@@ -449,9 +450,6 @@ build_local() {
     fi
 
     if [ "$subcommand" = "all" ] || [ "$subcommand" = "cucim" ]; then
-        # Remove stale compiled cucim.skimage extension modules; the install
-        # step of the build puts the current ones into the cucim.skimage package
-        rm -f "${TOP}"/python/cucim/src/cucim/skimage/_cucim_skimage_*.so
         build_local_cucim_ "${TOP}"/python "${build_type}" ${build_type_str} "${prefix}"
     fi
 

@@ -1589,9 +1589,6 @@ def test_all_documented_items_in_col_dtypes():
         for property_line in property_lines
     }
 
-    # TODO(grelee): remove next line once `intensity_median` is fully enabled
-    property_names.remove("intensity_median")
-
     column_keys = set(COL_DTYPES.keys())
     assert column_keys == property_names
 
