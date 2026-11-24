@@ -170,6 +170,15 @@ def resize(
     For a similar function that preserves the dtype of the input, consider
     `cucim.scipy.ndimage.zoom`.
 
+    For spline orders above 1, 'constant' and 'edge' use exact boundary
+    extension instead of SciPy's prepadding. Short axes, complex input, and
+    nonfinite constant fill values use prepadding. An axis is short when it
+    has fewer samples than the spline order plus one. With exact extension
+    and 'constant', NaN or infinite image values also make samples outside
+    the image nonfinite out to where the boundary terms underflow (about
+    50-100 samples in float32 and 400-900 in float64, depending on the
+    order). SciPy's prepadding limits them to about 14 samples.
+
     Examples
     --------
     >>> from skimage import data
@@ -521,6 +530,15 @@ def rotate(
     the array. Unlike the scikit-image implementation, more than one additional
     axis may be present on the array.
 
+    For spline orders above 1, 'constant' and 'edge' use exact boundary
+    extension instead of SciPy's prepadding. Short axes, complex input, and
+    nonfinite constant fill values use prepadding. An axis is short when it
+    has fewer samples than the spline order plus one. With exact extension
+    and 'constant', NaN or infinite image values also make samples outside
+    the image nonfinite out to where the boundary terms underflow (about
+    50-100 samples in float32 and 400-900 in float64, depending on the
+    order). SciPy's prepadding limits them to about 14 samples.
+
     Examples
     --------
     >>> from skimage import data
@@ -610,8 +628,9 @@ def rotate(
 
     float_dtype = cp.promote_types(image.real.dtype, cp.float32)
 
-    # transfer the coordinate transform to the GPU
-    affine_params = cp.asarray(affine_params, dtype=float_dtype)
+    # Keep the coordinate transform on the host; affine_transform inspects it
+    # there and uploads it once.
+    affine_params = np.asarray(affine_params, dtype=float_dtype)
 
     return _ndimage_affine(
         image,
@@ -1052,6 +1071,15 @@ def warp(
       `ProjectiveTransform` and `order` in [0, 3] this function uses the
       underlying transformation matrix to warp the image with a much faster
       routine.
+
+    For spline orders above 1, 'constant' and 'edge' use exact boundary
+    extension instead of SciPy's prepadding. Short axes, complex input, and
+    nonfinite constant fill values use prepadding. An axis is short when it
+    has fewer samples than the spline order plus one. With exact extension
+    and 'constant', NaN or infinite image values also make samples outside
+    the image nonfinite out to where the boundary terms underflow (about
+    50-100 samples in float32 and 400-900 in float64, depending on the
+    order). SciPy's prepadding limits them to about 14 samples.
 
     Examples
     --------

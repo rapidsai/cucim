@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -308,3 +308,16 @@ def test_bool_array_input():
     assert int(cp.all(profile_b[:radius] == 1))
 
     assert int(cp.all(profile_b == profile_u8))
+
+
+def test_integer_image_rounds_and_saturates():
+    # profile_line interpolates integer images into their own dtype. As in
+    # scikit-image (via SciPy), ties round away from zero and spline
+    # overshoot saturates at the type's limits.
+    img = cp.zeros((8, 8), dtype=cp.uint8)
+    img[:, 4:] = 255
+    img[2, :] = cp.arange(8, dtype=cp.uint8) * 3 + 2
+    prof = profile_line(img, (2, 0.5), (2, 6.5), order=1, mode="reflect")
+    assert_array_equal(prof, [4, 7, 10, 13, 16, 19, 22])
+    prof = profile_line(img, (1, 1), (6, 6), order=3, mode="reflect")
+    assert_array_equal(prof, [0, 7, 6, 0, 142, 255, 255, 250, 255])
