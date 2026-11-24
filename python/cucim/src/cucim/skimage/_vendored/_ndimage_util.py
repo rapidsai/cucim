@@ -6,6 +6,7 @@
 """A vendored subset of cupyx.scipy.ndimage._util"""
 
 import operator
+import threading
 import warnings
 import weakref
 from collections import deque
@@ -23,15 +24,21 @@ _cache_array_streams = {}
 # ids of live cache arrays known to contain no zero entries
 _nonzero_cache_array_ids = set()
 _retired_cache_allocations = {}
+# A finalizer can reenter cleanup on a thread that already holds this lock.
+_retired_cache_lock = threading.RLock()
 
 
 def _release_completed_cache_allocations(device_id):
     """Reclaim evicted storage after all queued consumers have finished."""
-    allocations = _retired_cache_allocations.get(device_id)
-    # Check only the oldest allocation while consumers are busy, rather than
-    # rescanning every pending entry on each miss in a long asynchronous batch.
-    while allocations and all(event.done for event in allocations[0][1]):
-        allocations.popleft()
+    with _retired_cache_lock:
+        allocations = _retired_cache_allocations.get(device_id)
+        while allocations:
+            entry = allocations[0]
+            if not all(event.done for event in entry[1]):
+                break
+            # A nested cleanup may already have removed this entry.
+            if allocations and allocations[0] is entry:
+                allocations.popleft()
 
 
 def _retire_cache_allocation(array_id, device_id, memory, streams):
@@ -45,9 +52,10 @@ def _retire_cache_allocation(array_id, device_id, memory, streams):
             event = cupy.cuda.Event(disable_timing=True)
             event.record(stream)
             events.append(event)
-        _retired_cache_allocations.setdefault(device_id, deque()).append(
-            (memory, events)
-        )
+        with _retired_cache_lock:
+            _retired_cache_allocations.setdefault(device_id, deque()).append(
+                (memory, events)
+            )
         _release_completed_cache_allocations(device_id)
 
 

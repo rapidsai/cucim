@@ -1,8 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
+from types import SimpleNamespace
 
 import cupy as cp
 import numpy as np
@@ -15,6 +17,26 @@ from cucim.skimage._vendored import (
     _ndimage_util as util,
 )
 from cucim.skimage.transform import resize
+
+
+def test_reentrant_cache_cleanup_keeps_pending_allocation(monkeypatch):
+    device = 0
+
+    class ReentrantEvent:
+        queried = False
+
+        @property
+        def done(self):
+            if not self.queried:
+                self.queried = True
+                util._release_completed_cache_allocations(device)
+            return True
+
+    busy = (object(), [SimpleNamespace(done=False)])
+    retired = deque([(object(), [ReentrantEvent()]), busy])
+    monkeypatch.setattr(util, "_retired_cache_allocations", {device: retired})
+    util._release_completed_cache_allocations(device)
+    assert list(retired) == [busy]
 
 
 @pytest.fixture
