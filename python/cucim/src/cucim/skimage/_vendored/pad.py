@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """version of cupy.pad that dispatches to elementwise kernels for some boundary
@@ -692,10 +692,10 @@ def pad(array, pad_width, mode="constant", **kwargs):
         order = "F" if array.flags.fnc else "C"  # Fortran and not also C-order
         padded = cupy.empty(new_shape, dtype=array.dtype, order=order)
 
-        (int_type, np_type) = (
-            ("int", cupy.int32)
-            if padded.size < (1 << 31)
-            else ("ptrdiff_t", cupy.intp)
+        # The kernel indexes the output in elements and the contiguous
+        # input in bytes.
+        int_type = (
+            "int" if max(padded.size, array.nbytes) < (1 << 31) else "ptrdiff_t"
         )
         kern = _get_pad_kernel(
             pad_starts=tuple(p[0] for p in pad_width),

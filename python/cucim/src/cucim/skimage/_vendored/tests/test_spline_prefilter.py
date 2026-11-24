@@ -1,19 +1,58 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import math
+from types import SimpleNamespace
+
 import cupy as cp
 import numpy as np
 import pytest
 from cupyx.scipy import ndimage as cupyx_ndi
-from scipy import __version__ as scipy_version
-from scipy import ndimage as scipy_ndi
+from scipy import __version__ as scipy_version, ndimage as scipy_ndi
 
-from cucim.skimage._vendored import _ndimage_interpolation as interpolation
-
+from cucim.skimage._vendored import (
+    _ndimage_interpolation as interpolation,
+    pad_elementwise,
+)
 
 # Padding after which a mirror-initialized prefilter matches the infinite
 # constant extension to well below float64 rounding (|z|**(2 * 64) ~ 1e-47).
 _EXACT_REFERENCE_PAD = 64
+
+
+@pytest.mark.parametrize(
+    "length, index_type", [(2**27 - 1, "int"), (2**27, "ptrdiff_t")]
+)
+def test_nearest_spline_padding_index_type(monkeypatch, length, index_type):
+    # Model a contiguous complex64 input on either side of 2 GiB without
+    # allocating the input or the padded output.
+    dtype = np.dtype("complex64")
+    shape = (2, length)
+    size = math.prod(shape)
+    image = SimpleNamespace(
+        ndim=len(shape),
+        shape=shape,
+        size=size,
+        nbytes=size * dtype.itemsize,
+        dtype=dtype,
+        flags=SimpleNamespace(forc=True, fnc=False),
+    )
+    padded = SimpleNamespace(size=2 * (length + 24))
+    monkeypatch.setattr(cp, "empty", lambda *args, **kwargs: padded)
+
+    def get_kernel(*, pad_starts, mode, int_type, order):
+        assert (pad_starts, mode, int_type, order) == (
+            (0, 12),
+            "edge",
+            index_type,
+            "C",
+        )
+        return lambda *args, **kwargs: None
+
+    monkeypatch.setattr(pad_elementwise, "_get_pad_kernel", get_kernel)
+    assert interpolation._prepad_for_spline_filter(
+        image, "nearest", 0, batch_axes=(0,)
+    ) == (padded, 12)
 
 
 def _spline_reference(image, order, *, output, mode, axis=None):
