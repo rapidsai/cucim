@@ -147,17 +147,17 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             $<BUILD_INTERFACE:deps::fmt>
             $<INSTALL_INTERFACE:cucim::fmt-header-only>
             # <cucim/memory/device_resources.h> is public and exposes cuda::mr,
-            # so an installed consumer compiling against it needs CCCL and the
-            # CUDA runtime. CCCL is listed first: the toolkit carries its own
-            # older libcudacxx, and the include directory searched first is the
-            # one that decides whether cuda::mr exists.
+            # so a consumer compiling against it needs CCCL and the CUDA
+            # runtime. CCCL is listed first: the toolkit carries its own older
+            # libcudacxx, and the include directory searched first is the one
+            # that decides whether cuda::mr exists.
             #
             # The CUDA runtime rather than headers alone because CCCL emits
             # calls into it (cudaGetErrorString among them) in the consumer's
-            # own objects; the copy linked privately below is hidden inside
-            # libcucim. Static, like everything else cuCIM ships: the conda
-            # package ignores cuda-cudart's run_exports, so a plugin that
-            # linked the shared runtime would fail the overlinking check.
+            # own objects, whether it uses the build tree or the install tree.
+            # Static, like everything else cuCIM ships: the conda package
+            # ignores cuda-cudart's run_exports, so a plugin that linked the
+            # shared runtime would fail the overlinking check.
             #
             # At build time CCCL instead comes from the include directory added
             # further down, which can be ordered with BEFORE.
@@ -168,9 +168,8 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             # IMPORTED, and with the libcudacxx component that cucim-config
             # asks for it links only CCCL::libcudacxx.
             $<INSTALL_INTERFACE:CCCL::CCCL>
-            $<INSTALL_INTERFACE:CUDA::cudart_static>
-        PRIVATE
             CUDA::cudart_static
+        PRIVATE
             deps::abseil
             deps::gds
             deps::libcuckoo

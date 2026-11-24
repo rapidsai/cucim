@@ -111,7 +111,8 @@ EXPORT_VISIBLE bool move_raster_from_host(void** target,
 EXPORT_VISIBLE bool move_raster_from_device(void** target,
                                             size_t size,
                                             const cucim::io::Device& dst_device,
-                                            DeviceResources& resources)
+                                            DeviceResources& resources,
+                                            std::size_t alignment)
 {
     switch (dst_device.type())
     {
@@ -135,7 +136,7 @@ EXPORT_VISIBLE bool move_raster_from_device(void** target,
             cucim_free(host_mem);
             throw std::bad_alloc();
         }
-        resources.deallocate(cuda_mem, size);
+        resources.deallocate(cuda_mem, size, alignment);
         *target = host_mem;
         break;
     }
@@ -163,9 +164,14 @@ namespace
 // The same reasoning applies in the other direction: a buffer allocated inside
 // a plugin came from a raw cudaMalloc, so returning it to a caller's pool would
 // corrupt that pool.
+//
+// Borrowed rather than owned: the resource is stateless, and owning it would
+// cost a heap allocation per call, including the no-op moves where the raster
+// is already on the requested device.
 DeviceResources cuda_malloc_resources()
 {
-    return DeviceResources{ any_device_resource{ CudaMemoryResource{} } };
+    static CudaMemoryResource backend;
+    return DeviceResources{ device_resource_ref{ backend } };
 }
 
 } // namespace

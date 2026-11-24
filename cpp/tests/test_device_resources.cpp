@@ -51,6 +51,8 @@ public:
         int deallocate_calls = 0;
         int instances_created = 0;
         std::size_t last_alignment = 0;
+        /// Stream of the last stream-ordered call, allocation or release.
+        cudaStream_t last_stream = nullptr;
         bool size_matched_on_free = true;
         bool saw_foreign_pointer = false;
         bool freed_through_a_different_instance = false;
@@ -121,13 +123,15 @@ public:
         ::operator delete(ptr);
     }
 
-    void* allocate(::cuda::stream_ref, std::size_t bytes, std::size_t alignment)
+    void* allocate(::cuda::stream_ref stream, std::size_t bytes, std::size_t alignment)
     {
+        state_->last_stream = stream.get();
         return allocate_sync(bytes, alignment);
     }
 
-    void deallocate(::cuda::stream_ref, void* ptr, std::size_t bytes, std::size_t alignment)
+    void deallocate(::cuda::stream_ref stream, void* ptr, std::size_t bytes, std::size_t alignment)
     {
+        state_->last_stream = stream.get();
         deallocate_sync(ptr, bytes, alignment);
     }
 
@@ -418,20 +422,57 @@ TEST_CASE("DeviceResources tracks the stream its memory is ordered on", "[test_d
     DeviceResources resources{ any_device_resource{ TrackingResource{ state } } };
     REQUIRE(resources.stream() == ::cuda::stream_ref{ cucim::memory::kDefaultStream });
 
-    // Allocating on a stream rebinds the handle, so that a later deallocate()
-    // through the same handle is ordered after the work that used the block
-    // rather than against whatever stream the handle started on.
-    const auto other = fake_stream(0x1000);
-    void* ptr = resources.allocate(other, 512);
-    REQUIRE(resources.stream() == other);
+    SECTION("the stream-taking overloads do not rebind the handle")
+    {
+        // A buffer allocated on A and still in use there must not have its
+        // release moved to B by a later, unrelated allocation on B.
+        const auto a = fake_stream(0x1000);
+        const auto b = fake_stream(0x3000);
+        void* on_a = resources.allocate(a, 512);
+        void* on_b = resources.allocate(b, 512);
+        REQUIRE(resources.stream() == ::cuda::stream_ref{ cucim::memory::kDefaultStream });
 
-    resources.deallocate(ptr, 512);
-    REQUIRE(state.outstanding.empty());
+        resources.deallocate(a, on_a, 512);
+        REQUIRE(state.last_stream == a.get());
+        resources.deallocate(b, on_b, 512);
+        REQUIRE(state.last_stream == b.get());
+        REQUIRE(resources.stream() == ::cuda::stream_ref{ cucim::memory::kDefaultStream });
+        REQUIRE(state.outstanding.empty());
+    }
+
+    SECTION("with_stream binds a handle sharing the resource to another stream")
+    {
+        const auto other = fake_stream(0x1000);
+        DeviceResources on_other = resources.with_stream(other);
+        REQUIRE(on_other.stream() == other);
+        REQUIRE(on_other.resource() == resources.resource());
+        REQUIRE(resources.stream() == ::cuda::stream_ref{ cucim::memory::kDefaultStream });
+
+        void* ptr = on_other.allocate(512);
+        REQUIRE(state.last_stream == other.get());
+        on_other.deallocate(ptr, 512);
+        REQUIRE(state.last_stream == other.get());
+        REQUIRE(state.instances_created == 1);
+        REQUIRE_FALSE(state.freed_through_a_different_instance);
+        REQUIRE(state.outstanding.empty());
+    }
 
     SECTION("a handle can be constructed on a specific stream")
     {
         const auto initial = fake_stream(0x2000);
         DeviceResources on_stream{ any_device_resource{ TrackingResource{ state } }, initial };
         REQUIRE(on_stream.stream() == initial);
+    }
+}
+
+TEST_CASE("CudaMemoryResource rejects alignments cudaMalloc cannot honor", "[test_device_resources.cpp]")
+{
+    // Rejected before cudaMalloc is reached, so no device is needed.
+    CudaMemoryResource resource;
+    for (std::size_t alignment : { std::size_t{ 0 }, std::size_t{ 3 }, std::size_t{ 512 }, std::size_t{ 4096 } })
+    {
+        CAPTURE(alignment);
+        REQUIRE_THROWS_AS(resource.allocate_sync(16, alignment), std::invalid_argument);
+        REQUIRE_THROWS_AS(resource.allocate(fake_stream(0x1000), 16, alignment), std::invalid_argument);
     }
 }
