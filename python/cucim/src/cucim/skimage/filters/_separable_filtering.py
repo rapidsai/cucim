@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -159,7 +159,7 @@ _dtype_char_to_c_types = {
     "d": "double",
     "F": "complex<float>",
     "D": "complex<double>",
-    "?": "char",
+    "?": "bool",
     "b": "char",
     "h": "short",
     "i": "int",
@@ -706,7 +706,7 @@ def _get_code_stage1_shared_memory_load(ndim, axis, mode, cval):
         return _get_code_stage1_shared_memory_load_3d(ndim, axis, mode, cval)
 
 
-def _get_code_stage2_convolve_2d(ndim, axis, flip_kernel):
+def _get_code_stage2_convolve_2d(ndim, axis, flip_kernel, skip_zero_weights):
     code = """
     #pragma unroll
     for (int j = 0; j < PATCH_PER_BLOCK; ++j)
@@ -737,6 +737,12 @@ def _get_code_stage2_convolve_2d(ndim, axis, flip_kernel):
         inner = f"""
                 sum = sum + static_cast<W>(smem[threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X - anchor + k]) * kernel[{kernel_idx}];
         """  # noqa
+    if skip_zero_weights:
+        # skip zero weights so that NaN/Inf under them do not propagate
+        inner = f"""
+               if (nonzero(kernel[{kernel_idx}])) {{
+                   {inner}
+               }}"""
     code += f"""
             W sum = static_cast<W>(0);
 
@@ -751,7 +757,7 @@ def _get_code_stage2_convolve_2d(ndim, axis, flip_kernel):
     return code
 
 
-def _get_code_stage2_convolve_3d(ndim, axis, flip_kernel):
+def _get_code_stage2_convolve_3d(ndim, axis, flip_kernel, skip_zero_weights):
     code = """
     #pragma unroll
     for (int j = 0; j < PATCH_PER_BLOCK; ++j)
@@ -792,6 +798,12 @@ def _get_code_stage2_convolve_3d(ndim, axis, flip_kernel):
         inner = f"""
                 sum = sum + static_cast<W>(smem[threadIdx.z][threadIdx.y][threadIdx.x + (HALO_SIZE + j) * BLOCK_DIM_X - anchor + k]) * kernel[{kernel_idx}];
         """  # noqa
+    if skip_zero_weights:
+        # skip zero weights so that NaN/Inf under them do not propagate
+        inner = f"""
+               if (nonzero(kernel[{kernel_idx}])) {{
+                   {inner}
+               }}"""
     code += f"""
             W sum = static_cast<W>(0);
 
@@ -807,11 +819,15 @@ def _get_code_stage2_convolve_3d(ndim, axis, flip_kernel):
 
 
 @cp.memoize(for_each_device=False)
-def _get_code_stage2_convolve(ndim, axis, flip_kernel):
+def _get_code_stage2_convolve(ndim, axis, flip_kernel, skip_zero_weights=True):
     if ndim == 2:
-        return _get_code_stage2_convolve_2d(ndim, axis, flip_kernel)
+        return _get_code_stage2_convolve_2d(
+            ndim, axis, flip_kernel, skip_zero_weights
+        )
     elif ndim == 3:
-        return _get_code_stage2_convolve_3d(ndim, axis, flip_kernel)
+        return _get_code_stage2_convolve_3d(
+            ndim, axis, flip_kernel, skip_zero_weights
+        )
 
 
 @cp.memoize(for_each_device=True)
@@ -827,6 +843,7 @@ def _get_separable_conv_kernel_src(
     cval,
     patch_per_block=None,
     flip_kernel=False,
+    skip_zero_weights=True,
 ):
     blocks, patch_per_block, halo_size = _get_constants(
         ndim, axis, kernel_size, anchor, patch_per_block
@@ -850,12 +867,16 @@ def _get_separable_conv_kernel_src(
         .replace("unsigned ", "u")
     )  # noqa
     func_name += f"_patch{patch_per_block}_halo{halo_size}"
+    if not skip_zero_weights:
+        func_name += "_nonzero_weights"
     # func_name += f"_bx{block_x}_by{block_y}" // these are fixed per axis
 
     code = """
     #include "cupy/carray.cuh"  // for float16
     #include "cupy/complex.cuh"  // for complex<float>
     """
+    if "float16" in (image_c_type, kernel_c_type, output_c_type):
+        code += '#include "cupy/float16.cuh"\n'
 
     # SciPy-style float -> unsigned integer casting for the output
     # (use cast<D>(sum) instead of static_cast<D>(sum) for the output)
@@ -886,7 +907,9 @@ def _get_separable_conv_kernel_src(
         {{
         """  # noqa
     code += _get_code_stage1_shared_memory_load(ndim, axis, mode, cval)
-    code += _get_code_stage2_convolve(ndim, axis, flip_kernel)
+    code += _get_code_stage2_convolve(
+        ndim, axis, flip_kernel, skip_zero_weights
+    )
     code += """
     }  // end of function
     }  // extern "C"
@@ -907,6 +930,7 @@ def _get_separable_conv_kernel(
     cval=0,
     patch_per_block=None,
     flip_kernel=False,
+    skip_zero_weights=True,
 ):
     func_name, block, patch_per_block, code = _get_separable_conv_kernel_src(
         kernel_size=kernel_size,
@@ -920,9 +944,117 @@ def _get_separable_conv_kernel(
         cval=cval,
         patch_per_block=patch_per_block,
         flip_kernel=flip_kernel,
+        skip_zero_weights=skip_zero_weights,
     )
     m = cp.RawModule(code=code)
     return m.get_function(func_name), block, patch_per_block
+
+
+@cp.memoize(for_each_device=True)
+def _get_packed_row_kernel(
+    kernel_size,
+    trailing_size,
+    anchor,
+    image_c_type,
+    kernel_c_type,
+    output_c_type,
+    mode,
+    cval,
+    flip_kernel,
+    skip_zero_weights=True,
+):
+    """Tile interleaved rows, keeping neighboring trailing elements together.
+
+    The input is a C-contiguous (rows, length, trailing_size) view. Threads
+    load contiguous flattened row tiles; filter taps advance by trailing_size
+    in shared memory. Only border loads decode the spatial/trailing indices,
+    so reflection and wrapping never mix independent trailing elements.
+    """
+    block = (32, 8, 1)
+    patches = 4
+    halo = math.ceil(
+        max(kernel_size - anchor, anchor) * trailing_size / block[0]
+    )
+    tile_width = (patches + 2 * halo) * block[0]
+    # The launch shape is independent of image extents. Only the small trailing
+    # stride is specialized, allowing constant tap offsets and border division.
+    image_dtype = next(
+        dtype
+        for dtype, ctype in _dtype_char_to_c_types.items()
+        if ctype == image_c_type
+    )
+    if (
+        tile_width * block[1] * cp.dtype(image_dtype).itemsize
+        > _get_shmem_limits()["shared_block"]
+    ):
+        raise ResourceLimitError("inadequate shared memory for packed row tile")
+    if mode in ("constant", "grid-constant"):
+        load = f"""
+            T value = static_cast<T>({cval});
+            if (flat >= 0 && flat < row_width) value = src[row_base + flat];
+        """
+    else:
+        boundary = util._generate_boundary_condition_ops(
+            mode, "pixel", "length"
+        )
+        load = f"""
+            int mapped = flat;
+            if (flat < 0 || flat >= row_width) {{
+                int pixel = flat / {trailing_size};
+                int tail = flat % {trailing_size};
+                // C++ division truncates toward zero; use floor division.
+                if (tail < 0) {{ tail += {trailing_size}; --pixel; }}
+                {boundary}
+                mapped = pixel * {trailing_size} + tail;
+            }}
+            T value = src[row_base + mapped];
+        """
+    weight_index = f"{kernel_size} - 1 - k" if flip_kernel else "k"
+    # skip zero weights so that NaN/Inf under them do not propagate
+    weight_test = "if (nonzero(weight))" if skip_zero_weights else ""
+    code = '#include "cupy/float16.cuh"\n#include "cupy/complex.cuh"\n'
+    code += (
+        _ndimage_includes
+        + _ndimage_CAST_FUNCTION
+        + f"""
+    typedef {image_c_type} T;
+    typedef {kernel_c_type} W;
+    typedef {output_c_type} D;
+    extern "C" __global__ void cucim_packed_row(
+        const T* src, D* dst, const W* weights, int rows, int length) {{
+        __shared__ T smem[{block[1]}][{tile_width}];
+        int row = (blockIdx.y + blockIdx.z * gridDim.y) * {block[1]} + threadIdx.y;
+        if (row >= rows) return;
+        int row_width = length * {trailing_size};
+        int row_base = row * row_width;
+        int start = blockIdx.x * {patches * block[0]};
+        #pragma unroll
+        for (int j = 0; j < {patches + 2 * halo}; ++j) {{
+            int flat = start + threadIdx.x + (j - {halo}) * {block[0]};
+            {load}
+            smem[threadIdx.y][threadIdx.x + j * {block[0]}] = value;
+        }}
+        __syncthreads();
+        #pragma unroll
+        for (int j = 0; j < {patches}; ++j) {{
+            int flat = start + threadIdx.x + j * {block[0]};
+            if (flat < row_width) {{
+                W sum = static_cast<W>(0);
+                #pragma unroll
+                for (int k = 0; k < {kernel_size}; ++k) {{
+                    W weight = weights[{weight_index}];
+                    {weight_test}
+                        sum += static_cast<W>(smem[threadIdx.y][threadIdx.x +
+                            (j + {halo}) * {block[0]} + (k - {anchor}) * {trailing_size}]) * weight;
+                }}
+                dst[row_base + flat] = cast<D>(sum);
+            }}
+        }}
+    }}
+    """
+    )
+    kernel = cp.RawKernel(code, "cucim_packed_row")
+    return kernel, block, patches
 
 
 def _get_grid(shape, block, axis, patch_per_block):
@@ -971,7 +1103,13 @@ def _get_grid(shape, block, axis, patch_per_block):
             raise ValueError(f"invalid axis: {axis}")
     else:
         raise NotImplementedError(f"unsupported ndim: {ndim}")
+    _check_shmem_grid(grid)
     return grid
+
+
+def _check_shmem_grid(grid):
+    if 0 in grid or max(grid[1:]) > 65535:
+        raise ResourceLimitError("shared memory filter grid is out of range")
 
 
 def _shmem_convolve1d(
@@ -992,6 +1130,9 @@ def _shmem_convolve1d(
     if weights.size == 0:
         return cp.zeros_like(input)
     util._check_mode(mode)
+    if not 0 < image.size < (1 << 30):
+        # The generated filters use int for offsets and reflection periods.
+        raise ResourceLimitError("shared memory filter index is out of range")
 
     if convolution:
         # use flip_kernel to avoid cp.ascontiguousarray(weights[::-1]))
@@ -1004,7 +1145,8 @@ def _shmem_convolve1d(
 
     anchor = weights.size // 2 + origin
 
-    if weights.size > 32:
+    packed_rows = ndim == 3 and axis == 1 and image.shape[2] <= 16
+    if weights.size > 32 and not packed_rows:
         # For large kernels, make sure we have adequate shared memory
         _check_smem_availability(
             ndim,
@@ -1032,17 +1174,57 @@ def _shmem_convolve1d(
 
     # promote output to nearest complex dtype if necessary
     complex_output = complex_output or weights.dtype.kind == "c"
+    provided_output = output
     output = util._get_output(output, image, None, complex_output)
 
-    # handle potential overlap between input and output arrays
-    needs_temp = cp.shares_memory(output, image, "MAY_SHARE_BOUNDS")
+    # The kernels write C-contiguous output and require separate input/output.
+    needs_temp = not output.flags.c_contiguous or cp.shares_memory(
+        output, image, "MAY_SHARE_BOUNDS"
+    )
     if needs_temp:
-        output, temp = util._get_output(output.dtype, input), output
+        output, temp = util._get_output(output.dtype, image), output
+    elif output is provided_output and cp.shares_memory(
+        output, weights, "MAY_SHARE_BOUNDS"
+    ):
+        # Blocks may still be reading taps when other blocks write output.
+        weights = weights.copy()
+
+    # The per-tap zero-weight test costs up to 2x for float64 2D filters. It
+    # can be omitted for cached coefficients known (on the host) to have no
+    # zeros, e.g. Gaussian kernels; other weights keep it.
+    skip_zero_weights = not util._is_nonzero_cache_array(weights)
 
     # index_c_type = util._get_inttype(image)
     image_c_type = _dtype_char_to_c_types[image.dtype.char]
     weights_c_type = _dtype_char_to_c_types[weights.dtype.char]
     output_c_type = _dtype_char_to_c_types[output.dtype.char]
+
+    if packed_rows:
+        kernel, block, patches = _get_packed_row_kernel(
+            weights.size,
+            image.shape[2],
+            anchor,
+            image_c_type,
+            weights_c_type,
+            output_c_type,
+            mode,
+            cval,
+            convolution,
+            skip_zero_weights,
+        )
+        rows, length, trailing_size = image.shape
+        row_blocks = math.ceil(rows / block[1])
+        grid = (
+            math.ceil(length * trailing_size / (block[0] * patches)),
+            min(row_blocks, 65535),
+            math.ceil(row_blocks / 65535),
+        )
+        _check_shmem_grid(grid)
+        kernel(grid, block, (image, output, weights, rows, length))
+        if needs_temp:
+            temp[:] = output
+            return temp
+        return output
 
     conv_axis_kernel, block, patch_per_block = _get_separable_conv_kernel(
         weights.size,
@@ -1056,6 +1238,7 @@ def _shmem_convolve1d(
         cval=cval,
         patch_per_block=None,
         flip_kernel=convolution,
+        skip_zero_weights=skip_zero_weights,
     )
     grid = _get_grid(image.shape, block, axis, patch_per_block)
     args = (image, output, weights, anchor) + image.shape[:ndim]
@@ -1065,6 +1248,6 @@ def _shmem_convolve1d(
         args,
     )
     if needs_temp:
-        output[:] = temp
+        temp[:] = output
         output = temp
     return output
