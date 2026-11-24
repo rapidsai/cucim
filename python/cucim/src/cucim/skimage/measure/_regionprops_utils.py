@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
+from numbers import Real
 
 import cupy as cp
 import cupyx.scipy.ndimage as ndi
@@ -352,3 +353,52 @@ def perimeter_crofton(image, directions=4):
 
     total_perimeter = cp.asarray(coefs) @ h
     return total_perimeter
+
+
+def _normalize_spacing(spacing, ndims):
+    """Normalize the `spacing` parameter, with scikit-image's rules.
+
+    `spacing` should be a sequence of numbers matching the image dimensions.
+    If `spacing` is a scalar, equal spacing along all dimensions is assumed.
+
+    Parameters
+    ----------
+    spacing : Any
+        User-provided `spacing` keyword (a scalar, a sequence, or a NumPy or
+        CuPy array).
+    ndims : int
+        Number of image dimensions.
+
+    Returns
+    -------
+    spacing : tuple
+        One Python number per dimension (a tuple, so that it can scale CuPy
+        arrays and be used in host arithmetic alike).
+
+    Raises
+    ------
+    ValueError
+        If `spacing` has the wrong shape or a non-finite element.
+    TypeError
+        If an element of `spacing` is not a real number.
+    """
+    if isinstance(spacing, cp.ndarray):
+        spacing = cp.asnumpy(spacing)
+    spacing = np.array(spacing)
+    if spacing.shape == ():
+        spacing = np.broadcast_to(spacing, shape=(ndims,))
+    elif spacing.shape != (ndims,):
+        raise ValueError(
+            "spacing isn't a scalar nor a sequence of shape "
+            f"{(ndims,)}, got {spacing}."
+        )
+    if not all(isinstance(s, Real) for s in spacing):
+        raise TypeError(
+            f"Element of spacing isn't float or integer type, got {spacing}."
+        )
+    if not all(np.isfinite(spacing)):
+        raise ValueError(
+            "Invalid spacing parameter. All elements must be finite, got "
+            f"{spacing}."
+        )
+    return tuple(s.item() for s in spacing)
