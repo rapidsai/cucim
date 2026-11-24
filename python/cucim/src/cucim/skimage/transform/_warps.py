@@ -924,6 +924,17 @@ def warp_coords(coord_map, shape, dtype=cp.float64):
     return coords
 
 
+def _clip_fill_scalar(cval, output_dtype):
+    """Match stored floating pixels when comparing a Python float fill."""
+    if type(cval) is not float:
+        return cval
+    if output_dtype.kind == "f":
+        # Match the sampler's silent narrowing when the fill overflows.
+        with np.errstate(over="ignore"):
+            return output_dtype.type(cval)
+    return np.float64(cval)
+
+
 @cp.fuse()
 def _clip_warp_output_with_cval(
     output_image,
@@ -986,7 +997,7 @@ def _clip_constant_warp_output(image, output_image, cval):
         output_image,
         image.dtype.type(min_val),
         max_val,
-        np.float64(cval) if type(cval) is float else cval,
+        _clip_fill_scalar(cval, output_image.dtype),
         False,
         False,
         output_image.min(),
@@ -1079,7 +1090,7 @@ def _clip_warp_output(
             output_image,
             min_val,
             max_val,
-            np.float64(cval) if type(cval) is float else cval,
+            _clip_fill_scalar(cval, output_image.dtype),
             input_has_nan,
             output_has_nan,
             output_min,

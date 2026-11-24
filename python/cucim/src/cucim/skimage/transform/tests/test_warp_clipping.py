@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from cupyx import allow_synchronize
 
-from cucim.skimage.transform import _warps, _warps_kernels, warp
+from cucim.skimage.transform import _warps, _warps_kernels, rotate, warp
 from cucim.skimage.transform._warps import _clip_warp_output
 from cucim.skimage.transform._warps_kernels import _get_warp_range
 
@@ -118,6 +118,34 @@ def test_warp_preserves_large_integer_bound(sign, fill, clipping_dispatch):
     cp.testing.assert_array_equal(
         result, np.asarray([[label, int(fill)]], dtype=np.int64)
     )
+
+
+@pytest.mark.parametrize("order", [0, 1, 3])
+@pytest.mark.parametrize("cval", [0.1, 0.9])
+def test_warp_preserves_float32_fill(order, cval, clipping_dispatch):
+    image = cp.linspace(0.2, 0.8, 64 * 64, dtype=cp.float32).reshape(64, 64)
+    coords = cp.indices(image.shape, dtype=cp.float64) - 20
+    result = warp(
+        image, coords, order=order, mode="constant", cval=cval, clip=True
+    )
+    assert result.dtype == cp.float32
+    cp.testing.assert_array_equal(result[0, 0], np.float32(cval))
+
+
+def test_warp_float32_fill_overflow(clipping_dispatch):
+    image = cp.full((4, 4), 0.5, dtype=cp.float32)
+    coords = cp.asarray([[[0, -20]], [[0, -20]]])
+    with np.errstate(over="raise"):
+        result = warp(image, coords, order=0, cval=1e40, clip=True)
+    cp.testing.assert_array_equal(result, np.array([[0.5, np.inf]], np.float32))
+
+
+@pytest.mark.parametrize("cval", [0.1, 0.9])
+def test_rotate_preserves_float32_fill(cval, clipping_dispatch):
+    image = cp.linspace(0.2, 0.8, 64 * 64, dtype=cp.float32).reshape(64, 64)
+    result = rotate(image, 30, order=0, mode="constant", cval=cval, clip=True)
+    assert result.dtype == cp.float32
+    cp.testing.assert_array_equal(result[0, 0], np.float32(cval))
 
 
 @pytest.mark.parametrize(
