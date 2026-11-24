@@ -328,6 +328,18 @@ def test_general_spline_scalar_metadata(
     cp.testing.assert_array_equal(image, original)
 
 
+def test_general_spline_prefilter_caps_block_size():
+    # Complex data uses the general kernel. This shape makes the uncapped
+    # heuristic request 2048 threads per block.
+    value = 5 + 3j
+    image = cp.full((32769, 1025), value, dtype=cp.complex64)
+    interpolation.spline_filter1d(image, 3, axis=0, output=image)
+    samples = image[::16384, ::512]
+    cp.testing.assert_allclose(
+        samples, cp.full_like(samples, value), rtol=1e-6, atol=0
+    )
+
+
 @pytest.mark.parametrize("order", [2, 3, 5])
 @pytest.mark.parametrize("mode", ["mirror", "nearest", "grid-constant"])
 @pytest.mark.parametrize("dtype", ["float32", "float64", "uint8"])

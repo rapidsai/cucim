@@ -286,6 +286,10 @@ def spline_filter1d(
         block_size = max(2 ** math.ceil(numpy.log2(n_samples / 32)), 8)
         if math.prod(x.shape[axis + 1 :]) <= 1024:
             block_size = min(block_size, 32)
+        elif block_size > 1024:
+            block_size = runtime.deviceGetAttribute(
+                runtime.cudaDevAttrMaxThreadsPerBlock, runtime.getDevice()
+            )
         kern = core.get_raw_spline1d_kernel(
             axis,
             ndim,
