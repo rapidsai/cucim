@@ -119,18 +119,16 @@ _doc_boundary_note = """
 
 _doc_cast_to_uint8_param = """
     cast_to_uint8 : bool, optional (keyword-only)
-        If True, non-uint8 image inputs are converted to uint8 with
-        ``img_as_ubyte`` before backend selection. This matches scikit-image's
-        conversion behavior for many other input dtypes and can enable the
-        uint8 histogram backend for compatible inputs. Set this to False to
-        process a wider input dtype natively. Default is True."""
+        If True (default), non-uint8 inputs are converted with
+        ``img_as_ubyte`` before backend selection. Set this to False to process
+        a wider input dtype natively."""
 
 _doc_returns = """
     Returns
     -------
     out : cupy.ndarray
         Output image with same shape as input. The default output dtype is
-        uint8 for non-uint8 inputs converted with ``cast_to_uint8=True``;
+        uint8 for inputs converted with ``cast_to_uint8=True``;
         otherwise it follows the input dtype unless ``out`` controls it.
 """
 
@@ -160,6 +158,8 @@ def _preprocess_input(
     out_dtype=None,
     shifts=None,
     cast_to_uint8=True,
+    *,
+    operation,
 ):
     """Preprocess and verify input for filters.rank methods (GPU version)."""
     if not isinstance(image, cp.ndarray):
@@ -174,7 +174,8 @@ def _preprocess_input(
     if input_dtype == bool or out_dtype == bool:
         raise ValueError("dtype cannot be bool.")
 
-    if cast_to_uint8 and image.dtype != cp.dtype(cp.uint8):
+    preserve_uint16 = operation == "otsu" and image.dtype == cp.uint16
+    if cast_to_uint8 and image.dtype != cp.uint8 and not preserve_uint16:
         if image.dtype.kind == "f":
             warnings.warn(
                 f"Possible precision loss converting image of type "
@@ -195,7 +196,6 @@ def _preprocess_input(
                     category=UserWarning,
                 )
                 image = img_as_ubyte(image)
-        input_dtype = image.dtype
 
     # Convert footprint to boolean CuPy array
     if footprint is not None:
@@ -215,9 +215,11 @@ def _preprocess_input(
     if mask is not None:
         if not isinstance(mask, cp.ndarray):
             raise ValueError("mask must be a CuPy array")
-        mask = cp.ascontiguousarray(mask > 0, dtype=bool)
         if mask.shape != image.shape:
             raise ValueError("Mask shape must match image shape")
+        if operation == "otsu" and mask.dtype != cp.bool_:
+            mask = img_as_ubyte(mask)
+        mask = cp.ascontiguousarray(mask > 0, dtype=bool)
 
     # Handle output array
     if out is None:
@@ -300,6 +302,7 @@ def _apply(
         out_dtype,
         shifts=shifts,
         cast_to_uint8=cast_to_uint8,
+        operation=operation,
     )
 
     if (

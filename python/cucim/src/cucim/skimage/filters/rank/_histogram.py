@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import math
 import os
 
 import cupy as cp
@@ -25,6 +26,7 @@ _HISTOGRAM_OPS = {
     "bilateral_sum": 13,
     "modal": 14,
     "geometric_mean": 15,
+    "otsu": 16,
 }
 
 # Performance-tuning thresholds derived from benchmarks on an RTX A6000.
@@ -44,6 +46,7 @@ _HISTOGRAM_MIN_FOOTPRINT_AREA = {
     "bilateral_mean": 33 * 33,
     "modal": 15 * 15,
     "geometric_mean": 15 * 15,
+    "otsu": 15 * 15,
     "equalize": 91 * 91,
 }
 
@@ -53,6 +56,7 @@ _INT16_MAX = 32767
 _INT32_MAX = 2147483647
 _MAX_UINT8 = 255
 _WEIGHTED_HISTOGRAM_OPS = {
+    "otsu",
     "mean",
     "sum",
     "subtract_mean",
@@ -137,7 +141,11 @@ def _can_use_rank_histogram(
     radii = tuple(size // 2 for size in footprint_shape)
     if any(radius > size for radius, size in zip(radii, image.shape)):
         return False
-    return True
+    # The last padded pixel must be addressable with signed int offsets.
+    padded_size = math.prod(
+        size + 2 * radius for size, radius in zip(image.shape, radii)
+    )
+    return padded_size - 1 <= _INT32_MAX
 
 
 def _should_use_rank_histogram(operation, footprint_shape):

@@ -2,7 +2,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
+import functools
 import warnings
+from types import SimpleNamespace
 
 import cupy as cp
 import numpy as np
@@ -17,6 +19,7 @@ from cucim.skimage.filters.rank import (
     subtract_mean,
 )
 from cucim.skimage.filters.rank._histogram import (
+    _can_use_rank_histogram,
     _get_histogram_counter_dtype,
     _get_histogram_weighted_sum_dtype,
     _get_rank_histogram_partitions,
@@ -80,7 +83,7 @@ def _rank_filter_brute_force_uint8(
             if not values:
                 out[row, col] = (
                     0
-                    if operation in {"pop", "pop_bilateral"}
+                    if operation in {"pop", "pop_bilateral", "otsu"}
                     else image[row, col]
                 )
             elif operation == "minimum":
@@ -139,6 +142,31 @@ def _rank_filter_brute_force_uint8(
             elif operation in {"modal", "majority"}:
                 counts = np.bincount(values, minlength=256)
                 out[row, col] = int(np.argmax(counts))
+            elif operation == "otsu":
+                # same operation order as scikit-image's _kernel_otsu
+                counts = np.bincount(values, minlength=256)
+                pop = float(len(values))
+                mu = int((counts * np.arange(256)).sum())
+                best_bin = 0
+                max_sigma = 0.0
+                q1 = int(counts[0])
+                mu1 = 0
+                for i in range(1, 256):
+                    if counts[i] == 0:
+                        continue
+                    q1 += int(counts[i])
+                    if q1 == len(values):
+                        break
+                    mu1 += i * int(counts[i])
+                    mu2 = mu - mu1
+                    t = np.float64(pop - q1) * np.float64(mu1) - np.float64(
+                        mu2 * q1
+                    )
+                    sigma = (t * t) / (np.float64(q1) * np.float64(pop - q1))
+                    if sigma > max_sigma:
+                        max_sigma = sigma
+                        best_bin = i
+                out[row, col] = best_bin
             elif operation == "noise_filter":
                 if center in values:
                     out[row, col] = 0
@@ -1207,24 +1235,68 @@ def test_rank_default_cast_to_uint8_matches_explicit_float_conversion():
     cp.testing.assert_array_equal(result, expected)
 
 
-def test_rank_default_cast_to_uint8_matches_explicit_uint16_conversion():
-    image = cp.linspace(0, 65535, 25, dtype=cp.uint16).reshape(5, 5)
-    footprint = cp.ones((3, 3), dtype=bool)
-    image_u8 = img_as_ubyte(image)
+@pytest.mark.parametrize(
+    "filter_name, kwargs",
+    [
+        ("percentile", {"p0": 0.5}),
+        ("mean", {}),
+        ("mean_bilateral", {"s0": 10000, "s1": 10000}),
+        ("otsu", {}),
+    ],
+)
+def test_rank_processes_uint16_without_cast(filter_name, kwargs):
+    from skimage.filters import rank as rank_cpu
 
-    expected = rank.percentile(
-        image_u8, footprint, p0=0.5, backend="elementwise"
+    image = np.tile(
+        np.array([1000, 1000, 2000, 4000, 4000], dtype=np.uint16), (5, 1)
     )
+    footprint = np.ones((3, 3), dtype=np.uint8)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        expected = getattr(rank_cpu, filter_name)(image, footprint, **kwargs)
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
-        result = rank.percentile(
-            image,
-            footprint,
-            p0=0.5,
-            backend="elementwise",
+        result = getattr(rank, filter_name)(
+            cp.asarray(image),
+            cp.asarray(footprint),
+            cast_to_uint8=False,
+            **kwargs,
         )
     assert not record
+    assert result.dtype == cp.uint16
+    # Upstream crops border neighborhoods; cuCIM reflects them.
+    cp.testing.assert_array_equal(result[1:-1, 1:-1], expected[1:-1, 1:-1])
+    assert int(result[2, 2]) > 255
 
+
+@pytest.mark.parametrize(
+    "filter_name, backend, center",
+    [
+        ("autolevel", "auto", 85),
+        ("equalize", "auto", 170),
+        ("subtract_mean", "auto", 126),
+        ("equalize", "histogram", 170),
+    ],
+)
+def test_rank_default_uint16_casting(filter_name, backend, center):
+    image = cp.tile(cp.array([1000, 1000, 2000, 4000, 4000], cp.uint16), (5, 1))
+    footprint = cp.ones((3, 3), dtype=bool)
+    func = getattr(rank, filter_name)
+    result = func(image, footprint, backend=backend)
+    expected = func(img_as_ubyte(image), footprint, backend=backend)
+    assert result.dtype == cp.uint8
+    assert int(result[2, 2]) == center
+    cp.testing.assert_array_equal(result, expected)
+
+
+def test_otsu_uint16_histogram_requires_explicit_conversion():
+    image = cp.arange(25, dtype=cp.uint16).reshape(5, 5) * 1000
+    footprint = cp.ones((3, 3), dtype=bool)
+    with pytest.raises(ValueError, match="backend='histogram' requires"):
+        rank.otsu(image, footprint, backend="histogram")
+    image_u8 = img_as_ubyte(image)
+    result = rank.otsu(image_u8, footprint, backend="histogram")
+    expected = rank.otsu(image_u8, footprint, backend="elementwise")
     assert result.dtype == cp.uint8
     cp.testing.assert_array_equal(result, expected)
 
@@ -1386,6 +1458,8 @@ def test_rank_histogram_auto_cutoffs():
     assert _should_use_rank_histogram("mean", (19, 19))
     assert not _should_use_rank_histogram("entropy", (23, 23))
     assert _should_use_rank_histogram("entropy", (25, 25))
+    assert not _should_use_rank_histogram("otsu", (13, 13))
+    assert _should_use_rank_histogram("otsu", (15, 15))
     assert not _should_use_rank_histogram("bilateral_mean", (31, 31))
     assert _should_use_rank_histogram("bilateral_mean", (33, 33))
     assert not _should_use_rank_histogram("geometric_mean", (13, 13))
@@ -1394,6 +1468,30 @@ def test_rank_histogram_auto_cutoffs():
     assert _should_use_rank_histogram("modal", (15, 15))
     assert not _should_use_rank_histogram("equalize", (71, 71))
     assert _should_use_rank_histogram("equalize", (91, 91))
+
+
+@pytest.mark.parametrize("extra_rows, expected", [(0, True), (1, False)])
+def test_rank_histogram_padded_image_index_limit(extra_rows, expected):
+    # With a 15x15 footprint, the base padded shape has exactly 2**31
+    # elements. Its last offset fits in signed int, unlike the next row.
+    image = SimpleNamespace(
+        ndim=2, dtype=cp.dtype(cp.uint8), shape=(32754 + extra_rows, 65522)
+    )
+    assert (
+        _can_use_rank_histogram(
+            image,
+            (15, 15),
+            None,
+            None,
+            ("reflect", "reflect"),
+            (0, 0),
+            has_weights=False,
+            operation="otsu",
+            p0=0,
+            p1=100,
+        )
+        is expected
+    )
 
 
 # Reference data are loaded once per module, and only by the tests that use
@@ -1436,6 +1534,7 @@ class TestRank:
         "mean_percentile",
         "median",
         "modal",
+        "otsu",
         "pop",
         "pop_bilateral",
         "pop_percentile",
@@ -1475,6 +1574,18 @@ class TestRank:
             result = getattr(rank, filter)(
                 self.image, self.footprint, cast_to_uint8=True
             )
+        if filter == "otsu":
+            # Exact ties between thresholds are broken by floating point
+            # rounding, which depends on the platform (see scikit-image
+            # issue 3091): pixels [3, 5] and [19, 18] can take either value.
+            for (row, col), allowed, value in (
+                ((3, 5), (41, 81), 81),
+                ((19, 18), (141, 172), 172),
+            ):
+                assert int(result[row, col]) in allowed
+                assert int(expected[row, col]) in allowed
+                result[row, col] = value
+                expected[row, col] = value
         if filter in self._border_differences_allowed:
             # Only compare interior pixels — borders differ due to
             # reflected boundary extension (GPU) vs excluded pixels
@@ -1520,6 +1631,7 @@ class TestRank:
             "threshold",
             "noise_filter",
             "entropy",
+            "otsu",
         ],
     )
     def test_rank_filters_3D(self, filter, outdt, ref_data_3d):
@@ -1844,6 +1956,7 @@ class TestRank:
             "threshold",
             "noise_filter",
             "entropy",
+            "otsu",
         ],
     )
     def test_compare_ubyte_vs_float_3d(self, method):
@@ -1917,6 +2030,7 @@ class TestRank:
             "threshold",
             "noise_filter",
             "entropy",
+            "otsu",
         ],
     )
     def test_compare_8bit_unsigned_vs_signed_3d(self, method):
@@ -1956,9 +2070,9 @@ class TestRank:
             "threshold",
         ],
     )
-    def test_compare_8bit_vs_16bit(self, method):
-        # filters applied on 8-bit image or 16-bit image (having only real 8-bit
-        # of dynamic) should be identical
+    def test_compare_8bit_vs_16bit_same_output_dtype(self, method):
+        # Equal input values should give equal results when output dtypes
+        # match: scaling and overflow depend on the output dtype in cuCIM.
         image8 = util.img_as_ubyte(cp.asarray(data.camera())[::2, ::2])
         image16 = image8.astype(cp.uint16)
         cp.testing.assert_array_equal(image8, image16)
@@ -1967,7 +2081,7 @@ class TestRank:
 
         disk3 = disk(3, decomposition=None)
         f8 = func(image8, disk3)
-        f16 = func(image16, disk3, cast_to_uint8=True)
+        f16 = func(image16, disk3, out=cp.empty_like(f8), cast_to_uint8=False)
         cp.testing.assert_array_equal(f8, f16)
 
     @pytest.mark.parametrize(
@@ -1990,9 +2104,10 @@ class TestRank:
             "threshold",
             "noise_filter",
             "entropy",
+            "otsu",
         ],
     )
-    def test_compare_8bit_vs_16bit_3d(self, method):
+    def test_compare_8bit_vs_16bit_3d_same_output_dtype(self, method):
         np.random.seed(0)
         volume8 = np.random.randint(
             128, high=256, size=(10, 10, 10), dtype=np.uint8
@@ -2004,7 +2119,8 @@ class TestRank:
 
         ball3 = ball(3, decomposition=None)
         f8 = func(volume8, ball3)
-        f16 = func(volume16, ball3, cast_to_uint8=True)
+        # Match output dtypes so scaling and overflow semantics also match.
+        f16 = func(volume16, ball3, out=cp.empty_like(f8), cast_to_uint8=False)
         cp.testing.assert_array_equal(f8, f16)
 
     @pytest.mark.parametrize("dtype", [cp.uint8, cp.uint16])
@@ -2437,3 +2553,211 @@ class TestRank:
         elem = cp.ones((3, 3), dtype=bool)
         with pytest.raises(ValueError):
             rank.maximum(image=image, footprint=elem)
+
+
+def _otsu_test_images():
+    rng = np.random.default_rng(5)
+    camera = data.camera()[:48, :48]
+    return {
+        "camera": camera,
+        "noise": rng.integers(0, 256, (40, 44), dtype=np.uint8),
+        "few_levels": (camera // 32).astype(np.uint8),
+        "binary": np.tile(np.array([0, 255], dtype=np.uint8), (30, 15)),
+        "constant": np.full((30, 30), 7, dtype=np.uint8),
+        "zeros": np.zeros((30, 30), dtype=np.uint8),
+    }
+
+
+@functools.cache
+def _otsu_brute_force(name, size):
+    image = _otsu_test_images()[name]
+    footprint = np.ones((size, size), dtype=bool)
+    return _rank_filter_brute_force_uint8(image, footprint, "otsu")
+
+
+@pytest.mark.parametrize("backend", ["histogram", "elementwise"])
+@pytest.mark.parametrize("size", [3, 7, 15, 31])
+@pytest.mark.parametrize("name", list(_otsu_test_images()))
+def test_otsu_matches_brute_force_reference(name, size, backend):
+    image = _otsu_test_images()[name]
+    footprint = np.ones((size, size), dtype=bool)
+    result = rank.otsu(
+        cp.asarray(image), cp.asarray(footprint), backend=backend
+    )
+    expected = _otsu_brute_force(name, size)
+    assert result.dtype == cp.uint8
+    cp.testing.assert_array_equal(result, cp.asarray(expected))
+
+
+@pytest.mark.parametrize("backend", ["histogram", "elementwise"])
+def test_otsu_matches_skimage_interior(backend):
+    from skimage.filters import rank as rank_cpu
+
+    image = _otsu_test_images()["camera"]
+    footprint = np.ones((9, 9), dtype=np.uint8)
+    expected = rank_cpu.otsu(image, footprint)
+    result = rank.otsu(
+        cp.asarray(image), cp.asarray(footprint), backend=backend
+    ).get()
+    np.testing.assert_array_equal(result[4:-4, 4:-4], expected[4:-4, 4:-4])
+
+
+@pytest.mark.parametrize("use_mask", [False, True])
+def test_otsu_non_rectangular_footprint_and_mask(use_mask):
+    image = _otsu_test_images()["noise"]
+    footprint = disk(4).get().astype(bool)
+    mask = None
+    if use_mask:
+        mask = np.random.default_rng(6).random(image.shape) > 0.4
+    result = rank.otsu(
+        cp.asarray(image),
+        cp.asarray(footprint),
+        mask=None if mask is None else cp.asarray(mask),
+    )
+    expected = _rank_filter_brute_force_uint8(
+        image, footprint, "otsu", mask=mask
+    )
+    cp.testing.assert_array_equal(result, cp.asarray(expected))
+
+
+def test_otsu_empty_neighborhoods_are_zero():
+    image = _otsu_test_images()["camera"]
+    mask = np.zeros(image.shape, dtype=bool)
+    mask[::11, ::11] = True
+    result = rank.otsu(
+        cp.asarray(image), cp.asarray(disk(2)), mask=cp.asarray(mask)
+    )
+    expected = _rank_filter_brute_force_uint8(
+        image, disk(2).get().astype(bool), "otsu", mask=mask
+    )
+    assert int((expected == 0).sum()) > 0
+    cp.testing.assert_array_equal(result, cp.asarray(expected))
+
+
+def test_otsu_numeric_mask_matches_skimage_quantization():
+    from skimage.filters import rank as rank_cpu
+
+    image = np.tile(np.array([10, 50, 90], dtype=np.uint8), (3, 1))
+    footprint = np.ones((3, 3), dtype=bool)
+    mask = np.tile([0.001, 1.0, 1.0], (3, 1))
+    image_gpu = cp.asarray(image)
+    footprint_gpu = cp.asarray(footprint)
+    expected = rank_cpu.otsu(image, footprint, mask=mask)
+    result = rank.otsu(image_gpu, footprint_gpu, mask=cp.asarray(mask))
+    assert int(result[1, 1]) == expected[1, 1] == 50
+    boolean_mask = cp.asarray(np.tile([False, True, True], (3, 1)))
+    cp.testing.assert_array_equal(
+        result, rank.otsu(image_gpu, footprint_gpu, mask=boolean_mask)
+    )
+
+
+@pytest.mark.parametrize("backend", ["auto", "elementwise"])
+@pytest.mark.parametrize("shape", [(0, 3), (3, 3)])
+def test_otsu_empty_footprint_zeros_supplied_output(backend, shape):
+    image = cp.full((5, 5), 1000, dtype=cp.uint16)
+    footprint = cp.zeros(shape, dtype=bool)
+    out = cp.full((5, 10), 7, dtype=cp.float32)[:, ::2]
+    assert rank.otsu(image, footprint, out=out, backend=backend) is out
+    cp.testing.assert_array_equal(out, 0)
+
+
+@pytest.mark.parametrize("populated", [False, True])
+@pytest.mark.parametrize(
+    "dtype, kwargs, message",
+    [
+        (cp.float32, {"cast_to_uint8": False}, "uint8 or uint16"),
+        (cp.uint16, {"backend": "histogram"}, "backend='histogram' requires"),
+        (cp.uint8, {"backend": "invalid"}, "backend must be one of"),
+    ],
+)
+def test_otsu_validates_dtype_and_backend(populated, dtype, kwargs, message):
+    image = cp.ones((5, 5), dtype=dtype)
+    footprint = cp.full((3, 3), populated, dtype=bool)
+    with pytest.raises(ValueError, match=message):
+        rank.otsu(image, footprint, **kwargs)
+
+
+def test_otsu_empty_footprint_rejects_histogram():
+    image = cp.ones((5, 5), dtype=cp.uint8)
+    footprint = cp.zeros((3, 3), dtype=bool)
+    with pytest.raises(ValueError, match="backend='histogram' requires"):
+        rank.otsu(image, footprint, backend="histogram")
+
+
+def test_otsu_auto_falls_back_if_histogram_allocation_fails(monkeypatch):
+    monkeypatch.setenv("CUCIM_RANK_HISTOGRAM_PARTITIONS", "64")
+    image = cp.arange(128 * 128, dtype=cp.uint8).reshape(128, 128)
+    footprint = cp.ones((15, 15), dtype=bool)
+    expected = rank.otsu(image, footprint, backend="elementwise")
+    out = cp.empty_like(image)
+    pool = cp.cuda.MemoryPool()
+    pool.set_limit(size=512 * 1024)
+    with cp.cuda.using_allocator(pool.malloc):
+        with pytest.raises(cp.cuda.memory.OutOfMemoryError):
+            rank.otsu(image, footprint, out=out, backend="histogram")
+        assert rank.otsu(image, footprint, out=out) is out
+
+    cp.testing.assert_array_equal(out, expected)
+
+
+def test_otsu_histogram_and_elementwise_agree_on_large_window():
+    image = cp.asarray(
+        np.random.default_rng(7).integers(0, 256, (150, 130), dtype=np.uint8)
+    )
+    footprint = cp.ones((41, 41), dtype=bool)
+    cp.testing.assert_array_equal(
+        rank.otsu(image, footprint, backend="histogram"),
+        rank.otsu(image, footprint, backend="elementwise"),
+    )
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+def test_otsu_uint16(ndim):
+    from skimage.filters import rank as rank_cpu
+
+    shape = (60, 70) if ndim == 2 else (12, 14, 16)
+    footprint_shape = (5, 7) if ndim == 2 else (3, 5, 3)
+    image = np.random.default_rng(8).integers(0, 4096, shape)
+    image = image.astype(np.uint16)
+    footprint = np.ones(footprint_shape, dtype=np.uint8)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        expected = rank_cpu.otsu(image, footprint)
+    result = rank.otsu(cp.asarray(image), cp.asarray(footprint))
+    assert result.dtype == cp.uint16
+    interior = tuple(slice(s // 2, -(s // 2)) for s in footprint_shape)
+    np.testing.assert_array_equal(result.get()[interior], expected[interior])
+
+
+def test_otsu_3d_matches_skimage_interior():
+    from skimage.filters import rank as rank_cpu
+
+    volume = np.random.default_rng(9).integers(0, 256, (12, 12, 12))
+    volume = volume.astype(np.uint8)
+    result = rank.otsu(cp.asarray(volume), cp.asarray(ball(2))).get()
+    expected = rank_cpu.otsu(volume, ball(2).get())
+    np.testing.assert_array_equal(
+        result[2:-2, 2:-2, 2:-2], expected[2:-2, 2:-2, 2:-2]
+    )
+
+
+def test_otsu_scikit_image_edge_cases():
+    # Pixels where two thresholds tie mathematically (see scikit-image issue
+    # 3091): either value is acceptable.
+    footprint = cp.asarray([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
+    img = np.array([[0, 41, 0], [30, 81, 106], [0, 147, 0]], dtype=np.uint8)
+    result = rank.otsu(cp.asarray(img), footprint)
+    assert int(result[1, 1]) in (41, 81)
+    img = np.array([[0, 214, 0], [229, 104, 141], [0, 172, 0]], dtype=np.uint8)
+    result = rank.otsu(cp.asarray(img), footprint)
+    assert int(result[1, 1]) in (141, 172)
+
+
+def test_otsu_rejects_non_integer_input_without_cast():
+    image = cp.asarray(np.random.default_rng(10).random((20, 20)))
+    with pytest.raises(ValueError, match="uint8 or uint16"):
+        rank.otsu(image, cp.ones((3, 3), bool), cast_to_uint8=False)
+    # the default converts to uint8
+    with pytest.warns(UserWarning, match="precision loss"):
+        result = rank.otsu(image, cp.ones((3, 3), bool))
+    assert result.dtype == cp.uint8

@@ -51,7 +51,7 @@ _doc_returns = """
     -------
     out : cupy.ndarray
         Output image with the same shape as the input. The default output dtype
-        is uint8 for non-uint8 inputs converted with
+        is uint8 for inputs converted with
         ``cast_to_uint8=True``; otherwise it follows the input dtype unless
         ``out`` controls it.
 """

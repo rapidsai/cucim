@@ -36,6 +36,7 @@ __all__ = [
     "minimum",
     "modal",
     "noise_filter",
+    "otsu",
     "pop",
     "subtract_mean",
     "sum",
@@ -66,7 +67,7 @@ _doc_returns = """
     -------
     out : cupy.ndarray
         Output image with the same shape as the input. The default output dtype
-        is uint8 for non-uint8 inputs converted with
+        is uint8 for inputs converted with
         ``cast_to_uint8=True``; otherwise it follows the input dtype unless
         ``out`` controls it. ``entropy`` defaults to float32 for non-floating
         inputs when ``out`` is not provided.
@@ -93,7 +94,9 @@ _doc_common_params_median = _doc_common_params_generic.replace(
 )
 
 
-def _build_generic_docstring(summary):
+def _build_generic_docstring(
+    summary, *, cast_to_uint8_param=_doc_cast_to_uint8_param
+):
     """Build a docstring for a generic (no p0/p1) rank filter."""
     return (
         summary
@@ -101,7 +104,7 @@ def _build_generic_docstring(summary):
         + _doc_common_params_generic
         + _doc_shifts_param_generic
         + _doc_backend_param
-        + _doc_cast_to_uint8_param
+        + cast_to_uint8_param
         + "\n"
         + _doc_returns
         + _doc_boundary_note
@@ -873,4 +876,69 @@ entropy.__doc__ = _build_generic_docstring(
         is not provided, integer inputs produce a floating-point output.
         Explicit integer ``out`` arrays are respected and will truncate
         fractional entropy values.""",
+)
+
+
+def otsu(
+    image,
+    footprint,
+    out=None,
+    mask=None,
+    shift_x=0,
+    shift_y=0,
+    shift_z=0,
+    *,
+    shifts=None,
+    backend="auto",
+    cast_to_uint8=True,
+):
+    return _apply_generic(
+        "otsu",
+        image,
+        footprint,
+        out,
+        mask,
+        shift_x,
+        shift_y,
+        shift_z,
+        shifts,
+        backend=backend,
+        cast_to_uint8=cast_to_uint8,
+    )
+
+
+otsu.__doc__ = (
+    _build_generic_docstring(
+        """Return the local Otsu threshold value for each pixel.
+
+    The threshold is the gray level that maximizes the between-class variance
+    of the local histogram [1]_. It is computed as in scikit-image: gray level
+    0 is never selected, only gray levels present in the neighborhood are
+    candidates, and the lowest gray level wins when the computed scores are
+    equal. A neighborhood with a single gray level (or no pixels) gives 0.
+
+    As in scikit-image, numeric masks are converted with ``img_as_ubyte``
+    before testing for nonzero values.""",
+        cast_to_uint8_param="""
+    cast_to_uint8 : bool, optional (keyword-only)
+        Uint8 and uint16 images are processed natively. If True (default),
+        other supported dtypes are converted with ``img_as_ubyte``. If False,
+        those dtypes raise ``ValueError``. To use the histogram backend with a
+        uint16 image, explicitly convert it with ``img_as_ubyte`` first.""",
+    )
+    + """
+    References
+    ----------
+    .. [1] https://en.wikipedia.org/wiki/Otsu's_method
+
+    Examples
+    --------
+    >>> import cupy as cp
+    >>> from skimage import data
+    >>> from cucim.skimage.filters.rank import otsu
+    >>> from cucim.skimage.morphology import disk
+    >>> img = cp.asarray(data.camera())
+    >>> local_otsu = otsu(img, disk(5))
+    >>> thresh_image = img >= local_otsu
+    """
 )
