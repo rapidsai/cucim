@@ -848,6 +848,9 @@ def _binary_fill_holes_non_iterative(input, structure=None, output=None):
     # set the background back to 0 in the inverse mask so we have a mask
     # of just the holes
     inverse_binary_mask[inverse_labels == background_index] = 0
+    if ndim == 1:
+        # Opposite padded ends need not belong to the same component in 1D.
+        inverse_binary_mask[inverse_labels == inverse_labels[-1]] = 0
 
     # add binary holes to the original mask and relabel
     temp = cupy.logical_or(binary_mask, inverse_binary_mask)
@@ -869,8 +872,7 @@ def _binary_fill_holes_non_iterative(input, structure=None, output=None):
 
 
 def _can_use_label_for_fill_holes(structure, ndim):
-    # In 1D the padding at opposite ends is not connected.
-    if ndim < 2:
+    if ndim == 0:
         return False
     if structure is None:
         return True
@@ -900,7 +902,7 @@ def binary_fill_holes(
         structure (cupy.ndarray, optional): Structuring element used to find
             holes. The default element has a squared connectivity equal to
             one, as in SciPy. With the default origin and axes, inputs with
-            at least two dimensions use a faster non-iterative algorithm
+            at least one dimension use a faster non-iterative algorithm
             when the structure is centrosymmetric, has size 3 on every axis,
             and includes the center and all face neighbors. Other structures
             use the iterative algorithm. Larger structures can make the
@@ -945,6 +947,10 @@ def binary_fill_holes(
             return _binary_fill_holes_non_iterative(
                 input, structure=structure_cpu, output=output
             )
+        if isinstance(structure, numpy.ndarray) or (
+            isinstance(structure, list) and numpy.ndim(structure) == input.ndim
+        ):
+            structure = cupy.asarray(structure, dtype=bool)
     elif filter_all_axes:
         warnings.warn(
             "It is recommended to keep the default origin=0 so that a faster "
@@ -980,7 +986,7 @@ def binary_fill_holes(
             axes=axes,
         )
         cupy.logical_not(output, output)
-        return output
+    return output
 
 
 def grey_erosion(
