@@ -143,7 +143,7 @@ set_target_properties(${CUCIM_PLUGIN_NAME}
         VERSION ${PROJECT_VERSION}
 )
 target_compile_features(${CUCIM_PLUGIN_NAME} PRIVATE cxx_std_20)
-# Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
+# Use generator expression to avoid `nvcc fatal   : Value '-std=c++20' is not defined for option 'Werror'`
 target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 
 # Link libraries

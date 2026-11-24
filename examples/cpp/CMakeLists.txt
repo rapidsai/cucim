@@ -18,7 +18,7 @@ set_target_properties(tiff_image
         CXX_EXTENSIONS NO
 )
 target_compile_features(tiff_image PRIVATE ${CUCIM_REQUIRED_FEATURES})
-# Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
+# Use generator expression to avoid `nvcc fatal   : Value '-std=c++20' is not defined for option 'Werror'`
 target_compile_options(tiff_image PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 target_link_libraries(tiff_image
         PRIVATE

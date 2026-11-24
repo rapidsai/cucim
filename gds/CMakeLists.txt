@@ -40,7 +40,7 @@ set_target_properties(cufile_stub
 # Note: Looks like the following line causes error on CMake 3.18.4 (it is working on 3.18.2). Keeping it for now.
 set(CUCIM_REQUIRED_FEATURES cxx_std_20)
 target_compile_features(cufile_stub PRIVATE ${CUCIM_REQUIRED_FEATURES})
-# Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
+# Use generator expression to avoid `nvcc fatal   : Value '-std=c++20' is not defined for option 'Werror'`
 target_compile_options(cufile_stub
     PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>

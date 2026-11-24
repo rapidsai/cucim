@@ -69,7 +69,7 @@ set_target_properties(tiff_image
         CUDA_RUNTIME_LIBRARY Shared
 )
 target_compile_features(tiff_image PRIVATE cxx_std_20 cuda_std_20)
-# Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
+# Use generator expression to avoid `nvcc fatal   : Value '-std=c++20' is not defined for option 'Werror'`
 target_compile_options(tiff_image PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 target_link_libraries(tiff_image
         PRIVATE
