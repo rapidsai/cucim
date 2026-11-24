@@ -769,6 +769,9 @@ def _generate_interp_custom(
         # Don't start batch loop here - it will be the innermost loop
     else:
         if not omit_in_coord:
+            # Runtime extents let zoom reuse the kernel across output shapes.
+            # Index division can cost throughput on warm 2-D linear zooms
+            # with a fixed output shape.
             ops.append("const auto* in_coord = _ind.get();")
 
     if not loop_batch_axis:
