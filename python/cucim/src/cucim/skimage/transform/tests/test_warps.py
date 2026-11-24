@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import math
@@ -17,11 +17,12 @@ from numpy.testing import assert_almost_equal, assert_equal
 from skimage.color.colorconv import rgb2gray
 from skimage.data import astronaut, checkerboard
 from skimage.draw.draw import circle_perimeter_aa
+from skimage.transform import rotate as skimage_rotate
 
 from cucim.skimage._shared._warnings import expected_warnings
 from cucim.skimage._shared.utils import _supported_float_type
 from cucim.skimage.feature.peak import peak_local_max
-from cucim.skimage.morphology import binary_erosion
+from cucim.skimage.morphology import erosion
 from cucim.skimage.transform._geometric import (
     AffineTransform,
     ProjectiveTransform,
@@ -295,6 +296,54 @@ def test_rotate_nd(dtype, resize, ndim):
     assert x_out.ndim == x.ndim
     assert x_out.shape[2:] == x.shape[2:]
     assert x_out.dtype == _supported_float_type(dtype)
+
+
+@pytest.mark.parametrize("channels", [None, 3, 4])
+@pytest.mark.parametrize("resize", [False, True])
+@pytest.mark.parametrize("order", [0, 1])
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_rotate_custom_center_matches_skimage(channels, resize, order, dtype):
+    shape = (13, 29) if channels is None else (13, 29, channels)
+    image = np.random.default_rng(12).random(shape).astype(dtype)
+    kwargs = dict(
+        center=(0, shape[0] / 2),
+        resize=resize,
+        order=order,
+        mode="edge",
+        preserve_range=True,
+    )
+    expected = skimage_rotate(image, 1.0, **kwargs)
+    actual = rotate(cp.asarray(image), 1.0, **kwargs)
+    assert actual.shape == expected.shape
+    assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+
+
+@pytest.mark.parametrize("trailing_shape", [(3,), (4,), (2, 3)])
+@pytest.mark.parametrize("resize", [False, True])
+@pytest.mark.parametrize("order", [0, 1, 3])
+@pytest.mark.parametrize("dtype", [np.uint8, np.float32, np.float64])
+def test_rotate_custom_center_preserves_trailing_axes(
+    trailing_shape, resize, order, dtype
+):
+    host = np.random.default_rng(13).uniform(0, 100, (13, 29) + trailing_shape)
+    image = cp.asarray(host.astype(dtype))
+    kwargs = dict(
+        center=(0, image.shape[0] / 2),
+        resize=resize,
+        order=order,
+        mode="edge",
+        preserve_range=True,
+        clip=False,
+    )
+    actual = rotate(image, 1.0, **kwargs)
+    assert actual.shape[2:] == trailing_shape
+    if not resize:
+        assert actual.shape == image.shape
+    for index in np.ndindex(trailing_shape):
+        selection = (slice(None), slice(None)) + index
+        expected = rotate(image[selection], 1.0, **kwargs)
+        assert_allclose(actual[selection], expected, rtol=1e-5, atol=1e-5)
+    assert_array_equal(image, host.astype(dtype))
 
 
 def test_rescale():
@@ -1238,7 +1287,7 @@ def test_rotate_batch(order, mode):
         # couple of pixels
         mask = cp.any(rotated_individual > 1, axis=-1)
         footprint = cp.ones((5, 5), dtype=bool)
-        interior_mask = binary_erosion(mask, footprint=footprint)
+        interior_mask = erosion(mask, footprint=footprint, mode="ignore")
 
         cp.testing.assert_allclose(
             rotated_batch * interior_mask[..., cp.newaxis],
