@@ -300,6 +300,47 @@ def test_exact_nearest_coefficients_with_narrow_output(dtype):
 
 
 @pytest.mark.parametrize("channels", [None, 3])
+def test_exact_grid_constant_exterior_with_nonfinite_coefficients(channels):
+    coords = np.array([[-2048.0, 10.0, 2048.0]])
+    batch_axes = None
+    if channels is None:
+        image = cp.ones(32, dtype=cp.float64)
+        image[10] = cp.nan
+    else:
+        image = cp.ones((32, channels), dtype=cp.float32)
+        # The input is finite, but the spline gain makes a coefficient
+        # overflow in the middle channel.
+        image[10, 1] = 1e38
+        coords = np.broadcast_to(coords[..., None], (2, 3, channels))
+        batch_axes = (1,)
+    actual = cndi.map_coordinates(
+        image,
+        cp.asarray(coords),
+        order=3,
+        mode="grid-constant",
+        cval=3,
+        batch_axes=batch_axes,
+    )
+    cp.testing.assert_array_equal(actual[::2], cp.full_like(actual[::2], 3))
+    interior = actual[1] if channels is None else actual[1, 1]
+    assert not cp.isfinite(interior)
+
+
+@pytest.mark.parametrize("dtype", [cp.float32, cp.complex64])
+def test_exact_grid_constant_exterior_weight_underflow(dtype):
+    image = cp.ones((32, 32), dtype=cp.float32)
+    image[10, 10] = cp.nan
+    # Each axial weight survives, but their product rounds to zero in the
+    # narrower accumulator even though the coordinates are float64.
+    coords = cp.array([[-48.0, 10.0], [-48.0, 10.0]], dtype=cp.float64)
+    actual = cndi.map_coordinates(
+        image, coords, order=3, mode="grid-constant", cval=3, output=dtype
+    )
+    assert actual[0] == 3
+    assert not cp.isfinite(actual[1])
+
+
+@pytest.mark.parametrize("channels", [None, 3])
 @pytest.mark.parametrize("force_serial", [False, True])
 def test_zoom_reuses_interpolation_and_prefilter_kernels(
     channels, force_serial, monkeypatch

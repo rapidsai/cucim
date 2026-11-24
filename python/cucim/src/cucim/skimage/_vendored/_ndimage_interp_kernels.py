@@ -742,6 +742,7 @@ def _generate_interp_custom(
         exact_boundary and order > 1 and mode in ("nearest", "grid-constant")
     )
     footprint_t = "ptrdiff_t" if exact else int_t
+    exact_grid_constant = exact and mode == "grid-constant"
 
     # determine strides for x along each axis
     for j in range(ndim):
@@ -1131,6 +1132,14 @@ def _generate_interp_custom(
 
         spatial_axes = [j for j in range(ndim) if j not in batch_axes]
 
+        # Test in accumulator precision, where a folded spatial weight can
+        # round to zero even when its coefficient is nonfinite.
+        skip_zero = (
+            f"if (({internal_dtype})spatial_weight == ({internal_dtype})0) continue;"
+            if exact_grid_constant and spatial_axes
+            else ""
+        )
+
         # wx, wy are temporary variables used during spline weight computation
         if spatial_axes:
             ops.append(
@@ -1257,6 +1266,7 @@ def _generate_interp_custom(
                 ops.append(
                     f"""
                     W spatial_weight = {_spatial_weight};
+                    {skip_zero}
                     {int_t} ic_base = {_base_coord_idx};
                     #pragma unroll 4
                     for ({uint_t} batch_idx = 0; batch_idx < batch_size; batch_idx++) {{
@@ -1267,7 +1277,7 @@ def _generate_interp_custom(
 
             # Close spatial interpolation loops
             ops.append("}" * len(spatial_axes))
-            if exact and mode == "grid-constant":
+            if exact_grid_constant:
                 _cterm = _exact_cval_term(spatial_axes, cval, internal_dtype)
                 ops.append(
                     f"""
@@ -1332,6 +1342,13 @@ def _generate_interp_custom(
             }}"""
             )
         else:
+            if exact_grid_constant and spatial_axes:
+                ops.append(
+                    f"""
+            W spatial_weight = {_weight};
+            {skip_zero}"""
+                )
+                _weight = "spatial_weight"
             ops.append(
                 f"""
             {internal_dtype} val = ({internal_dtype})x_ptr[{_coord_idx}];
@@ -1339,7 +1356,7 @@ def _generate_interp_custom(
             )
 
         ops.append("}" * ndim)
-        if exact and mode == "grid-constant" and spatial_axes:
+        if exact_grid_constant and spatial_axes:
             _cterm = _exact_cval_term(spatial_axes, cval, internal_dtype)
             ops.append(f"out += {_cterm};")
 
