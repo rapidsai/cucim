@@ -1633,6 +1633,9 @@ def regionprops(
 
     _warn_regionprops_performance_once()
 
+    if isinstance(spacing, cp.ndarray):
+        spacing = cp.asnumpy(spacing)
+
     regions = []
 
     objects = find_objects(label_image)  # synchronize!

@@ -1986,3 +1986,22 @@ def test_multichannel_weighted_centroid_copy_to_host_shape(to_table):
         )
         assert result["centroid_weighted"].shape == (2, 2, 2)
         np.testing.assert_allclose(result["centroid_weighted"], expected)
+
+
+def test_device_spacing_downloaded_once_per_regionprops_call(monkeypatch):
+    labels = cp.arange(1, 1025, dtype=cp.int32).reshape(32, 32)
+    spacing = cp.asarray([2, 3], dtype=cp.float64)
+    original = cp.asnumpy
+    transfers = 0
+
+    def record(value, *args, **kwargs):
+        nonlocal transfers
+        if value is spacing:
+            transfers += 1
+        return original(value, *args, **kwargs)
+
+    monkeypatch.setattr(cp, "asnumpy", record)
+    regions = regionprops(labels, spacing=spacing)
+    assert transfers == 1
+    assert len(regions) == 1024
+    assert float(regions[0].area) == float(regions[-1].area) == 6
