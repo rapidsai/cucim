@@ -1,5 +1,5 @@
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright 2020-2025 NVIDIA Corporation
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 
@@ -10,6 +10,8 @@ if (NOT TARGET deps::libjpeg-turbo)
 #        IMPORTED_LOCATION "/usr/lib/x86_64-linux-gnu/libjpeg-turbo.so"
 #        INTERFACE_INCLUDE_DIRECTORIES "/usr/include/x86_64-linux-gnu"
 #    )
+
+    find_package(Git REQUIRED)
 
     FetchContent_Declare(
             deps-libjpeg-turbo

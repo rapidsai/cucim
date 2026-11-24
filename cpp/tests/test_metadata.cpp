@@ -10,9 +10,10 @@
 #include "cucim/io/format/image_format.h"
 
 #include <catch2/catch_test_macros.hpp>
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 #include <chrono>
 #include <cstdlib>
+#include <format>
 #include <memory>
 #include <fcntl.h>
 #include <unistd.h>
@@ -32,7 +33,7 @@
         cuda_status = stmt;                                                                                            \
         if (cudaSuccess != cuda_status)                                                                                \
         {                                                                                                              \
-            INFO(fmt::format("Error message: {}", cudaGetErrorString(cuda_status)));                                   \
+            INFO(std::format("Error message: {}", cudaGetErrorString(cuda_status)));                                   \
             REQUIRE(cudaSuccess == cuda_status);                                                                       \
         }                                                                                                              \
     }
@@ -42,7 +43,7 @@
         err = stmt;                                                                                                    \
         if (err < 0)                                                                                                   \
         {                                                                                                              \
-            INFO(fmt::format("Error message: {}", std::strerror(errno)));                                              \
+            INFO(std::format("Error message: {}", std::strerror(errno)));                                              \
             REQUIRE(err >= 0);                                                                                         \
         }                                                                                                              \
     }
@@ -56,7 +57,7 @@ class Document
 #include <string>
 void test(float* haha)
 {
-    fmt::print("T {} {} {}\n", haha[0], haha[1], haha[2]);
+    cucim::print("T {} {} {}\n", haha[0], haha[1], haha[2]);
 }
 
 TEST_CASE("Verify metadata", "[test_metadata.cpp]")
@@ -66,7 +67,7 @@ TEST_CASE("Verify metadata", "[test_metadata.cpp]")
     std::string plugin_path = g_config.get_plugin_path();
     cucim::io::format::IImageFormat* image_format =
         framework->acquire_interface_from_library<cucim::io::format::IImageFormat>(plugin_path.c_str());
-    // fmt::print("{}\n", image_format->formats[0].get_format_name());
+    // cucim::print("{}\n", image_format->formats[0].get_format_name());
     REQUIRE(image_format != nullptr);
 
     std::string input_path = g_config.get_input_path();
@@ -82,27 +83,27 @@ TEST_CASE("Verify metadata", "[test_metadata.cpp]")
     cucim::io::format::ImageMetadata metadata{};
     image_format->formats[0].image_parser.parse(file_handle.get(), &metadata.desc());
 
-    // Using fmt::print() has a problem with TestMate VSCode plugin (output is not caught by the plugin)
-    std::cout << fmt::format("metadata: {}\n", metadata.desc().raw_data);
+    // Using cucim::print() has a problem with TestMate VSCode plugin (output is not caught by the plugin)
+    std::cout << std::format("metadata: {}\n", metadata.desc().raw_data);
     const uint8_t* buf = metadata.get_buffer();
     const uint8_t* buf2 = static_cast<uint8_t*>(metadata.allocate(1));
-    std::cout << fmt::format("test: {}\n", buf2 - buf);
+    std::cout << std::format("test: {}\n", buf2 - buf);
 
     // cucim::CuImage img{ g_config.get_input_path("private/philips_tiff_000.tif") };
     // const auto& img_metadata = img.metadata();
-    // std::cout << fmt::format("metadata: {}\n", img_metadata);
+    // std::cout << std::format("metadata: {}\n", img_metadata);
     // auto v = img.spacing();
-    // std::cout << fmt::format("spacing: {}\n", v.size());
+    // std::cout << std::format("spacing: {}\n", v.size());
     // delete ((cuslide::tiff::TIFF*)handle.client_data);
     // cucim_free(handle.client_data);
     // cucim_free(handle.client_data);
 
-    // fmt::print("alignment: {}\n", alignof(int));
-    // fmt::print("Document: {}\n", sizeof(Document));
-    // fmt::print("max align: {}\n", alignof(size_t));
+    // cucim::print("alignment: {}\n", alignof(int));
+    // cucim::print("Document: {}\n", sizeof(Document));
+    // cucim::print("max align: {}\n", alignof(size_t));
     // auto a = std::string{ "" };
-    // fmt::print("size of ImageMetadataDesc :{}\n", sizeof(cucim::io::format::ImageMetadataDesc));
-    // fmt::print("size of ImageMetadata :{}\n", sizeof(cucim::io::format::ImageMetadata));
+    // cucim::print("size of ImageMetadataDesc :{}\n", sizeof(cucim::io::format::ImageMetadataDesc));
+    // cucim::print("size of ImageMetadata :{}\n", sizeof(cucim::io::format::ImageMetadata));
 
     // cucim::io::format::ImageMetadata metadata;
 
@@ -113,9 +114,9 @@ TEST_CASE("Verify metadata", "[test_metadata.cpp]")
     // std::vector<float> d(3);
 
 
-    // fmt::print("metadata: {} \n", (size_t)std::addressof(metadata));
-    // fmt::print("handle: {} \n", (size_t)std::addressof(metadata.desc()));
-    // fmt::print("ndim: {} \n", ((cucim::io::format::ImageMetadataDesc*)&metadata)->ndim);
+    // cucim::print("metadata: {} \n", (size_t)std::addressof(metadata));
+    // cucim::print("handle: {} \n", (size_t)std::addressof(metadata.desc()));
+    // cucim::print("ndim: {} \n", ((cucim::io::format::ImageMetadataDesc*)&metadata)->ndim);
 
     // // cucim::io::format::ImageMetadata a;
 
@@ -192,5 +193,5 @@ TEST_CASE("Load test", "[test_metadata.cpp]")
     REQUIRE(test.dtype() == DLDataType{ DLDataTypeCode::kDLUInt, 8, 1 });
     REQUIRE(test.typestr() == "|u1");
 
-    fmt::print("{}", img.metadata());
+    cucim::print("{}", img.metadata());
 }

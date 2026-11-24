@@ -61,7 +61,7 @@ if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
 endif ()
 
 find_package(CUDAToolkit) # cucim library depends on CUDA::cudart_static
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_CUDA_STANDARD ${CMAKE_CXX_STANDARD})
 set(CMAKE_CUDA_STANDARD_REQUIRED YES)
@@ -94,7 +94,6 @@ include(ExternalProject)
 ################################################################################
 # Define dependencies
 ################################################################################
-superbuild_depend(fmt)
 superbuild_depend(json)
 
 # Use the CCCL version pinned by rapids-cmake (as other RAPIDS projects do)
@@ -188,7 +187,6 @@ nanobind_add_module(cucim
 target_link_libraries(cucim
     PRIVATE
         cucim::cucim
-        deps::fmt
         deps::json
         )
 

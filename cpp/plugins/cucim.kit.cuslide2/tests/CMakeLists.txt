@@ -23,12 +23,12 @@ add_executable(cuslide2_tests
         )
 set_target_properties(cuslide2_tests
     PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
 )
 target_compile_features(cuslide2_tests PRIVATE ${CUCIM_REQUIRED_FEATURES})
-# Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
+# Use generator expression to avoid `nvcc fatal   : Value '-std=c++20' is not defined for option 'Werror'`
 target_compile_options(cuslide2_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 target_compile_definitions(cuslide2_tests
     PUBLIC
@@ -46,7 +46,6 @@ target_link_libraries(cuslide2_tests
             deps::catch2
             deps::openslide
             deps::cli11
-            deps::fmt
             Threads::Threads
         )
 

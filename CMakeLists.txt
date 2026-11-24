@@ -62,7 +62,7 @@ if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
 endif ()
 
 find_package(CUDAToolkit REQUIRED)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_CUDA_STANDARD ${CMAKE_CXX_STANDARD})
 set(CMAKE_CUDA_STANDARD_REQUIRED YES)
@@ -114,7 +114,6 @@ find_package(Threads REQUIRED)
 ################################################################################
 # Define dependencies
 ################################################################################
-superbuild_depend(fmt)
 #superbuild_depend(boost)
 superbuild_depend(abseil)
 superbuild_depend(googletest)
@@ -172,7 +171,6 @@ option(CUCIM_INSTALL_BENCHMARKS "Install the C++ benchmark executables" ON)
 
 set(INSTALL_TARGETS
         ${CUCIM_PACKAGE_NAME}
-        fmt-header-only
         )
 
 if(CUCIM_INSTALL_BENCHMARKS)
@@ -223,7 +221,6 @@ install(DIRECTORY
 
 # Copy 3rdparty headers
 install(DIRECTORY
-            ${deps-fmt_SOURCE_DIR}/include/
             ${deps-nvtx3_SOURCE_DIR}/c/include/
         DESTINATION
             ${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty)

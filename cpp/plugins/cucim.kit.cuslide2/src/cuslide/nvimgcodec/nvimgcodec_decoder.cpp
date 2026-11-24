@@ -20,7 +20,7 @@
 #include <type_traits>
 #include <unistd.h>
 #include <mutex>
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 
 #include <cucim/memory/memory_manager.h>
 
@@ -303,13 +303,13 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
     if (!main_code_stream)
     {
         #ifdef DEBUG
-        fmt::print("❌ Invalid main_code_stream\n");
+        cucim::print("❌ Invalid main_code_stream\n");
         #endif
         return false;
     }
 
     #ifdef DEBUG
-    fmt::print("🚀 Decoding IFD[{}] region: [{},{}] {}x{}, codec: {}\n",
+    cucim::print("🚀 Decoding IFD[{}] region: [{},{}] {}x{}, codec: {}\n",
               ifd_info.index, x, y, width, height, ifd_info.codec);
     #endif
 
@@ -321,7 +321,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         if (!manager.is_available())
         {
             #ifdef DEBUG
-            fmt::print("❌ nvImageCodec TIFF parser manager not initialized\n");
+            cucim::print("❌ nvImageCodec TIFF parser manager not initialized\n");
             #endif
             return false;
         }
@@ -340,7 +340,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         nvimgcodecDecoder_t decoder = manager.get_decoder_for(ifd_info);
 
         #ifdef DEBUG
-        fmt::print("  💡 Decoding with default decoder (output buffer: {})\n", target_is_cpu ? "host" : "device");
+        cucim::print("  💡 Decoding with default decoder (output buffer: {})\n", target_is_cpu ? "host" : "device");
         #endif
 
         // Step 1: Create view with ROI for this IFD
@@ -368,7 +368,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
             #ifdef DEBUG
-            fmt::print("❌ Failed to create ROI sub-stream (status: {})\n", static_cast<int>(status));
+            cucim::print("❌ Failed to create ROI sub-stream (status: {})\n", static_cast<int>(status));
             #endif
             return false;
         }
@@ -392,7 +392,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         {
             buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_HOST;
             #ifdef DEBUG
-            fmt::print("  ⚠️  No GPU available, using CPU buffer\n");
+            cucim::print("  ⚠️  No GPU available, using CPU buffer\n");
             #endif
         }
 
@@ -448,7 +448,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
                 }
 
                 #ifdef DEBUG
-                fmt::print("  ℹ️  Caller buffer detected as {} memory\n",
+                cucim::print("  ℹ️  Caller buffer detected as {} memory\n",
                           use_device_memory ? "device" : "host");
                 #endif
             }
@@ -461,7 +461,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
             if (!decode_buffer.allocate(buffer_size, use_device_memory))
             {
                 #ifdef DEBUG
-                fmt::print("❌ Failed to allocate {} memory\n", use_device_memory ? "GPU" : "host");
+                cucim::print("❌ Failed to allocate {} memory\n", use_device_memory ? "GPU" : "host");
                 #endif
                 return false;
             }
@@ -474,7 +474,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
             #ifdef DEBUG
-            fmt::print("❌ Failed to create image object (status: {})\n", static_cast<int>(status));
+            cucim::print("❌ Failed to create image object (status: {})\n", static_cast<int>(status));
             #endif
             return false;
         }
@@ -499,7 +499,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
             #ifdef DEBUG
-            fmt::print("❌ Failed to schedule decoding (status: {})\n", static_cast<int>(status));
+            cucim::print("❌ Failed to schedule decoding (status: {})\n", static_cast<int>(status));
             #endif
             return false;
         }
@@ -511,7 +511,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
             #ifdef DEBUG
-            fmt::print("❌ Failed to get processing status (status: {})\n", static_cast<int>(status));
+            cucim::print("❌ Failed to get processing status (status: {})\n", static_cast<int>(status));
             #endif
             return false;
         }
@@ -524,7 +524,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
         if (decode_status != NVIMGCODEC_PROCESSING_STATUS_SUCCESS)
         {
             #ifdef DEBUG
-            fmt::print("❌ Decoding failed (status: {})\n", static_cast<int>(decode_status));
+            cucim::print("❌ Decoding failed (status: {})\n", static_cast<int>(decode_status));
             #endif
             return false;
         }
@@ -539,7 +539,7 @@ bool decode_ifd_region_nvimgcodec(const IfdInfo& ifd_info,
     catch (const std::exception& e)
     {
         #ifdef DEBUG
-        fmt::print("❌ Exception in ROI decoding: {}\n", e.what());
+        cucim::print("❌ Exception in ROI decoding: {}\n", e.what());
         #endif
         return false;
     }
@@ -578,13 +578,13 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
     if (!main_code_stream)
     {
         #ifdef DEBUG
-        fmt::print("❌ Batch decode: Invalid main_code_stream\n");
+        cucim::print("❌ Batch decode: Invalid main_code_stream\n");
         #endif
         return results;
     }
 
     #ifdef DEBUG
-    fmt::print("🚀 Batch decoding {} regions\n", batch_size);
+    cucim::print("🚀 Batch decoding {} regions\n", batch_size);
     #endif
 
     try
@@ -593,7 +593,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
         if (!manager.is_available())
         {
             #ifdef DEBUG
-            fmt::print("❌ Batch decode: nvImageCodec manager not initialized\n");
+            cucim::print("❌ Batch decode: nvImageCodec manager not initialized\n");
             #endif
             return results;
         }
@@ -624,7 +624,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             buffer_kind = NVIMGCODEC_IMAGE_BUFFER_KIND_STRIDED_HOST;
             use_device_memory = false;
             #ifdef DEBUG
-            fmt::print("  ⚠️  No GPU available, using CPU buffers for batch\n");
+            cucim::print("  ⚠️  No GPU available, using CPU buffers for batch\n");
             #endif
         }
 
@@ -665,7 +665,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             if (status != NVIMGCODEC_STATUS_SUCCESS)
             {
                 #ifdef DEBUG
-                fmt::print("  ⚠️  Failed to create ROI sub-stream for region {} (status: {})\n",
+                cucim::print("  ⚠️  Failed to create ROI sub-stream for region {} (status: {})\n",
                           i, static_cast<int>(status));
                 #endif
                 roi_streams.emplace_back(nullptr);
@@ -675,7 +675,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             roi_streams.emplace_back(roi_stream_raw);
 
             #ifdef DEBUG
-            fmt::print("  ✅ Created ROI sub-stream for region {} (IFD[{}] [{},{}] {}x{})\n",
+            cucim::print("  ✅ Created ROI sub-stream for region {} (IFD[{}] [{},{}] {}x{})\n",
                       i, ifd_info.index, region.x, region.y, region.width, region.height);
             #endif
         }
@@ -702,7 +702,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             if (!decode_buffers[i].allocate(buffer_size, use_device_memory))
             {
                 #ifdef DEBUG
-                fmt::print("  ⚠️  Failed to allocate buffer for region {}\n", i);
+                cucim::print("  ⚠️  Failed to allocate buffer for region {}\n", i);
                 #endif
                 images.emplace_back(nullptr);
                 continue;
@@ -731,7 +731,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             if (status != NVIMGCODEC_STATUS_SUCCESS)
             {
                 #ifdef DEBUG
-                fmt::print("  ⚠️  Failed to create image object for region {}\n", i);
+                cucim::print("  ⚠️  Failed to create image object for region {}\n", i);
                 #endif
                 images.emplace_back(nullptr);
                 continue;
@@ -741,7 +741,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
             results[i].buffer_size = buffer_size;
 
             #ifdef DEBUG
-            fmt::print("  ✅ Created image object for region {} ({}x{}, {} bytes)\n",
+            cucim::print("  ✅ Created image object for region {} ({}x{}, {} bytes)\n",
                       i, region.width, region.height, buffer_size);
             #endif
         }
@@ -767,13 +767,13 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
         if (valid_streams.empty())
         {
             #ifdef DEBUG
-            fmt::print("❌ No valid regions to decode\n");
+            cucim::print("❌ No valid regions to decode\n");
             #endif
             return results;
         }
 
         #ifdef DEBUG
-        fmt::print("  📦 Batch decoding {} valid regions (out of {})\n",
+        cucim::print("  📦 Batch decoding {} valid regions (out of {})\n",
                   valid_streams.size(), batch_size);
         #endif
 
@@ -796,7 +796,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
             #ifdef DEBUG
-            fmt::print("❌ Failed to schedule batch decoding (status: {})\n", static_cast<int>(status));
+            cucim::print("❌ Failed to schedule batch decoding (status: {})\n", static_cast<int>(status));
             #endif
             return results;
         }
@@ -810,7 +810,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
             #ifdef DEBUG
-            fmt::print("❌ Failed to get batch processing status (status: {})\n", static_cast<int>(status));
+            cucim::print("❌ Failed to get batch processing status (status: {})\n", static_cast<int>(status));
             #endif
             return results;
         }
@@ -830,13 +830,13 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
                 results[i].buffer = reinterpret_cast<uint8_t*>(decode_buffers[i].release());
                 results[i].success = true;
                 #ifdef DEBUG
-                fmt::print("  ✅ Region {} decoded successfully\n", i);
+                cucim::print("  ✅ Region {} decoded successfully\n", i);
                 #endif
             }
             else
             {
                 #ifdef DEBUG
-                fmt::print("  ❌ Region {} decode failed (status: {})\n",
+                cucim::print("  ❌ Region {} decode failed (status: {})\n",
                           i, static_cast<int>(decode_statuses[vi]));
                 #endif
             }
@@ -845,7 +845,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
         #ifdef DEBUG
         size_t success_count = 0;
         for (const auto& r : results) if (r.success) ++success_count;
-        fmt::print("✅ Batch decode complete: {}/{} regions successful\n", success_count, batch_size);
+        cucim::print("✅ Batch decode complete: {}/{} regions successful\n", success_count, batch_size);
         #endif
 
         return results;
@@ -853,7 +853,7 @@ std::vector<BatchDecodeResult> decode_batch_regions_nvimgcodec(
     catch (const std::exception& e)
     {
         #ifdef DEBUG
-        fmt::print("❌ Exception in batch decoding: {}\n", e.what());
+        cucim::print("❌ Exception in batch decoding: {}\n", e.what());
         #endif
         return results;
     }
@@ -899,7 +899,7 @@ BatchDecodeState schedule_batch_decode(
         if (!manager.is_available())
         {
             #ifdef DEBUG
-            fmt::print("❌ Schedule batch: nvImageCodec manager not initialized\n");
+            cucim::print("❌ Schedule batch: nvImageCodec manager not initialized\n");
             #endif
             return state;
         }
@@ -1097,7 +1097,7 @@ BatchDecodeState schedule_batch_decode(
         if (status != NVIMGCODEC_STATUS_SUCCESS)
         {
             #ifdef DEBUG
-            fmt::print("❌ Failed to schedule batch decoding (status: {})\n", static_cast<int>(status));
+            cucim::print("❌ Failed to schedule batch decoding (status: {})\n", static_cast<int>(status));
             #endif
             // No manual cleanup needed — ~BatchDecodeStateImpl handles buffer
             // and future cleanup when `state` is destroyed by the caller.
@@ -1106,7 +1106,7 @@ BatchDecodeState schedule_batch_decode(
 
         impl->scheduled = true;
         #ifdef DEBUG
-        fmt::print("✅ Scheduled batch decode of {} regions\n", impl->roi_streams.size());
+        cucim::print("✅ Scheduled batch decode of {} regions\n", impl->roi_streams.size());
         #endif
     }
 
@@ -1140,7 +1140,7 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
     if (status != NVIMGCODEC_STATUS_SUCCESS)
     {
         #ifdef DEBUG
-        fmt::print("❌ Failed to get batch processing status (status: {})\n", static_cast<int>(status));
+        cucim::print("❌ Failed to get batch processing status (status: {})\n", static_cast<int>(status));
         #endif
         return results;  // All results already initialized to failure
     }
@@ -1175,7 +1175,7 @@ std::vector<BatchDecodeResult> wait_batch_decode(BatchDecodeState& state)
     #ifdef DEBUG
     size_t success_count = 0;
     for (const auto& r : results) if (r.success) ++success_count;
-    fmt::print("✅ Batch decode complete: {}/{} regions successful\n", success_count, impl->batch_size);
+    cucim::print("✅ Batch decode complete: {}/{} regions successful\n", success_count, impl->batch_size);
     #endif
 
     return results;

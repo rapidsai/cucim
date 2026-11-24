@@ -1,11 +1,10 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "cucim/concurrent/threadpool.h"
 
-#include <fmt/format.h>
 #include <taskflow/taskflow.hpp>
 
 #include "cucim/profiler/nvtx3.h"

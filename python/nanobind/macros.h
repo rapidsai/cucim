@@ -7,8 +7,6 @@
 
 #include <string>
 
-#include <fmt/format.h>
-
 constexpr const char* remove_leading_spaces(const char* str)
 {
     return *str == '\0' ? str : ((*str == ' ' || *str == '\n') ? remove_leading_spaces(str + 1) : str);
