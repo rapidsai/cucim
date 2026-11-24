@@ -258,6 +258,48 @@ def test_exact_extension_beyond_index_range(order, mode, dtype, coords_dtype):
 
 
 @pytest.mark.parametrize("channels", [None, 3])
+@pytest.mark.parametrize("cval", [-1e40, 1e40])
+def test_exact_grid_constant_fill_with_narrow_output(channels, cval):
+    shape = (512,) if channels is None else (512, channels)
+    image = cp.ones(shape, dtype=cp.float64)
+    coords = np.array([[256, 256.125, -1500, 1512]])
+    expected = np.array(
+        [1.0, 1.0, np.copysign(np.inf, cval), np.copysign(np.inf, cval)]
+    )
+    batch_axes = None
+    if channels is not None:
+        coords = np.broadcast_to(coords[..., None], (2, 4, channels))
+        expected = np.broadcast_to(expected[:, None], (4, channels))
+        batch_axes = (1,)
+
+    actual = cndi.map_coordinates(
+        image,
+        cp.asarray(coords),
+        order=3,
+        mode="grid-constant",
+        cval=cval,
+        output=cp.float32,
+        batch_axes=batch_axes,
+    )
+    cp.testing.assert_allclose(actual, expected, rtol=1e-6, atol=0)
+
+
+@pytest.mark.parametrize("dtype", [cp.float32, cp.complex64])
+def test_exact_nearest_coefficients_with_narrow_output(dtype):
+    edge = float(np.finfo(np.float32).max) * 0.8
+    image = cp.array([edge, -edge] * 16, dtype=cp.float64)
+    actual = cndi.map_coordinates(
+        image,
+        cp.array([[-2048.0, 0.0, 31.0, 2048.0]]),
+        mode="nearest",
+        order=3,
+        output=dtype,
+    )
+    expected = cp.array([edge, edge, -edge, -edge], dtype=dtype)
+    cp.testing.assert_allclose(actual, expected, rtol=1e-6, atol=0)
+
+
+@pytest.mark.parametrize("channels", [None, 3])
 @pytest.mark.parametrize("force_serial", [False, True])
 def test_zoom_reuses_interpolation_and_prefilter_kernels(
     channels, force_serial, monkeypatch

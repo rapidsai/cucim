@@ -663,6 +663,7 @@ def _generate_interp_custom(
     loop_batch_size=None,
     exact_boundary=False,
     nonfinite_integer_fill=None,
+    use_coefficient_dtype=False,
 ):
     """
     Args:
@@ -732,6 +733,8 @@ def _generate_interp_custom(
 
     float_type = cupy._core._scalar.get_typename(float_dtype)
     internal_dtype = float_type if integer_output else "Y"
+    if use_coefficient_dtype:
+        internal_dtype = "X"
 
     # Exact boundaries temporarily use exterior indices. Keep them wide
     # even when all in-domain indices fit in int.
@@ -1417,6 +1420,7 @@ def _get_interp_kernel(
     exact_boundary,
     nonfinite_integer_fill,
     fill_dtype,
+    use_coefficient_dtype,
 ):
     coord_func, transform_params = _COORDINATE_TRANSFORMS[name]
     in_params = f"raw X x, {transform_params}"
@@ -1439,6 +1443,7 @@ def _get_interp_kernel(
         loop_batch_size=loop_batch_size,
         exact_boundary=exact_boundary,
         nonfinite_integer_fill=nonfinite_integer_fill,
+        use_coefficient_dtype=use_coefficient_dtype,
     )
     # The operation uses the multidimensional output index or CArray shape.
     preamble = (

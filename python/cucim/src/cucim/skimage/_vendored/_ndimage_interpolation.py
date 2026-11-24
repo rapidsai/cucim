@@ -52,10 +52,20 @@ def _launch_interpolation(
                 "CUDART_INF" if cval > 0 else "(-CUDART_INF)"
             )
     inputs = (filtered,) + transform_args
+    # A narrower destination can overflow on individual coefficients or the
+    # fill even when their weighted sum is representable.
+    use_coefficient_dtype = (
+        exact_boundary
+        and output.dtype.kind in "fc"
+        and output.real.dtype.itemsize < filtered.dtype.itemsize
+    )
     fill_dtype = None
     if mode in _interp_kernels.FILL_MODES:
         fill_value = numpy.float64(cval)
-        if output.dtype == numpy.float32:
+        fill_precision = (
+            filtered.dtype if use_coefficient_dtype else output.dtype
+        )
+        if fill_precision == numpy.float32:
             # Match the device cast's silent narrowing, including overflow.
             fill_value = numpy.float32(ctypes.c_float(fill_value).value)
             fill_dtype = "float32"
@@ -77,6 +87,7 @@ def _launch_interpolation(
         exact_boundary,
         nonfinite_integer_fill,
         fill_dtype,
+        use_coefficient_dtype,
     )
     if loop_batch_axis:
         kernel(*inputs, output, size=math.prod(output.shape[:-1]))
