@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,12 +7,11 @@
 
 #include "cucim/memory/memory_manager.h"
 
-#include <memory_resource>
-
 #include <cuda_runtime.h>
 #include <fmt/format.h>
 
 #include "cucim/io/device_type.h"
+#include "cucim/memory/device_resource.h"
 #include "cucim/profiler/nvtx3.h"
 #include "cucim/util/cuda.h"
 
@@ -64,7 +63,11 @@ void get_pointer_attributes(PointerAttributes& attr, const void* ptr)
     }
 }
 
-CUCIM_API bool move_raster_from_host(void** target, size_t size, const cucim::io::Device& dst_device)
+EXPORT_VISIBLE bool move_raster_from_host(void** target,
+                                          size_t size,
+                                          const cucim::io::Device& dst_device,
+                                          DeviceResource& resource,
+                                          ::cuda::stream_ref stream)
 {
     switch (dst_device.type())
     {
@@ -73,15 +76,16 @@ CUCIM_API bool move_raster_from_host(void** target, size_t size, const cucim::io
     case cucim::io::DeviceType::kCUDA: {
         cudaError_t cuda_status;
         void* host_mem = *target;
-        void* cuda_mem;
-        CUDA_TRY(cudaMalloc(&cuda_mem, size));
-        if (cuda_status)
+        void* cuda_mem = resource.allocate(stream, size);
+        CUDA_TRY(cudaMemcpyAsync(cuda_mem, host_mem, size, cudaMemcpyHostToDevice, stream.get()));
+        if (cuda_status == cudaSuccess)
         {
-            throw std::bad_alloc();
+            // The source is freed below, so the copy has to have read it.
+            CUDA_TRY(cudaStreamSynchronize(stream.get()));
         }
-        CUDA_TRY(cudaMemcpy(cuda_mem, host_mem, size, cudaMemcpyHostToDevice));
         if (cuda_status)
         {
+            resource.deallocate(stream, cuda_mem, size);
             throw std::bad_alloc();
         }
         cucim_free(host_mem);
@@ -94,7 +98,12 @@ CUCIM_API bool move_raster_from_host(void** target, size_t size, const cucim::io
     return true;
 }
 
-CUCIM_API bool move_raster_from_device(void** target, size_t size, const cucim::io::Device& dst_device)
+EXPORT_VISIBLE bool move_raster_from_device(void** target,
+                                            size_t size,
+                                            const cucim::io::Device& dst_device,
+                                            DeviceResource& resource,
+                                            ::cuda::stream_ref stream,
+                                            std::size_t alignment)
 {
     switch (dst_device.type())
     {
@@ -102,12 +111,19 @@ CUCIM_API bool move_raster_from_device(void** target, size_t size, const cucim::
         cudaError_t cuda_status;
         void* cuda_mem = *target;
         void* host_mem = cucim_malloc(size);
-        CUDA_TRY(cudaMemcpy(host_mem, cuda_mem, size, cudaMemcpyDeviceToHost));
+        CUDA_TRY(cudaMemcpyAsync(host_mem, cuda_mem, size, cudaMemcpyDeviceToHost, stream.get()));
+        if (cuda_status == cudaSuccess)
+        {
+            // The host buffer is returned to the caller, so the copy has to
+            // have landed before this returns.
+            CUDA_TRY(cudaStreamSynchronize(stream.get()));
+        }
         if (cuda_status)
         {
+            cucim_free(host_mem);
             throw std::bad_alloc();
         }
-        cudaFree(cuda_mem);
+        resource.deallocate(stream, cuda_mem, size, alignment);
         *target = host_mem;
         break;
     }
@@ -117,6 +133,37 @@ CUCIM_API bool move_raster_from_device(void** target, size_t size, const cucim::
         throw std::runtime_error("Unsupported device type");
     }
     return true;
+}
+
+namespace
+{
+
+// The resource-free overloads below are what the plugins call. They use
+// cudaMalloc/cudaFree because the buffers escape through ImageDataDesc and are
+// released with a bare cudaFree (CuImage's destructor and CuImage::save) that
+// knows nothing of their provenance; see CudaMemoryResource. Likewise a buffer
+// a plugin allocated came from cudaMalloc and cannot be handed to a caller's
+// resource.
+//
+// Borrowed, so that a no-op move costs no allocation.
+DeviceResource cuda_malloc_resource()
+{
+    static CudaMemoryResource backend;
+    return DeviceResource{ device_resource_ref{ backend } };
+}
+
+} // namespace
+
+CUCIM_API bool move_raster_from_host(void** target, size_t size, const cucim::io::Device& dst_device)
+{
+    DeviceResource resource = cuda_malloc_resource();
+    return move_raster_from_host(target, size, dst_device, resource, ::cuda::stream_ref{ kDefaultStream });
+}
+
+CUCIM_API bool move_raster_from_device(void** target, size_t size, const cucim::io::Device& dst_device)
+{
+    DeviceResource resource = cuda_malloc_resource();
+    return move_raster_from_device(target, size, dst_device, resource, ::cuda::stream_ref{ kDefaultStream });
 }
 
 } // namespace cucim::memory
