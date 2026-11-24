@@ -1956,7 +1956,10 @@ def test_regionprops_table_cupy_spacing(batch_processing):
 
 
 @pytest.mark.parametrize("to_table", [False, True])
-def test_multichannel_weighted_centroid_copy_to_host_shape(to_table):
+@pytest.mark.parametrize("copy_to_host", [False, True])
+def test_multichannel_weighted_centroid_copy_to_host_shape(
+    to_table, copy_to_host
+):
     from skimage.measure import regionprops as regionprops_cpu
 
     labels = np.asarray([[1, 1, 2], [0, 1, 2]], dtype=np.int32)
@@ -1966,7 +1969,7 @@ def test_multichannel_weighted_centroid_copy_to_host_shape(to_table):
         cp.asarray(intensity),
         properties=("centroid_weighted",),
         batch_processing=False,
-        copy_output_to_host=True,
+        copy_output_to_host=copy_to_host,
         to_table=to_table,
     )
     if to_table:
@@ -1975,8 +1978,10 @@ def test_multichannel_weighted_centroid_copy_to_host_shape(to_table):
         )
         assert result.keys() == expected.keys()
         for key in result:
-            assert isinstance(result[key], np.ndarray)
-            np.testing.assert_allclose(result[key], expected[key])
+            assert isinstance(
+                result[key], np.ndarray if copy_to_host else cp.ndarray
+            )
+            assert_allclose(result[key], expected[key])
     else:
         expected = np.asarray(
             [
@@ -1985,7 +1990,11 @@ def test_multichannel_weighted_centroid_copy_to_host_shape(to_table):
             ]
         )
         assert result["centroid_weighted"].shape == (2, 2, 2)
-        np.testing.assert_allclose(result["centroid_weighted"], expected)
+        assert isinstance(
+            result["centroid_weighted"],
+            np.ndarray if copy_to_host else cp.ndarray,
+        )
+        assert_allclose(result["centroid_weighted"], expected)
 
 
 def test_device_spacing_downloaded_once_per_regionprops_call(monkeypatch):
