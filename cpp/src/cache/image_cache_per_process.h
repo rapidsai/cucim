@@ -69,17 +69,19 @@ class PerProcessImageCache : public ImageCache
 {
 public:
     /**
-     * @param device_resource Where device tiles are allocated from.
-     * @param stream Stream device tiles are allocated on.
+     * @param device_resource Where device tiles are allocated from. Fixed for
+     *        the lifetime of the cache: allocate() and create_value() are
+     *        separate calls, so a resource that changed between them would
+     *        give an entry the wrong deallocator.
      *
-     * Both are fixed for the lifetime of the cache: allocate() and
-     * create_value() are separate calls, so either changing between them
-     * would give an entry the wrong deallocator or release stream.
+     * Device tiles are allocated and released on the legacy default stream.
+     * The plugins fill and read them with default-stream copies that are not
+     * ordered against any other stream, so an allocation or release on a
+     * nonblocking stream would race them.
      */
     PerProcessImageCache(const ImageCacheConfig& config,
                          const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU,
-                         cucim::memory::DeviceResource device_resource = {},
-                         ::cuda::stream_ref stream = ::cuda::stream_ref{ cucim::memory::kDefaultStream });
+                         cucim::memory::DeviceResource device_resource = {});
     ~PerProcessImageCache();
 
     const char* type_str() const override;
@@ -122,7 +124,8 @@ private:
     std::vector<std::mutex> mutex_array_;
 
     cucim::memory::DeviceResource device_resource_;
-    ::cuda::stream_ref stream_;
+    /// See the constructor for why this is not configurable.
+    ::cuda::stream_ref stream_{ cucim::memory::kDefaultStream };
 
     std::atomic<uint64_t> size_nbytes_ = 0; /// size of cache memory used
     uint64_t capacity_nbytes_ = 0; /// size of cache memory allocated

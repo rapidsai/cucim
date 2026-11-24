@@ -71,9 +71,12 @@ public:
 /**
  * @brief A resource that allocates with `cudaMalloc` and frees with `cudaFree`.
  *
- * For buffers that are later released with a bare `cudaFree`, which cannot
- * release pool memory; the resource-free raster moves in memory_manager.h use
- * it for that reason. Stateless.
+ * For buffers that are later released with a bare `cudaFree`, with no record
+ * of what allocated them: a caller's resource need not hand out CUDA runtime
+ * allocations at all, and a stream-ordered allocation is only safe to pass to
+ * `cudaFree` once its outstanding accesses have completed, which `cudaFree`
+ * does not wait for. The resource-free raster moves in memory_manager.h use it
+ * for that reason. Stateless.
  *
  * The stream-ordered overloads ignore the stream: `cudaMalloc` and `cudaFree`
  * synchronize the whole device.

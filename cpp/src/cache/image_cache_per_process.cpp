@@ -81,12 +81,10 @@ PerProcessImageCacheValue::~PerProcessImageCacheValue()
 
 PerProcessImageCache::PerProcessImageCache(const ImageCacheConfig& config,
                                            const cucim::io::DeviceType device_type,
-                                           cucim::memory::DeviceResource device_resource,
-                                           ::cuda::stream_ref stream)
+                                           cucim::memory::DeviceResource device_resource)
     : ImageCache(config, CacheType::kPerProcess, device_type),
       mutex_array_(config.mutex_pool_capacity),
       device_resource_(std::move(device_resource)),
-      stream_(stream),
       capacity_nbytes_(kOneMiB * config.memory_capacity),
       capacity_(config.capacity),
       list_capacity_(config.capacity + config.list_padding),

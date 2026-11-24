@@ -139,10 +139,11 @@ namespace
 {
 
 // The resource-free overloads below are what the plugins call. They use
-// cudaMalloc/cudaFree rather than the default pool because the buffers escape
-// through ImageDataDesc and are released with a bare cudaFree (CuImage's
-// destructor and CuImage::save), which cannot release pool memory. Likewise a
-// buffer a plugin allocated came from cudaMalloc and cannot go to a pool.
+// cudaMalloc/cudaFree because the buffers escape through ImageDataDesc and are
+// released with a bare cudaFree (CuImage's destructor and CuImage::save) that
+// knows nothing of their provenance; see CudaMemoryResource. Likewise a buffer
+// a plugin allocated came from cudaMalloc and cannot be handed to a caller's
+// resource.
 //
 // Borrowed, so that a no-op move costs no allocation.
 DeviceResource cuda_malloc_resource()
