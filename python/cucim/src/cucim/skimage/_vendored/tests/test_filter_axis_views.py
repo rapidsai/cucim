@@ -1,0 +1,356 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+import cupy as cp
+import numpy as np
+import pytest
+
+from cucim.skimage._vendored import _ndimage_filters as filters
+from cucim.skimage.filters import sobel
+
+pytestmark = pytest.mark.filterwarnings("error::UserWarning")
+
+
+@pytest.mark.parametrize("algorithm", [None, "shared_memory"])
+def test_filter_axis_view_integer_weights_with_constant_fill(algorithm):
+    image = cp.zeros((4, 8, 4), dtype=cp.float32)
+    weights = cp.asarray([1, 2, 1], dtype=cp.int32)
+    kwargs = dict(axis=1, mode="constant", cval=1)
+    expected = filters.correlate1d(
+        image, weights, algorithm="elementwise", **kwargs
+    )
+    assert expected[0, 0, 0] == 1
+    result = filters.correlate1d(image, weights, algorithm=algorithm, **kwargs)
+    cp.testing.assert_array_equal(result, expected)
+
+
+def test_sobel_volume_with_axis_specific_modes():
+    image = cp.asarray(
+        np.random.default_rng(0).standard_normal((7, 11, 9)).astype(np.float32)
+    )
+    modes = ("reflect", "nearest", "wrap")
+    smooth = cp.asarray([0.25, 0.5, 0.25], dtype=cp.float32)
+    edge = cp.asarray([1, 0, -1], dtype=cp.float32)
+    expected = cp.zeros_like(image)
+    for edge_axis, mode in enumerate(modes):
+        result = filters.convolve1d(
+            image, edge, axis=edge_axis, mode=mode, algorithm="elementwise"
+        )
+        for axis, smooth_mode in enumerate(modes):
+            if axis != edge_axis:
+                result = filters.convolve1d(
+                    result,
+                    smooth,
+                    axis=axis,
+                    mode=smooth_mode,
+                    algorithm="elementwise",
+                )
+        expected += result**2
+    expected = cp.sqrt(expected / image.ndim)
+    cp.testing.assert_allclose(sobel(image, mode=modes), expected, atol=2e-6)
+
+
+def test_filter_axis_view_selects_mode_for_negative_axis():
+    image = cp.arange(4 * 8 * 4, dtype=cp.float32).reshape(4, 8, 4)
+    weights = cp.asarray([1, 2, 3], dtype=cp.float32)
+    modes = ("nearest", "constant", "mirror")
+    expected = filters.convolve1d(
+        image, weights, axis=1, mode=modes[1], cval=-2, algorithm="elementwise"
+    )
+    result = filters.convolve1d(
+        image, weights, axis=-2, mode=modes, cval=-2, algorithm="shared_memory"
+    )
+    cp.testing.assert_array_equal(result, expected)
+    with pytest.raises(RuntimeError, match="mode must have length"):
+        filters.convolve1d(image, weights, axis=-2, mode=modes[:2])
+
+
+@pytest.mark.parametrize("axis", [0, 1])
+@pytest.mark.parametrize("tap", [0.5, 3.0])
+def test_filter_axis_view_bool_output_uses_canonical_bytes(axis, tap):
+    image = cp.ones((4, 8, 4), dtype=cp.float32)
+    weights = cp.asarray([tap], dtype=cp.float32)
+    expected = filters.correlate1d(
+        image, weights, axis=axis, output=cp.bool_, algorithm="elementwise"
+    )
+    result = filters.correlate1d(
+        image, weights, axis=axis, output=cp.bool_, algorithm="shared_memory"
+    )
+    cp.testing.assert_array_equal(result, expected)
+    cp.testing.assert_array_equal(
+        result.view(cp.uint8), cp.ones(image.shape, dtype=cp.uint8)
+    )
+
+
+@pytest.mark.parametrize(
+    "shape,axis",
+    [
+        ((7, 19, 3), 1),
+        ((5, 17, 4), 1),
+        ((2, 3, 17, 2, 3), 2),
+        ((3, 17, 8), 1),
+        ((2, 17, 2, 16), 1),
+        ((2, 3, 17), 2),
+        ((1, 1, 3), 1),
+        ((3, 2, 7), 1),
+    ],
+)
+@pytest.mark.parametrize(
+    "mode", ["reflect", "mirror", "nearest", "wrap", "constant"]
+)
+@pytest.mark.parametrize("convolution", [False, True])
+def test_filter_axis_views(shape, axis, mode, convolution):
+    image = cp.asarray(
+        np.random.default_rng(0).standard_normal(shape).astype(np.float32)
+    )
+    weights = cp.asarray([0.1, -0.2, 0.3, 0.4], dtype=cp.float32)
+    function = filters.convolve1d if convolution else filters.correlate1d
+    kwargs = dict(axis=axis - image.ndim, mode=mode, cval=2.0, origin=-1)
+    expected = function(image, weights, algorithm="elementwise", **kwargs)
+    output = cp.empty_like(image)
+    result = function(
+        image, weights, output=output, algorithm="shared_memory", **kwargs
+    )
+    assert result is output
+    cp.testing.assert_allclose(result, expected, rtol=2e-6, atol=2e-6)
+
+
+@pytest.mark.parametrize(
+    "dtype", ["float16", "float64", "int16", "uint8", "complex64", "complex128"]
+)
+def test_filter_axis_view_dtypes(dtype):
+    image = cp.asarray(
+        np.random.default_rng(1).integers(0, 20, (5, 13, 3))
+    ).astype(dtype)
+    weights = cp.asarray([0.125, 0.25, -0.5, 1], dtype=cp.float64)
+    if image.dtype.kind == "c":
+        image += 0.5j
+        weights = weights + 0.25j
+    for output in (
+        None,
+        cp.float64 if image.dtype.kind != "c" else cp.complex128,
+    ):
+        expected = filters.correlate1d(
+            image, weights, axis=1, output=output, algorithm="elementwise"
+        )
+        result = filters.correlate1d(
+            image, weights, axis=1, output=output, algorithm="shared_memory"
+        )
+        cp.testing.assert_allclose(result, expected, rtol=2e-6, atol=2e-6)
+
+
+@pytest.mark.parametrize(
+    "width,origin", [(1, 0), (7, -3), (7, 3), (65, -32), (65, 32)]
+)
+def test_filter_axis_view_large_halo(width, origin):
+    # Multiple reflections and an asymmetric halo can extend beyond a tile.
+    image = cp.arange(2 * 5 * 3, dtype=cp.float32).reshape(2, 5, 3)
+    weights = cp.full(width, 1 / width, dtype=cp.float32)
+    expected = filters.correlate1d(
+        image,
+        weights,
+        axis=1,
+        origin=origin,
+        mode="mirror",
+        algorithm="elementwise",
+    )
+    result = filters.correlate1d(
+        image,
+        weights,
+        axis=1,
+        origin=origin,
+        mode="mirror",
+        algorithm="shared_memory",
+    )
+    cp.testing.assert_allclose(result, expected, rtol=2e-6, atol=2e-6)
+
+
+def test_filter_axis_view_resource_fallback():
+    image = cp.arange(2 * 9 * 16, dtype=cp.float32).reshape(2, 9, 16)
+    weights = cp.full(255, 1 / 255, dtype=cp.float32)
+    expected = filters.correlate1d(
+        image, weights, axis=1, algorithm="elementwise"
+    )
+    result = filters.correlate1d(image, weights, axis=1)
+    cp.testing.assert_allclose(result, expected, rtol=2e-6, atol=2e-6)
+
+
+@pytest.mark.parametrize("trailing_size", [None, 3, 32])
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
+def test_filter_axis_views_zero_weights(trailing_size, value):
+    shape = (3, 9) if trailing_size is None else (3, 9, trailing_size)
+    image = cp.ones(shape, dtype=cp.float32)
+    image[(1, 4) if trailing_size is None else (1, 4, 0)] = value
+    weights = cp.asarray([-1, 0, 1], dtype=cp.float32)
+    expected = filters.correlate1d(
+        image, weights, axis=1, algorithm="elementwise"
+    )
+    result = filters.correlate1d(
+        image, weights, axis=1, algorithm="shared_memory"
+    )
+    cp.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize("axis", [1, 2, -1])
+def test_filter_axis_view_default_dispatch(axis, monkeypatch):
+    image = cp.arange(2 * 17 * 13 * 3, dtype=cp.float32).reshape(2, 17, 13, 3)
+    if axis == -1:
+        image = image.reshape(2, 17, 39)
+    weights = cp.asarray([0.25, 0.5, 0.25], dtype=cp.float32)
+    expected = filters.correlate1d(
+        image, weights, axis=axis, algorithm="elementwise"
+    )
+    shared = filters._shmem_convolve1d
+    calls = []
+
+    def record_shared(*args, **kwargs):
+        calls.append(args[0].shape)
+        return shared(*args, **kwargs)
+
+    monkeypatch.setattr(filters, "_shmem_convolve1d", record_shared)
+    result = filters.correlate1d(image, weights, axis=axis)
+    assert len(calls) == 1
+    cp.testing.assert_array_equal(result, expected)
+
+
+def test_filter_axis_view_many_rows():
+    # More than 65535 row tiles must spill into grid.z, not exceed grid.y.
+    image = cp.arange(524281, dtype=cp.float32).reshape(-1, 1, 1)
+    weights = cp.asarray([0.25, 0.5, 0.25], dtype=cp.float32)
+    result = filters.correlate1d(
+        image, weights, axis=1, algorithm="shared_memory"
+    )
+    cp.testing.assert_array_equal(result, image)
+
+
+@pytest.mark.parametrize(
+    "shape", [(4 * 65535 + 1, 8, 17), (1, 16 * 65535 + 1, 17)]
+)
+def test_filter_axis_view_grid_limit_fallback(shape, monkeypatch):
+    image = cp.zeros(shape, dtype=cp.float32)
+    weights = cp.asarray([0.25, 0.5, 0.25], dtype=cp.float32)
+
+    def fail_shared(*args, **kwargs):
+        pytest.fail("wide-stride tile grid exceeds a CUDA launch limit")
+
+    monkeypatch.setattr(filters, "_shmem_convolve1d", fail_shared)
+    result = filters.correlate1d(image, weights, axis=1)
+    cp.testing.assert_array_equal(result, image)
+
+
+@pytest.mark.parametrize(
+    "layout",
+    ["strided_input", "strided_output", "overlap", "short_axis", "short_row"],
+)
+def test_filter_axis_view_fallback(layout, monkeypatch):
+    image = cp.arange(8 * 19 * 3, dtype=cp.float32).reshape(8, 19, 3)
+    if layout == "short_axis":
+        image = cp.arange(1024 * 3 * 32, dtype=cp.float32).reshape(1024, 3, 32)
+    elif layout == "short_row":
+        image = cp.arange(4096 * 8 * 4, dtype=cp.float32).reshape(4096, 8, 4)
+    if layout == "strided_input":
+        image = image[:, ::2]
+    output = cp.empty_like(image)
+    if layout == "strided_output":
+        output = cp.empty(image.shape + (2,), dtype=image.dtype)[..., 0]
+    elif layout == "overlap":
+        output = image
+    weights = cp.asarray([0.25, 0.5, 0.25], dtype=cp.float32)
+    expected = filters.correlate1d(
+        image, weights, axis=1, algorithm="elementwise"
+    )
+
+    def fail_shared(*args, **kwargs):
+        pytest.fail("unsupported layout entered the view path")
+
+    monkeypatch.setattr(filters, "_shmem_convolve1d", fail_shared)
+    result = filters.correlate1d(image, weights, axis=1, output=output)
+    assert result is output
+    cp.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "shape,axis",
+    [
+        ((9, 11), 0),
+        ((9, 11), 1),
+        ((5, 9, 7), 0),  # 2D view
+        ((5, 9, 7), 1),  # packed rows
+        ((5, 9, 7), 2),  # packed rows (trailing size 1)
+        ((4, 9, 20), 1),  # 3D kernel
+    ],
+)
+@pytest.mark.parametrize("order", [0, 1])
+@pytest.mark.parametrize("dtype", [cp.float32, cp.float64])
+def test_cached_gaussian_weights_shared_memory(shape, axis, order, dtype):
+    """Cached Gaussian weights without zeros use kernels without the per-tap
+    zero-weight test; derivative weights (zero center) keep it. Both match
+    the elementwise implementation, including the propagation of NaN."""
+    image = cp.asarray(np.random.default_rng(5).random(shape), dtype=dtype)
+    image[(1,) * len(shape)] = cp.nan
+    expected = filters.gaussian_filter1d(
+        image, 1.2, axis=axis, order=order, algorithm="elementwise"
+    )
+    result = filters.gaussian_filter1d(
+        image, 1.2, axis=axis, order=order, algorithm="shared_memory"
+    )
+    cp.testing.assert_array_equal(cp.isnan(result), cp.isnan(expected))
+    tol = 1e-5 if dtype == cp.float32 else 1e-12
+    cp.testing.assert_allclose(result, expected, rtol=tol, atol=tol)
+
+
+@pytest.mark.parametrize(
+    "shape,axis", [((8, 16, 3), 0), ((8, 16, 3), 1), ((2, 3, 17, 40), 2)]
+)
+@pytest.mark.parametrize(
+    "dtype,cval", [(cp.uint8, 0.5), (cp.uint8, 256), (cp.int16, -0.5)]
+)
+def test_shared_filter_padding_preserves_working_dtype(
+    shape, axis, dtype, cval
+):
+    image = cp.zeros(shape, dtype=dtype)
+    weights = cp.asarray([1, 2, 1], dtype=cp.float32)
+    kwargs = dict(axis=axis, mode="constant", cval=cval, output=cp.float32)
+    actual = filters.correlate1d(image, weights, **kwargs)
+    expected = filters.correlate1d(
+        image, weights, algorithm="elementwise", **kwargs
+    )
+    assert actual[(0,) * image.ndim].item() == cval
+    cp.testing.assert_array_equal(actual, expected)
+
+
+def test_explicit_shared_filter_falls_back_for_fractional_padding():
+    image = cp.zeros((8, 16, 3), dtype=cp.uint8)
+    weights = cp.asarray([1, 2, 1], dtype=cp.float32)
+    with pytest.warns(UserWarning, match="unsupported for algorithm"):
+        actual = filters.correlate1d(
+            image,
+            weights,
+            axis=1,
+            mode="constant",
+            cval=0.5,
+            output=cp.float32,
+            algorithm="shared_memory",
+        )
+    assert actual[0, 0, 0].item() == 0.5
+
+
+@pytest.mark.parametrize("extra", [0, 1])
+def test_axis_zero_view_respects_grid_limit(extra):
+    # Three weights use 32 filtered positions per block of the 2D view.
+    image = cp.ones((32 * 65535 + extra, 1, 1), dtype=cp.float32)
+    weights = cp.asarray([0.25, 0.5, 0.25], dtype=cp.float32)
+    actual = filters.correlate1d(image, weights, axis=0)
+    cp.testing.assert_array_equal(actual, image)
+
+
+def test_axis_zero_shared_memory_with_float16_output():
+    image = cp.ones((2, 3, 16, 2), dtype=cp.float32)
+    output = cp.empty(image.shape, dtype=cp.float16)
+    weights = cp.asarray([1, 2, 1], dtype=cp.float32)
+    # An attempted compile fallback raises a warning, which fails this module.
+    result = filters.correlate1d(
+        image, weights, axis=0, output=output, algorithm="shared_memory"
+    )
+    assert result is output
+    cp.testing.assert_array_equal(result, cp.full_like(output, 4))

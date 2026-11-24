@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <cstring>
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 
 #include <benchmark/benchmark.h>
 #include <openslide/openslide.h>
@@ -128,7 +128,7 @@ static bool setup_configuration()
     openslide_t* slide = openslide_open(input_path.c_str());
     if (slide == nullptr)
     {
-        fmt::print("[Error] Cannot load {}!\n", input_path);
+        cucim::print("[Error] Cannot load {}!\n", input_path);
         return false;
     }
     int64_t w, h;

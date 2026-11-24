@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,7 +9,10 @@
 #include "cucim/memory/memory_manager.h"
 #include "cucim/util/cuda.h"
 
-#include <fmt/format.h>
+#include <cucim/util/print.h>
+
+#include <exception>
+#include <utility>
 
 namespace std
 {
@@ -46,8 +49,12 @@ struct PerProcessImageCacheItem
 PerProcessImageCacheValue::PerProcessImageCacheValue(void* data,
                                                      uint64_t size,
                                                      void* user_obj,
-                                                     const cucim::io::DeviceType device_type)
-    : ImageCacheValue(data, size, user_obj, device_type){};
+                                                     const cucim::io::DeviceType device_type,
+                                                     cucim::memory::DeviceResource device_resource,
+                                                     ::cuda::stream_ref stream)
+    : ImageCacheValue(data, size, user_obj, device_type),
+      device_resource_(std::move(device_resource)),
+      stream_(stream){};
 
 PerProcessImageCacheValue::~PerProcessImageCacheValue()
 {
@@ -58,25 +65,26 @@ PerProcessImageCacheValue::~PerProcessImageCacheValue()
         case io::DeviceType::kCPU:
             cucim_free(data);
             break;
-        case io::DeviceType::kCUDA: {
-            cudaError_t cuda_status;
-            CUDA_TRY(cudaFree(data));
+        case io::DeviceType::kCUDA:
+            device_resource_.deallocate(stream_, data, size);
             break;
-        }
         case io::DeviceType::kCUDAHost:
         case io::DeviceType::kCUDAManaged:
         case io::DeviceType::kCPUShared:
         case io::DeviceType::kCUDAShared:
-            fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
+            cucim::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type));
             break;
         }
         data = nullptr;
     }
 };
 
-PerProcessImageCache::PerProcessImageCache(const ImageCacheConfig& config, const cucim::io::DeviceType device_type)
+PerProcessImageCache::PerProcessImageCache(const ImageCacheConfig& config,
+                                           const cucim::io::DeviceType device_type,
+                                           cucim::memory::DeviceResource device_resource)
     : ImageCache(config, CacheType::kPerProcess, device_type),
       mutex_array_(config.mutex_pool_capacity),
+      device_resource_(std::move(device_resource)),
       capacity_nbytes_(kOneMiB * config.memory_capacity),
       capacity_(config.capacity),
       list_capacity_(config.capacity + config.list_padding),
@@ -103,7 +111,7 @@ std::shared_ptr<ImageCacheValue> PerProcessImageCache::create_value(void* data,
                                                                     uint64_t size,
                                                                     const cucim::io::DeviceType device_type)
 {
-    return std::make_shared<PerProcessImageCacheValue>(data, size, nullptr, device_type);
+    return std::make_shared<PerProcessImageCacheValue>(data, size, nullptr, device_type, device_resource_, stream_);
 }
 
 void* PerProcessImageCache::allocate(std::size_t n)
@@ -113,16 +121,22 @@ void* PerProcessImageCache::allocate(std::size_t n)
     case io::DeviceType::kCPU:
         return cucim_malloc(n);
     case io::DeviceType::kCUDA: {
-        cudaError_t cuda_status;
-        void* image_data_ptr = nullptr;
-        CUDA_TRY(cudaMalloc(&image_data_ptr, n));
-        return image_data_ptr;
+        // nullptr tells callers to decode without caching. Any exception type,
+        // since a caller's resource may throw anything.
+        try
+        {
+            return device_resource_.allocate(stream_, n);
+        }
+        catch (const std::exception&)
+        {
+            return nullptr;
+        }
     }
     case io::DeviceType::kCUDAHost:
     case io::DeviceType::kCUDAManaged:
     case io::DeviceType::kCPUShared:
     case io::DeviceType::kCUDAShared:
-        fmt::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type_));
+        cucim::print(stderr, "Device type {} is not supported!\n", static_cast<int>(device_type_));
         break;
     }
     return nullptr;
@@ -164,7 +178,7 @@ bool PerProcessImageCache::insert(std::shared_ptr<ImageCacheKey>& key, std::shar
     }
     else
     {
-        fmt::print(stderr, "{} existing list_[] = {}\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), (uint64_t)item->key->location_hash);
+        cucim::print(stderr, "{} existing list_[] = {}\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), (uint64_t)item->key->location_hash);
     }
     return succeed;
 }

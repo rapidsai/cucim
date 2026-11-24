@@ -17,16 +17,18 @@ add_executable(cucim_tests
         test_cufile.cpp
         test_metadata.cpp
         test_image_cache.cpp
+        test_device_resource.cpp
+        test_print.cpp
         )
 
 set_target_properties(cucim_tests
     PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
 )
 target_compile_features(cucim_tests PRIVATE ${CUCIM_REQUIRED_FEATURES})
-# Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
+# Use generator expression to avoid `nvcc fatal   : Value '-std=c++20' is not defined for option 'Werror'`
 target_compile_options(cucim_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 target_compile_definitions(cucim_tests
     PUBLIC
@@ -51,6 +53,15 @@ target_link_libraries(cucim_tests
             deps::openslide
             deps::taskflow
             Threads::Threads # -lpthread
+        )
+
+# Same reason as in cpp/CMakeLists.txt: CCCL must be searched before the CUDA
+# toolkit's older bundled libcudacxx, and CUDA::cudart_static above brings the
+# toolkit include directory in.
+target_include_directories(cucim_tests
+        BEFORE
+        PRIVATE
+            ${CUCIM_CCCL_INCLUDE_DIRS}
         )
 
 include(Catch)

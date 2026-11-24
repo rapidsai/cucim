@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,7 +9,8 @@
 #include "cucim/memory/memory_manager.h"
 
 #include <boost/make_shared.hpp>
-#include <fmt/format.h>
+#include <format>
+#include <cucim/util/print.h>
 
 
 template <>
@@ -184,7 +185,7 @@ SharedMemoryImageCache::SharedMemoryImageCache(const ImageCacheConfig& config, c
     if (device_type != cucim::io::DeviceType::kCPU)
     {
         throw std::runtime_error(
-            fmt::format("[Error] SharedMemoryImageCache doesn't support other memory type other than CPU memory!\n"));
+            std::format("[Error] SharedMemoryImageCache doesn't support other memory type other than CPU memory!\n"));
     }
 
     try
@@ -239,7 +240,7 @@ SharedMemoryImageCache::SharedMemoryImageCache(const ImageCacheConfig& config, c
     }
     catch (const boost::interprocess::bad_alloc& e)
     {
-        throw std::runtime_error(fmt::format(
+        throw std::runtime_error(std::format(
             "[Error] Couldn't allocate shared memory (size: {}). Please increase the cache memory capacity.\n",
             memory_capacity));
     }
@@ -262,7 +263,7 @@ SharedMemoryImageCache::~SharedMemoryImageCache()
     bool succeed = remove_shmem();
     if (!succeed)
     {
-        fmt::print(stderr, "[Warning] Couldn't delete the shared memory object '{}'.",
+        cucim::print(stderr, "[Warning] Couldn't delete the shared memory object '{}'.",
                    cucim::CuImage::get_config()->shm_name());
     }
 }
@@ -297,19 +298,19 @@ void* SharedMemoryImageCache::allocate(std::size_t n)
     void* temp = nullptr;
     try
     {
-        // fmt::print(stderr, "## pid: {} memory_size: {}, memory_capacity: {}, free_memory: {}\n", getpid(),
-        //            memory_size(), memory_capacity(), free_memory());
-        // fmt::print(
+        // cucim::print(stderr, "## pid: {} memory_size: {}, memory_capacity: {}, free_memory: {}\n", getpid(),
+        //              memory_size(), memory_capacity(), free_memory());
+        // cucim::print(
         //     stderr, "## pid: {} size_nbytes: {}, capacity_nbytes: {}\n", getpid(), *size_nbytes_, *capacity_nbytes_);
-        // fmt::print(stderr, "## pid: {}, {} hit:{} miss:{} total:{} | {}/{}  hash size:{}\n", getpid(),
-        //            segment_->get_free_memory(), *stat_hit_, *stat_miss_, *stat_hit_ + *stat_miss_, size(),
-        //            *list_capacity_, hashmap_->size());
+        // cucim::print(stderr, "## pid: {}, {} hit:{} miss:{} total:{} | {}/{}  hash size:{}\n", getpid(),
+        //              segment_->get_free_memory(), *stat_hit_, *stat_miss_, *stat_hit_ + *stat_miss_, size(),
+        //              *list_capacity_, hashmap_->size());
 
         temp = segment_->allocate(n);
     }
     catch (const std::exception& e)
     {
-        throw std::runtime_error(fmt::format(
+        throw std::runtime_error(std::format(
             "[Error] Couldn't allocate shared memory (size: {}). Please increase the cache memory capacity.\n", n));
     }
 
@@ -318,7 +319,7 @@ void* SharedMemoryImageCache::allocate(std::size_t n)
 
 void SharedMemoryImageCache::lock(uint64_t index)
 {
-    // fmt::print(stderr, "# {}: {} {} [{}]-   lock\n",
+    // cucim::print(stderr, "# {}: {} {} [{}]-   lock\n",
     // std::chrono::high_resolution_clock::now().time_since_epoch().count(),
     //            getpid(), index, index % *mutex_pool_capacity_);
     mutex_array_[index % *mutex_pool_capacity_].lock();
@@ -326,9 +327,9 @@ void SharedMemoryImageCache::lock(uint64_t index)
 
 void SharedMemoryImageCache::unlock(uint64_t index)
 {
-    // fmt::print(stderr, "# {}: {} {} [{}]-   unlock\n",
-    //            std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index,
-    //            index % *mutex_pool_capacity_);
+    // cucim::print(stderr, "# {}: {} {} [{}]-   unlock\n",
+    //              std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index,
+    //              index % *mutex_pool_capacity_);
     mutex_array_[index % *mutex_pool_capacity_].unlock();
 }
 

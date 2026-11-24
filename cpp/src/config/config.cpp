@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -8,10 +8,11 @@
 #include "cucim/cache/cache_type.h"
 #include "cucim/util/file.h"
 
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 #include <nlohmann/json.hpp>
 
 #include <cstring>
+#include <format>
 #include <iostream>
 #include <fstream>
 #include <filesystem>
@@ -61,7 +62,7 @@ cucim::profiler::ProfilerConfig& Config::profiler()
 
 std::string Config::shm_name() const
 {
-    return fmt::format("cucim-shm.{}", pgid());
+    return std::format("cucim-shm.{}", pgid());
 }
 
 
@@ -138,7 +139,7 @@ bool Config::parse_config(std::string& path)
     }
     catch (const json::parse_error& e)
     {
-        fmt::print(stderr,
+        cucim::print(stderr,
                    "Failed to load configuration file: {}\n"
                    "  message: {}\n"
                    "  exception id: {}\n"

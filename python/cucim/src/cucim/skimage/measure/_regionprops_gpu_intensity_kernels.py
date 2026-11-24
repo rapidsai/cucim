@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
@@ -8,6 +8,7 @@ import cupy as cp
 from ._regionprops_gpu_utils import (
     _check_intensity_image_shape,
     _get_count_dtype,
+    _get_run_count_ctype,
     _includes,
 )
 
@@ -49,7 +50,7 @@ def _get_img_sums_code(
 
         - counts : shape (max_label,)
     """
-    pixel_count_dtype = "int8_t" if pixels_per_thread < 256 else "int16_t"
+    pixel_count_dtype = _get_run_count_ctype(pixels_per_thread)
 
     source_pre = ""
     if compute_num_pixels:
@@ -122,6 +123,8 @@ def _get_intensity_min_max_code(
     # Note: CuPy provides atomicMin and atomicMax for float and double in
     #       cupy/_core/include/atomics.cuh
     #       The integer variants are part of CUDA itself.
+    #       The kernels call cucim_atomic_min and cucim_atomic_max (see
+    #       _includes), because CuPy's double overloads round to float.
 
     source_pre = ""
     if compute_min:
@@ -167,11 +170,11 @@ def _get_intensity_min_max_code(
     if compute_min:
         for c in range(num_channels):
             source_post += f"""
-            atomicMin(&minimums[{nc}(lab - 1) + {c}], min_vals[{nc}jj + {c}]);"""  # noqa: E501
+            cucim_atomic_min(&minimums[{nc}(lab - 1) + {c}], min_vals[{nc}jj + {c}]);"""  # noqa: E501
     if compute_max:
         for c in range(num_channels):
             source_post += f"""
-            atomicMax(&maximums[{nc}(lab - 1) + {c}], max_vals[{nc}jj + {c}]);"""  # noqa: E501
+            cucim_atomic_max(&maximums[{nc}(lab - 1) + {c}], max_vals[{nc}jj + {c}]);"""  # noqa: E501
     return source_pre, source_operation, source_post
 
 
@@ -233,6 +236,15 @@ def _get_intensity_range(image_dtype):
     return (info.min, info.max)
 
 
+def _has_exact_sums(image_dtype):
+    """Whether the dtype permits exact 64-bit integer sums and squared sums.
+
+    Callers must additionally require fewer than 2**32 pixels.
+    """
+    image_dtype = cp.dtype(image_dtype)
+    return image_dtype.kind in "biu" and image_dtype.itemsize <= 2
+
+
 @cp.memoize(for_each_device=True)
 def get_intensity_measure_kernel(
     image_dtype=None,
@@ -254,6 +266,11 @@ def get_intensity_measure_kernel(
         min_max_dtype,
         c_min_max_type,
     ) = _get_intensity_img_kernel_dtypes(image_dtype)
+    if compute_sum_sq and not (_has_exact_sums(image_dtype) and int32_count):
+        # Preserve exact integer atomics for narrow inputs within the size bound.
+        # Wide integer squares can overflow a 64-bit sum even for tiny regions.
+        sum_dtype = cp.dtype(cp.float64)
+        c_sum_type = "double"
 
     array_size = pixels_per_thread
     any_sums = compute_num_pixels or compute_sum or compute_sum_sq
@@ -274,6 +291,11 @@ def get_intensity_measure_kernel(
         if min_max_dtype is None:
             raise ValueError("min_max_dtype must be specified")
         range_min, range_max = _get_intensity_range(min_max_dtype)
+        if min_max_dtype.kind == "f":
+            inf = (
+                "CUDART_INF" if min_max_dtype == cp.float64 else "CUDART_INF_F"
+            )
+            range_min, range_max = "-" + inf, inf
         min_max_pre, min_max_op, min_max_post = _get_intensity_min_max_code(
             min_max_dtype=min_max_dtype,
             c_min_max_type=c_min_max_type,
@@ -459,6 +481,11 @@ def get_mean_var_kernel(dtype, sample_std=False):
         c_type = "float"
         nan_val = "CUDART_NAN_F"
 
+    # The one-pass formula sumsq - m * m * count can round to a small negative
+    # number when all values are equal (or nearly so), so the variance is
+    # clipped at 0 before taking the square root (otherwise sqrt gives NaN).
+    # The clip uses a comparison rather than max(), which is fmax in CUDA and
+    # would also replace a NaN variance (from NaN or inf values) with 0.
     if sample_std:
         source = f"""
             if (count == 1) {{
@@ -466,8 +493,9 @@ def get_mean_var_kernel(dtype, sample_std=False):
               var = {nan_val};
             }} else {{
               m = static_cast<double>(sum) / count;
-              var = sqrt(
-                  (static_cast<double>(sumsq) - m * m * count) / (count - 1));
+              double v = (static_cast<double>(sumsq) - m * m * count)
+                         / (count - 1);
+              var = sqrt(v < 0.0 ? 0.0 : v);
             }}\n"""
     else:
         source = f"""
@@ -479,8 +507,8 @@ def get_mean_var_kernel(dtype, sample_std=False):
               var = 0.0;
             }} else {{
               m = static_cast<double>(sum) / count;
-              var = sqrt(
-                  (static_cast<double>(sumsq) - m * m * count) / count);
+              double v = (static_cast<double>(sumsq) - m * m * count) / count;
+              var = sqrt(v < 0.0 ? 0.0 : v);
             }}\n"""
     inputs = "X count, Y sum, Y sumsq"
     outputs = "Z m, Z var"
@@ -516,9 +544,12 @@ def regionprops_intensity_std(
     num_channels = _check_intensity_image_shape(label_image, intensity_image)
 
     image_dtype = intensity_image.dtype
-    sum_dtype, _, _, _ = _get_intensity_img_kernel_dtypes(image_dtype)
-
     count_dtype, int32_count = _get_count_dtype(label_image.size)
+    sum_dtype = (
+        _get_intensity_img_kernel_dtypes(image_dtype)[0]
+        if _has_exact_sums(image_dtype) and int32_count
+        else cp.dtype(cp.float64)
+    )
 
     if "num_pixels" in props_dict:
         counts = props_dict["num_pixels"]
@@ -616,6 +647,9 @@ def regionprops_intensity_min_max(
     image_dtype = intensity_image.dtype
     _, _, min_max_dtype, _ = _get_intensity_img_kernel_dtypes(image_dtype)
     range_min, range_max = _get_intensity_range(image_dtype)
+    if min_max_dtype.kind == "f":
+        # Empty rows retain the natural min/max reduction identities.
+        range_min, range_max = -math.inf, math.inf
     out_shape = (
         (num_counts,) if num_channels == 1 else (num_counts, num_channels)
     )

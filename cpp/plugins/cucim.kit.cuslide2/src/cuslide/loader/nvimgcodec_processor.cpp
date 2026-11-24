@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cstring>
 #include <deque>
+#include <format>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -16,7 +17,7 @@
 #include <vector>
 
 // Third-party
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 #include <cuda_runtime.h>
 
 // cuCIM
@@ -75,7 +76,7 @@ NvImageCodecProcessor::NvImageCodecProcessor(
         {
             use_device_memory_ = false;
             #ifdef DEBUG
-            fmt::print("⚠️  No GPU available, falling back to CPU memory\n");
+            cucim::print("⚠️  No GPU available, falling back to CPU memory\n");
             #endif
         }
     }
@@ -89,7 +90,7 @@ NvImageCodecProcessor::NvImageCodecProcessor(
         if (stream_err != cudaSuccess)
         {
             #ifdef DEBUG
-            fmt::print("⚠️  Failed to create CUDA stream, falling back to default stream\n");
+            cucim::print("⚠️  Failed to create CUDA stream, falling back to default stream\n");
             #endif
             decode_stream_ = nullptr;
         }
@@ -100,11 +101,11 @@ NvImageCodecProcessor::NvImageCodecProcessor(
         std::min(batch_size, MAX_NVIMGCODEC_BATCH_SIZE));
 
     #ifdef DEBUG
-    fmt::print("🔧 NvImageCodecProcessor initialized:\n");
-    fmt::print("   ROI size: {}x{}, {} bytes\n", roi_width_, roi_height_, roi_size_bytes_);
-    fmt::print("   Locations: {}, Batch size: {}\n", location_len_, batch_size_);
-    fmt::print("   nvImageCodec batch size: {}\n", cuda_batch_size_);
-    fmt::print("   Output: {} (stream: {})\n",
+    cucim::print("🔧 NvImageCodecProcessor initialized:\n");
+    cucim::print("   ROI size: {}x{}, {} bytes\n", roi_width_, roi_height_, roi_size_bytes_);
+    cucim::print("   Locations: {}, Batch size: {}\n", location_len_, batch_size_);
+    cucim::print("   nvImageCodec batch size: {}\n", cuda_batch_size_);
+    cucim::print("   Output: {} (stream: {})\n",
                  use_device_memory_ ? "GPU" : "CPU",
                  decode_stream_ ? "custom" : "default");
     #endif
@@ -184,7 +185,7 @@ uint32_t NvImageCodecProcessor::request(std::deque<uint32_t>& batch_item_counts,
             auto state = schedule_roi_batch(requests);
             if (!state.is_valid())
             {
-                throw std::runtime_error(fmt::format("Failed to schedule IFD[{}] batch decode with nvImageCodec",
+                throw std::runtime_error(std::format("Failed to schedule IFD[{}] batch decode with nvImageCodec",
                                                      ifd_index_));
             }
             pending_batch_.chunks.push_back(std::move(state));
@@ -224,7 +225,7 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
     }
     if (batch.chunks.empty())
     {
-        throw std::runtime_error(fmt::format("No pending nvImageCodec batch for IFD[{}]", ifd_index_));
+        throw std::runtime_error(std::format("No pending nvImageCodec batch for IFD[{}]", ifd_index_));
     }
 
     uint32_t decoded = 0;
@@ -234,7 +235,7 @@ uint32_t NvImageCodecProcessor::wait_batch(uint32_t index_in_task,
         if (results.empty() || std::any_of(results.begin(), results.end(),
                                            [](const auto& result) { return !result.success; }))
         {
-            throw std::runtime_error(fmt::format("Failed to decode IFD[{}] batch with nvImageCodec. "
+            throw std::runtime_error(std::format("Failed to decode IFD[{}] batch with nvImageCodec. "
                                                  "Check that nvTIFF and the required codec libraries are installed.",
                                                  ifd_index_));
         }
@@ -263,7 +264,7 @@ cuslide2::nvimgcodec::BatchDecodeState NvImageCodecProcessor::schedule_roi_batch
     }
 
     #ifdef DEBUG
-    fmt::print("🚀 Scheduling batch decode of {} ROIs with nvImageCodec\n", requests.size());
+    cucim::print("🚀 Scheduling batch decode of {} ROIs with nvImageCodec\n", requests.size());
     #endif
 
     // Build regions for batch decode

@@ -1,5 +1,5 @@
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright 2021-2025 NVIDIA Corporation
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 
@@ -9,7 +9,7 @@ if (NOT TARGET deps::libcuckoo)
     FetchContent_Declare(
             deps-libcuckoo
             GIT_REPOSITORY https://github.com/efficient/libcuckoo
-            GIT_TAG v0.3
+            GIT_TAG v0.3.1
             GIT_SHALLOW TRUE
             PATCH_COMMAND ${GIT_EXECUTABLE} apply "${CMAKE_CURRENT_LIST_DIR}/libcuckoo.patch"
             EXCLUDE_FROM_ALL

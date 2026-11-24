@@ -1,12 +1,11 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "cucim/loader/batch_data_processor.h"
 
 #include <cuda_runtime.h>
-#include <fmt/format.h>
 
 #include "cucim/cache/image_cache_manager.h"
 

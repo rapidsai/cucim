@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,7 +13,7 @@
 
 #include <benchmark/benchmark.h>
 #include <CLI/CLI.hpp>
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 #include <openslide/openslide.h>
 
 #include "cucim/core/framework.h"
@@ -60,7 +60,7 @@ static void test_basic(benchmark::State& state)
         cucim::Framework* framework = cucim::acquire_framework("cuslide.app");
         if (!framework)
         {
-            fmt::print("framework is not available!\n");
+            cucim::print("framework is not available!\n");
             return;
         }
 
@@ -70,7 +70,7 @@ static void test_basic(benchmark::State& state)
         //        std::cout << image_format->formats[0].get_format_name() << std::endl;
         if (image_format == nullptr)
         {
-            fmt::print("plugin library is not available!\n");
+            cucim::print("plugin library is not available!\n");
             return;
         }
 
@@ -180,7 +180,7 @@ static bool setup_configuration()
     openslide_t* slide = openslide_open(input_path.c_str());
     if (slide == nullptr)
     {
-        fmt::print("[Error] Cannot load {}!\n", input_path);
+        cucim::print("[Error] Cannot load {}!\n", input_path);
         return false;
     }
 

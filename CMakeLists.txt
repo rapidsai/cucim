@@ -62,7 +62,7 @@ if (NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
 endif ()
 
 find_package(CUDAToolkit REQUIRED)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_CUDA_STANDARD ${CMAKE_CXX_STANDARD})
 set(CMAKE_CUDA_STANDARD_REQUIRED YES)
@@ -114,7 +114,6 @@ find_package(Threads REQUIRED)
 ################################################################################
 # Define dependencies
 ################################################################################
-superbuild_depend(fmt)
 #superbuild_depend(boost)
 superbuild_depend(abseil)
 superbuild_depend(googletest)
@@ -129,13 +128,20 @@ superbuild_depend(nvtx3)
 superbuild_depend(taskflow)
 
 # Use the CCCL version pinned by rapids-cmake (as other RAPIDS projects do)
-# rather than the one bundled with the CUDA Toolkit. This provides the CCCL::CCCL
-# target; no cuCIM target links it yet.
+# rather than the one bundled with the CUDA Toolkit, which for every supported
+# toolkit predates the cuda::mr types in <cucim/memory/device_resource.h>.
+#
+# The install export set is what makes rapids-cmake install CCCL, under
+# include/rapids and lib/rapids, so that installed consumers of that public
+# header find it next to cuCIM; cuCIM does not otherwise use rapids-cmake
+# export sets.
 include(rapids-cmake)
 include(rapids-cpm)
 rapids_cpm_init()
 include(${rapids-cmake-dir}/cpm/cccl.cmake)
-rapids_cpm_cccl()
+rapids_cpm_cccl(INSTALL_EXPORT_SET cucim-exports)
+set(CUCIM_CCCL_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/rapids")
+get_target_property(CUCIM_CCCL_INCLUDE_DIRS CCCL::libcudacxx INTERFACE_INCLUDE_DIRECTORIES)
 
 ################################################################################
 # Define some names
@@ -165,7 +171,6 @@ option(CUCIM_INSTALL_BENCHMARKS "Install the C++ benchmark executables" ON)
 
 set(INSTALL_TARGETS
         ${CUCIM_PACKAGE_NAME}
-        fmt-header-only
         )
 
 if(CUCIM_INSTALL_BENCHMARKS)
@@ -216,7 +221,6 @@ install(DIRECTORY
 
 # Copy 3rdparty headers
 install(DIRECTORY
-            ${deps-fmt_SOURCE_DIR}/include/
             ${deps-nvtx3_SOURCE_DIR}/c/include/
         DESTINATION
             ${CMAKE_INSTALL_INCLUDEDIR}/${CUCIM_PACKAGE_NAME}/3rdparty)

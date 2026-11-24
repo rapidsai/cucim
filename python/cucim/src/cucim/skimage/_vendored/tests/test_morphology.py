@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 """Testing axes support that is not currently present in CuPy/SciPy."""
@@ -132,3 +132,112 @@ def test_grey_axes(func, expand_axis, origin, footprint_mode, mode):
     cucim_func = getattr(ndi, func)
     cucim_func(data, output=out, axes=axes, **kwargs)
     cp.testing.assert_array_almost_equal(out, expected)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("connectivity", [1, 2, 3])
+def test_binary_fill_holes_structure(ndim, connectivity):
+    # the non-iterative algorithm (used with the default origin and axes)
+    # must also use the structuring element
+    if connectivity > ndim:
+        pytest.skip("connectivity > ndim")
+    rng = np.random.default_rng(5)
+    shape = (64, 64) if ndim == 2 else (16, 16, 16)
+    data = rng.random(shape) > 0.35
+    struct = ndi_cpu.generate_binary_structure(ndim, connectivity)
+    expected = ndi_cpu.binary_fill_holes(data, struct)
+    # the structuring element changes which background pixels are holes
+    default = ndi_cpu.binary_fill_holes(data)
+    assert np.array_equal(expected, default) == (connectivity == 1)
+    out = ndi.binary_fill_holes(cp.asarray(data), cp.asarray(struct))
+    cp.testing.assert_array_equal(out, expected)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize(
+    "footprint", ["horizontal", "large", "asymmetric", "diagonal"]
+)
+@pytest.mark.parametrize("empty", [False, True])
+@pytest.mark.parametrize("inplace", [False, True])
+def test_binary_fill_holes_iterative_structure(ndim, footprint, empty, inplace):
+    if footprint == "horizontal":
+        struct = np.zeros((3,) * ndim, dtype=bool)
+        struct[(1,) * (ndim - 1) + (slice(None),)] = True
+    elif footprint == "large":
+        struct = np.ones((5,) * ndim, dtype=bool)
+    elif footprint == "asymmetric":
+        struct = np.ones((3,) * ndim, dtype=bool)
+        struct[(0,) * ndim] = False
+    else:
+        struct = np.zeros((3,) * ndim, dtype=bool)
+        for index in range(3):
+            struct[(index,) * ndim] = True
+
+    if empty:
+        data = np.zeros((9,) * ndim, dtype=bool)
+    else:
+        data = np.random.default_rng(5).random((24,) * ndim) > 0.35
+    expected = ndi_cpu.binary_fill_holes(data, struct)
+    if not empty:
+        assert not np.array_equal(expected, ndi_cpu.binary_fill_holes(data))
+    data = cp.asarray(data)
+    struct = cp.asarray(struct)
+    if inplace:
+        out = ndi.binary_fill_holes(data, struct, output=data)
+        assert out is data
+    else:
+        out = ndi.binary_fill_holes(data, struct)
+    cp.testing.assert_array_equal(out, expected)
+
+
+def test_binary_fill_holes_1d():
+    # The exterior on each side of the image must remain unfilled even
+    # though the padding cannot connect the two ends in one dimension.
+    data = np.array([0, 1, 0, 1, 0], dtype=bool)
+    expected = ndi_cpu.binary_fill_holes(data)
+    out = ndi.binary_fill_holes(cp.asarray(data))
+    cp.testing.assert_array_equal(out, expected)
+
+
+@pytest.mark.parametrize("footprint_type", ["numpy", "list", "cupy"])
+@pytest.mark.parametrize("inplace", [False, True])
+@pytest.mark.parametrize("origin", [0, -1])
+def test_binary_fill_holes_host_iterative_footprint(
+    footprint_type, inplace, origin
+):
+    data = np.random.default_rng(5).random((24, 24)) > 0.35
+    footprint = np.zeros((3, 3), dtype=bool)
+    footprint[1, :] = True
+    expected = ndi_cpu.binary_fill_holes(data, footprint, origin=origin)
+    assert not np.array_equal(expected, ndi_cpu.binary_fill_holes(data))
+    if footprint_type == "list":
+        footprint = footprint.tolist()
+    elif footprint_type == "cupy":
+        footprint = cp.asarray(footprint)
+    image = cp.asarray(data)
+    out = image if inplace else None
+    result = ndi.binary_fill_holes(image, footprint, output=out, origin=origin)
+    if inplace:
+        assert result is out
+    cp.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize("footprint", [None, np.ones((3, 3), dtype=bool)])
+def test_binary_fill_holes_inplace_returns_output(footprint):
+    image = cp.ones((5, 5), dtype=bool)
+    image[2, 2] = False
+    expected = ndi_cpu.binary_fill_holes(image.get(), footprint)
+    result = ndi.binary_fill_holes(image, footprint, output=image)
+    assert result is image
+    cp.testing.assert_array_equal(result, expected)
+
+
+def test_binary_fill_holes_long_1d_uses_label(monkeypatch):
+    from cucim.skimage._vendored import _ndimage_morphology as morphology
+
+    def unexpected_iteration(*args, **kwargs):
+        pytest.fail("compatible 1D filling used iterative dilation")
+
+    monkeypatch.setattr(morphology, "binary_dilation", unexpected_iteration)
+    image = cp.zeros(65536, dtype=bool)
+    cp.testing.assert_array_equal(ndi.binary_fill_holes(image), image)

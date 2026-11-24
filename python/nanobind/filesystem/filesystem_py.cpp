@@ -6,7 +6,8 @@
 #include "filesystem_py.h"
 #include "filesystem_pydoc.h"
 
-#include <fmt/format.h>
+#include <format>
+#include <cucim/util/print.h>
 #include <nanobind/stl/filesystem.h>
 #include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/string.h>
@@ -67,7 +68,7 @@ void init_filesystem(nb::module_ fs)
             },
             "type"_a.none(), "value"_a.none(), "traceback"_a.none())
         .def("__repr__", [](const CuFileDriver& fd) {
-            return fmt::format("<cucim.clara.filesystem.CuFileDriver path:{}>", fd.path());
+            return std::format("<cucim.clara.filesystem.CuFileDriver path:{}>", fd.path());
         });
 
     fs.def("is_gds_available", &is_gds_available, doc::doc_is_gds_available, nb::call_guard<nb::gil_scoped_release>())
@@ -109,7 +110,7 @@ ssize_t py_pread(const std::shared_ptr<CuFileDriver>& fd, nb::handle buf, size_t
     }
     else
     {
-        fmt::print(stderr, "fd (CuFileDriver) is None!");
+        cucim::print(stderr, "fd (CuFileDriver) is None!");
         return -1;
     }
 }
@@ -121,7 +122,7 @@ ssize_t py_pwrite(const std::shared_ptr<CuFileDriver>& fd, nb::handle buf, size_
     }
     else
     {
-        fmt::print(stderr, "fd (CuFileDriver) is None!");
+        cucim::print(stderr, "fd (CuFileDriver) is None!");
         return -1;
     }
 }
