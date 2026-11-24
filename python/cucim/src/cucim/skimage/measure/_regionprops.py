@@ -1035,6 +1035,8 @@ def _props_to_dict(
         else:
             if isinstance(rp, cp.ndarray):
                 shape = rp.shape
+            elif copy_to_host:
+                shape = np.shape(_to_host(rp))
             else:
                 shape = (len(rp),)
 

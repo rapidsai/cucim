@@ -1953,3 +1953,36 @@ def test_regionprops_table_cupy_spacing(batch_processing):
     )
     for key, value in expected.items():
         assert_allclose(actual[key], value, rtol=1e-6)
+
+
+@pytest.mark.parametrize("to_table", [False, True])
+def test_multichannel_weighted_centroid_copy_to_host_shape(to_table):
+    from skimage.measure import regionprops as regionprops_cpu
+
+    labels = np.asarray([[1, 1, 2], [0, 1, 2]], dtype=np.int32)
+    intensity = np.arange(12, dtype=np.float64).reshape(2, 3, 2) + 1
+    result = regionprops_table(
+        cp.asarray(labels),
+        cp.asarray(intensity),
+        properties=("centroid_weighted",),
+        batch_processing=False,
+        copy_output_to_host=True,
+        to_table=to_table,
+    )
+    if to_table:
+        expected = regionprops_table_cpu(
+            labels, intensity, properties=("centroid_weighted",)
+        )
+        assert result.keys() == expected.keys()
+        for key in result:
+            assert isinstance(result[key], np.ndarray)
+            np.testing.assert_allclose(result[key], expected[key])
+    else:
+        expected = np.asarray(
+            [
+                region.centroid_weighted
+                for region in regionprops_cpu(labels, intensity)
+            ]
+        )
+        assert result["centroid_weighted"].shape == (2, 2, 2)
+        np.testing.assert_allclose(result["centroid_weighted"], expected)
