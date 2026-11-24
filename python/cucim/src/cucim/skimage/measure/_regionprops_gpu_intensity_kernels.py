@@ -236,6 +236,15 @@ def _get_intensity_range(image_dtype):
     return (info.min, info.max)
 
 
+def _has_exact_sums(image_dtype):
+    """Whether the dtype permits exact 64-bit integer sums and squared sums.
+
+    Callers must additionally require fewer than 2**32 pixels.
+    """
+    image_dtype = cp.dtype(image_dtype)
+    return image_dtype.kind in "biu" and image_dtype.itemsize <= 2
+
+
 @cp.memoize(for_each_device=True)
 def get_intensity_measure_kernel(
     image_dtype=None,
@@ -257,8 +266,9 @@ def get_intensity_measure_kernel(
         min_max_dtype,
         c_min_max_type,
     ) = _get_intensity_img_kernel_dtypes(image_dtype)
-    if compute_sum_sq:
-        # Even uint32 squares can overflow a uint64 sum for a tiny region.
+    if compute_sum_sq and not (_has_exact_sums(image_dtype) and int32_count):
+        # Preserve exact integer atomics for narrow inputs within the size bound.
+        # Wide integer squares can overflow a 64-bit sum even for tiny regions.
         sum_dtype = cp.dtype(cp.float64)
         c_sum_type = "double"
 
@@ -531,9 +541,12 @@ def regionprops_intensity_std(
     num_channels = _check_intensity_image_shape(label_image, intensity_image)
 
     image_dtype = intensity_image.dtype
-    sum_dtype = cp.dtype(cp.float64)
-
     count_dtype, int32_count = _get_count_dtype(label_image.size)
+    sum_dtype = (
+        _get_intensity_img_kernel_dtypes(image_dtype)[0]
+        if _has_exact_sums(image_dtype) and int32_count
+        else cp.dtype(cp.float64)
+    )
 
     if "num_pixels" in props_dict:
         counts = props_dict["num_pixels"]

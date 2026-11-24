@@ -1920,6 +1920,44 @@ def test_intensity_std_wide_integer_square_sum(dtype, sample_std):
 
 
 @pytest.mark.parametrize(
+    "dtype", [cp.bool_, cp.uint8, cp.int8, cp.uint16, cp.int16]
+)
+@pytest.mark.parametrize("sample_std", [False, True])
+def test_intensity_std_narrow_integer_accumulators(
+    dtype, sample_std, monkeypatch
+):
+    from cucim.skimage.measure import (
+        _regionprops_gpu_intensity_kernels as kernels,
+    )
+
+    get_kernel = kernels.get_intensity_measure_kernel
+    observed = []
+
+    def record_kernel(**kwargs):
+        kernel = get_kernel(**kwargs)
+
+        def record_outputs(*args, **kwargs):
+            observed.append(tuple(array.dtype for array in args[-2:]))
+            return kernel(*args, **kwargs)
+
+        return record_outputs
+
+    monkeypatch.setattr(kernels, "get_intensity_measure_kernel", record_kernel)
+    high = 1 if dtype == cp.bool_ else np.iinfo(dtype).max
+    low = 0 if dtype == cp.bool_ else np.iinfo(dtype).min
+    image = cp.asarray([[low, high, high], [high, low, low]], dtype=dtype)
+    labels = cp.asarray([[1, 1, 1], [2, 2, 2]], dtype=cp.uint8)
+    result = regionprops_intensity_std(labels, image, sample_std=sample_std)
+    expected = np.std(
+        image.get().astype(np.float64), axis=1, ddof=int(sample_std)
+    )
+    sum_dtype = kernels._get_intensity_img_kernel_dtypes(image.dtype)[0]
+    assert sum_dtype.kind in "iu"
+    assert observed == [(sum_dtype, sum_dtype)]
+    assert_allclose(result["intensity_std"], expected, rtol=1e-12)
+
+
+@pytest.mark.parametrize(
     "values",
     [
         [np.inf, np.inf],
