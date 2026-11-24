@@ -396,6 +396,8 @@ def regionprops_dict(
             )
 
     out = {}
+    if label_image.dtype.kind == "i":
+        label_image = cp.maximum(label_image, 0)
     if max_label is None:
         max_label = int(label_image.max())
     label_dtype = _get_min_integer_dtype(max_label, signed=False)

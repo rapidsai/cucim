@@ -1859,3 +1859,22 @@ def test_centroid_region_of_2_32_pixels():
     col1 = ((cols - 1) * cols / 2 * rows - 3 * (7 + 8 + 9 + 10 + 11)) / n1
     assert_allclose(centroid, [[row1, col1], [rows - 3, 9]], rtol=1e-12)
     assert_allclose(centroid_local, [[row1, col1], [1, 2]], rtol=1e-12)
+
+
+@pytest.mark.parametrize("dtype", [cp.int8, cp.int64])
+@pytest.mark.parametrize("all_negative", [False, True])
+def test_filled_negative_labels_are_background(dtype, all_negative):
+    from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
+        regionprops_label_filled,
+    )
+
+    labels = cp.asarray([[1, -1], [0, 0]], dtype=dtype)
+    if all_negative:
+        labels.fill(-1)
+    expected = cp.maximum(labels, 0)
+    assert_array_equal(regionprops_label_filled(labels), expected)
+    result = regionprops_dict(
+        labels, properties=["label_filled", "area_filled"]
+    )
+    assert_array_equal(result["label_filled"], expected)
+    assert_array_equal(result["area_filled"], [] if all_negative else [1])

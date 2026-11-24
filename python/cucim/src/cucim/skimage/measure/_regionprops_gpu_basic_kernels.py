@@ -963,6 +963,8 @@ def _fill_holes_by_label(labels, max_label, bbox=None):
     labels_inexact : numpy.ndarray
         Labels whose filled region may differ from scikit-image's.
     """
+    if labels.dtype.kind == "i":
+        labels = cp.maximum(labels, 0)
     ndim = labels.ndim
     footprint = ndi.generate_binary_structure(ndim, ndim)
     # with the padding, all background outside of the regions is a single
@@ -1087,8 +1089,10 @@ def regionprops_label_filled(
     label_filled : cupy.ndarray
         The label image, but with the holes in each region filled.
     """
+    if labels.dtype.kind == "i":
+        labels = cp.maximum(labels, 0)
     if max_label is None:
-        max_label = int(labels.max())
+        max_label = int(labels.max()) if labels.size else 0
     label_filled, _ = _fill_holes_by_label(labels, max_label)
     if props_dict is not None:
         props_dict["label_filled"] = label_filled
