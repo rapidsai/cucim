@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import cupy as cp
@@ -8,8 +8,29 @@ from cupyx import rsqrt  # reciprocal sqrt
 
 from cucim.core.operations.morphology import distance_transform_edt
 
+from .._shared._reduction_kernels import _get_minmax
 from .._shared.utils import _supported_float_type
 from .._vendored import pad
+
+_cv_normalize_kernel = cp.ElementwiseKernel(
+    "T image, raw T bounds",
+    "T normalized",
+    """
+    T shifted = image - bounds[0];
+    T range = bounds[1] - bounds[0];
+    normalized = range != T(0) ? shifted / range : shifted;
+    """,
+    "cucim_cv_normalize",
+)
+
+
+def _cv_normalize(image):
+    """Shift and scale a floating image using device extrema, without readback.
+
+    The subtraction and division share one elementwise pass. Constant images
+    retain their shifted zeros; NaNs and infinities propagate as before.
+    """
+    return _cv_normalize_kernel(image, _get_minmax(image))
 
 
 @cp.fuse()
@@ -433,9 +454,7 @@ def chan_vese(
         )
 
     image = image.astype(float_dtype, copy=False)
-    image = image - cp.min(image)
-    if cp.max(image) != 0:
-        image = image / cp.max(image)
+    image = _cv_normalize(image)
 
     i = 0
     if extended_output:
