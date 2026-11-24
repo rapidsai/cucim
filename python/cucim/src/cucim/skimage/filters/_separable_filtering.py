@@ -159,7 +159,7 @@ _dtype_char_to_c_types = {
     "d": "double",
     "F": "complex<float>",
     "D": "complex<double>",
-    "?": "char",
+    "?": "bool",
     "b": "char",
     "h": "short",
     "i": "int",

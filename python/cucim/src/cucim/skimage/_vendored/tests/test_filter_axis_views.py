@@ -65,6 +65,23 @@ def test_filter_axis_view_selects_mode_for_negative_axis():
         filters.convolve1d(image, weights, axis=-2, mode=modes[:2])
 
 
+@pytest.mark.parametrize("axis", [0, 1])
+@pytest.mark.parametrize("tap", [0.5, 3.0])
+def test_filter_axis_view_bool_output_uses_canonical_bytes(axis, tap):
+    image = cp.ones((4, 8, 4), dtype=cp.float32)
+    weights = cp.asarray([tap], dtype=cp.float32)
+    expected = filters.correlate1d(
+        image, weights, axis=axis, output=cp.bool_, algorithm="elementwise"
+    )
+    result = filters.correlate1d(
+        image, weights, axis=axis, output=cp.bool_, algorithm="shared_memory"
+    )
+    cp.testing.assert_array_equal(result, expected)
+    cp.testing.assert_array_equal(
+        result.view(cp.uint8), cp.ones(image.shape, dtype=cp.uint8)
+    )
+
+
 @pytest.mark.parametrize(
     "shape,axis",
     [
