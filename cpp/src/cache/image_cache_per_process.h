@@ -40,23 +40,21 @@ struct PerProcessImageCacheValue : public ImageCacheValue
 {
     /**
      * @param device_resources Resource that allocated *data*, when
-     *        *device_type* is kCUDA. Held by value rather than by reference
-     *        because a cached value can outlive the cache that produced it
-     *        (an entry evicted while a reader still holds it is destroyed
-     *        last), and freeing through a dangling resource would be worse.
-     *        Holding it by value does not duplicate the allocator: copies of
-     *        an owning handle share the one resource.
+     *        *device_type* is kCUDA. Held by value because a value can outlive
+     *        the cache that produced it.
+     * @param stream Stream *data* was last used on; its release is ordered on it.
      */
     PerProcessImageCacheValue(void* data,
                               uint64_t size,
                               void* user_obj = nullptr,
                               const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU,
-                              cucim::memory::DeviceResources device_resources = {});
+                              cucim::memory::DeviceResources device_resources = {},
+                              ::cuda::stream_ref stream = ::cuda::stream_ref{ cucim::memory::kDefaultStream });
     ~PerProcessImageCacheValue() override;
 
 private:
-    /// Must be the resource that allocated `data`; see the constructor.
     cucim::memory::DeviceResources device_resources_;
+    ::cuda::stream_ref stream_;
 };
 
 
@@ -71,14 +69,17 @@ class PerProcessImageCache : public ImageCache
 {
 public:
     /**
-     * @param device_resources Where device tiles are allocated from. Fixed for
-     *        the lifetime of the cache: allocate() and create_value() are
-     *        separate calls, so a resource that could change between them
-     *        could record the wrong allocator as an entry's deallocator.
+     * @param device_resources Where device tiles are allocated from.
+     * @param stream Stream device tiles are allocated on.
+     *
+     * Both are fixed for the lifetime of the cache: allocate() and
+     * create_value() are separate calls, so either changing between them
+     * would give an entry the wrong deallocator or release stream.
      */
     PerProcessImageCache(const ImageCacheConfig& config,
                          const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU,
-                         cucim::memory::DeviceResources device_resources = {});
+                         cucim::memory::DeviceResources device_resources = {},
+                         ::cuda::stream_ref stream = ::cuda::stream_ref{ cucim::memory::kDefaultStream });
     ~PerProcessImageCache();
 
     const char* type_str() const override;
@@ -120,9 +121,8 @@ private:
 
     std::vector<std::mutex> mutex_array_;
 
-    /// Where device tiles come from. Set at construction, never reassigned;
-    /// see the constructor for why.
     cucim::memory::DeviceResources device_resources_;
+    ::cuda::stream_ref stream_;
 
     std::atomic<uint64_t> size_nbytes_ = 0; /// size of cache memory used
     uint64_t capacity_nbytes_ = 0; /// size of cache memory allocated

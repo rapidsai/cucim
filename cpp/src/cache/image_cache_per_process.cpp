@@ -50,8 +50,11 @@ PerProcessImageCacheValue::PerProcessImageCacheValue(void* data,
                                                      uint64_t size,
                                                      void* user_obj,
                                                      const cucim::io::DeviceType device_type,
-                                                     cucim::memory::DeviceResources device_resources)
-    : ImageCacheValue(data, size, user_obj, device_type), device_resources_(std::move(device_resources)){};
+                                                     cucim::memory::DeviceResources device_resources,
+                                                     ::cuda::stream_ref stream)
+    : ImageCacheValue(data, size, user_obj, device_type),
+      device_resources_(std::move(device_resources)),
+      stream_(stream){};
 
 PerProcessImageCacheValue::~PerProcessImageCacheValue()
 {
@@ -62,13 +65,9 @@ PerProcessImageCacheValue::~PerProcessImageCacheValue()
         case io::DeviceType::kCPU:
             cucim_free(data);
             break;
-        case io::DeviceType::kCUDA: {
-            // Returned to the resource that allocated it, not to cudaFree: a
-            // pool resource has to get its block back to stay a pool, and
-            // `size` is what tells it which block this was.
-            device_resources_.deallocate(data, size);
+        case io::DeviceType::kCUDA:
+            device_resources_.deallocate(stream_, data, size);
             break;
-        }
         case io::DeviceType::kCUDAHost:
         case io::DeviceType::kCUDAManaged:
         case io::DeviceType::kCPUShared:
@@ -82,10 +81,12 @@ PerProcessImageCacheValue::~PerProcessImageCacheValue()
 
 PerProcessImageCache::PerProcessImageCache(const ImageCacheConfig& config,
                                            const cucim::io::DeviceType device_type,
-                                           cucim::memory::DeviceResources device_resources)
+                                           cucim::memory::DeviceResources device_resources,
+                                           ::cuda::stream_ref stream)
     : ImageCache(config, CacheType::kPerProcess, device_type),
       mutex_array_(config.mutex_pool_capacity),
       device_resources_(std::move(device_resources)),
+      stream_(stream),
       capacity_nbytes_(kOneMiB * config.memory_capacity),
       capacity_(config.capacity),
       list_capacity_(config.capacity + config.list_padding),
@@ -112,10 +113,7 @@ std::shared_ptr<ImageCacheValue> PerProcessImageCache::create_value(void* data,
                                                                     uint64_t size,
                                                                     const cucim::io::DeviceType device_type)
 {
-    // The value carries the resource so it can free through it later, even if
-    // the cache itself is gone by then. The cache's resource cannot change, so
-    // this is necessarily the one that allocated *data*.
-    return std::make_shared<PerProcessImageCacheValue>(data, size, nullptr, device_type, device_resources_);
+    return std::make_shared<PerProcessImageCacheValue>(data, size, nullptr, device_type, device_resources_, stream_);
 }
 
 void* PerProcessImageCache::allocate(std::size_t n)
@@ -125,16 +123,11 @@ void* PerProcessImageCache::allocate(std::size_t n)
     case io::DeviceType::kCPU:
         return cucim_malloc(n);
     case io::DeviceType::kCUDA: {
-        // The resource throws on failure, whereas this returns nullptr to
-        // signal "no room in the cache" to callers that then decode without
-        // caching. Keep that contract rather than propagating.
-        //
-        // Not just std::bad_alloc: a CCCL pool reports failure as
-        // cuda::cuda_error, which derives from std::runtime_error, and a
-        // caller-supplied resource may use something else again.
+        // nullptr tells callers to decode without caching. Any exception type,
+        // since a caller's resource may throw anything.
         try
         {
-            return device_resources_.allocate(n);
+            return device_resources_.allocate(stream_, n);
         }
         catch (const std::exception&)
         {

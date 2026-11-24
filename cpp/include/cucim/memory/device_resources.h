@@ -22,45 +22,24 @@ namespace cucim::memory
 
 using ::cuda::mr::device_accessible;
 
-/**
- * @brief Alignment cuCIM requests for device allocations.
- *
- * Image rows are addressed on 256-byte boundaries downstream.
- */
+/// Alignment cuCIM requests for device allocations.
 inline constexpr std::size_t kDefaultAlignment = 256;
 
 /// Default stream, spelled out rather than left as a value-initialized handle.
 inline constexpr cudaStream_t kDefaultStream = cudaStream_t{ cudaStreamDefault };
 
-/**
- * @brief Stream-ordered, device-accessible resource reference.
- *
- * This is the type that should appear in cuCIM APIs that allocate device
- * memory. It binds to resources from either CCCL or RMM.
- */
+/// Stream-ordered, device-accessible resource reference.
 using device_resource_ref = ::cuda::mr::resource_ref<device_accessible>;
 
-/**
- * @brief Owning, type-erased, device-accessible resource.
- *
- * Used where cuCIM has to keep a resource alive rather than borrow one, most
- * importantly for memory handed back to the user: whatever allocated a buffer
- * has to still exist when that buffer is freed, which for an image can be long
- * after the call that produced it returned.
- */
+/// Owning, type-erased, device-accessible resource.
 using any_device_resource = ::cuda::mr::any_resource<device_accessible>;
 
 /**
- * @brief The current device's default CCCL memory pool.
+ * @brief The current device's default CCCL memory pool. cuCIM's default.
  *
- * Stream-ordered, so an allocation does not synchronize the whole device the
- * way `cudaMalloc` does. This is cuCIM's default.
- *
- * Stateless: the pool is owned by CCCL and shared process-wide, so every
- * instance refers to the same pool and copies are interchangeable. The pool is
- * resolved on first use rather than at construction, which keeps a
- * default-constructed DeviceResources usable on a host with no device as long
- * as nothing allocates through it.
+ * Stateless: every instance refers to the same process-wide pool. The pool is
+ * resolved on each call rather than at construction, so constructing one needs
+ * no device.
  *
  * Every call makes the current device's primary context current on the calling
  * thread, so the first allocation needs no prior CUDA call and a buffer can be
@@ -70,10 +49,10 @@ class EXPORT_VISIBLE DeviceMemoryPoolResource
 {
 public:
     void* allocate_sync(std::size_t bytes, std::size_t alignment);
-    void deallocate_sync(void* ptr, std::size_t bytes, std::size_t alignment);
+    void deallocate_sync(void* ptr, std::size_t bytes, std::size_t alignment) noexcept;
 
     void* allocate(::cuda::stream_ref stream, std::size_t bytes, std::size_t alignment);
-    void deallocate(::cuda::stream_ref stream, void* ptr, std::size_t bytes, std::size_t alignment);
+    void deallocate(::cuda::stream_ref stream, void* ptr, std::size_t bytes, std::size_t alignment) noexcept;
 
     bool operator==(const DeviceMemoryPoolResource&) const noexcept
     {
@@ -92,25 +71,24 @@ public:
 /**
  * @brief A resource that allocates with `cudaMalloc` and frees with `cudaFree`.
  *
- * What cuCIM did before memory resources existed, kept as an explicit opt-in
- * for callers that need allocation to be device-synchronizing. Stateless, so
- * it compares equal to every other instance.
+ * For buffers that are later released with a bare `cudaFree`, which cannot
+ * release pool memory; the resource-free raster moves in memory_manager.h use
+ * it for that reason. Stateless.
  *
  * The stream-ordered overloads ignore the stream: `cudaMalloc` and `cudaFree`
- * synchronize the whole device, which makes them trivially ordered against any
- * stream but not stream-ordered.
+ * synchronize the whole device.
  *
- * `cudaMalloc` aligns to 256 bytes, so an alignment that does not divide 256
- * is rejected with std::invalid_argument, as CCCL's pools do.
+ * An alignment that does not divide 256 is rejected with
+ * std::invalid_argument, as CCCL's pools do.
  */
 class EXPORT_VISIBLE CudaMemoryResource
 {
 public:
     void* allocate_sync(std::size_t bytes, std::size_t alignment);
-    void deallocate_sync(void* ptr, std::size_t bytes, std::size_t alignment);
+    void deallocate_sync(void* ptr, std::size_t bytes, std::size_t alignment) noexcept;
 
     void* allocate(::cuda::stream_ref stream, std::size_t bytes, std::size_t alignment);
-    void deallocate(::cuda::stream_ref stream, void* ptr, std::size_t bytes, std::size_t alignment);
+    void deallocate(::cuda::stream_ref stream, void* ptr, std::size_t bytes, std::size_t alignment) noexcept;
 
     bool operator==(const CudaMemoryResource&) const noexcept
     {
@@ -127,74 +105,46 @@ public:
 };
 
 /**
- * @brief Where device memory comes from, and the stream that orders it.
+ * @brief Where device memory comes from.
  *
- * Deliberately not a singleton and never consulted from global scope: an
- * instance is passed to whatever needs to allocate, and carried by objects
- * that own device memory so they can free it through the same resource later.
+ * Passed to whatever allocates, and kept by objects that own device memory so
+ * they can free it through the same resource.
  *
- * Copying a handle does **not** copy the resource. An owning handle keeps its
- * resource in a shared owner, so every copy allocates from and frees through
- * the one resource instance; a stateful allocator is therefore never
- * duplicated behind the caller's back. A handle built from a
- * `device_resource_ref` borrows instead, and the caller is responsible for
- * keeping that resource alive for as long as any copy of the handle, or any
- * buffer obtained through it, is still in use.
+ * Holds no stream: every call takes the stream it is ordered on. An object
+ * that owns a buffer keeps the buffer's stream beside its handle, and frees on
+ * the stream the buffer was last used on.
  *
- * The stream is per-handle rather than shared, and fixed for the handle's
- * lifetime: allocate() and deallocate() without a stream are ordered on it.
- * For work on another stream, take a handle bound to it with with_stream(),
- * which shares the resource. The stream-taking overloads leave the handle's
- * stream alone, so memory obtained through one of them has to be released
- * through it as well, on a stream ordered after the memory's last use.
+ * Copies share the resource rather than duplicating it. A handle built from a
+ * `device_resource_ref` borrows, and the caller keeps that resource alive for
+ * as long as any copy of the handle or any buffer from it is in use.
  */
 class EXPORT_VISIBLE DeviceResources
 {
 public:
-    /// The current device's default memory pool, on the default stream.
+    /// The current device's default memory pool.
     DeviceResources();
 
     /// Own *resource*, sharing it with every copy of this handle.
-    explicit DeviceResources(any_device_resource resource,
-                             ::cuda::stream_ref stream = ::cuda::stream_ref{ kDefaultStream });
+    explicit DeviceResources(any_device_resource resource);
 
-    /// Borrow *resource*; the caller keeps it alive. See the class note.
-    explicit DeviceResources(device_resource_ref resource,
-                             ::cuda::stream_ref stream = ::cuda::stream_ref{ kDefaultStream });
-
-    /**
-     * @brief Allocate *bytes* of device memory on this handle's stream.
-     *
-     * @throws Whatever the resource throws when it cannot satisfy the request:
-     * std::bad_alloc for cuCIM's own resources, std::invalid_argument for an
-     * alignment they cannot honor, and any exception type for a caller's.
-     */
-    void* allocate(std::size_t bytes, std::size_t alignment = kDefaultAlignment);
+    /// Borrow *resource*; the caller keeps it alive.
+    explicit DeviceResources(device_resource_ref resource);
 
     /**
      * @brief Allocate *bytes* of device memory ordered on *stream*.
      *
-     * Does not rebind this handle; release the memory with the stream-taking
-     * deallocate(). Throws as allocate() does.
+     * @throws Whatever the resource throws: std::bad_alloc from cuCIM's
+     * resources when memory runs out, std::invalid_argument for an alignment
+     * they cannot honor, and any type from a caller's resource.
      */
     void* allocate(::cuda::stream_ref stream, std::size_t bytes, std::size_t alignment = kDefaultAlignment);
 
-    /**
-     * @brief Return memory obtained from allocate().
-     *
-     * *bytes* and *alignment* must match the original request; pool resources
-     * need them to return the block to the right free list.
-     */
-    void deallocate(void* ptr, std::size_t bytes, std::size_t alignment = kDefaultAlignment) noexcept;
-
-    /// deallocate() ordered on *stream*. Does not rebind this handle.
+    /// Free memory from allocate(), ordered on *stream*. *bytes* and
+    /// *alignment* must match the allocation.
     void deallocate(::cuda::stream_ref stream,
                     void* ptr,
                     std::size_t bytes,
                     std::size_t alignment = kDefaultAlignment) noexcept;
-
-    /// A handle sharing this one's resource, bound to *stream*.
-    DeviceResources with_stream(::cuda::stream_ref stream) const noexcept;
 
     /// Borrowed reference, for handing to APIs that take a resource.
     device_resource_ref resource() const noexcept
@@ -202,56 +152,40 @@ public:
         return resource_;
     }
 
-    ::cuda::stream_ref stream() const noexcept
-    {
-        return stream_;
-    }
-
 private:
     /// Null when borrowing; otherwise the resource `resource_` refers to.
     std::shared_ptr<any_device_resource> owned_;
     device_resource_ref resource_;
-    ::cuda::stream_ref stream_;
 };
 
 /**
- * @brief move_raster_from_host() allocating from *resources*.
+ * @brief move_raster_from_host() allocating from *resources* on *stream*.
  *
- * Same contract as the overload in memory_manager.h, except that the device
- * memory written to *target* comes from *resources*. The caller therefore has
- * to free it through the same resource, so it must keep *resources* alive at
- * least as long as the buffer.
+ * The caller frees the device memory written to *target* through the same
+ * resource. The transfer is synchronized on *stream* before returning.
  *
- * The transfer is issued on `resources.stream()` and synchronized before
- * returning, so the call is complete when it returns even if the resource
- * allocates asynchronously.
- *
- * Declared here rather than beside the original in memory_manager.h because
- * that header is included throughout the plugins, which would then all need
- * CCCL on their include path.
- *
- * EXPORT_VISIBLE rather than CUCIM_API: the latter adds `extern "C"`, which
- * would both rule out overloading the existing name and be wrong for a
- * function taking a C++ reference.
+ * Declared here rather than in memory_manager.h, which the plugins include and
+ * which would then put CCCL on all their include paths. EXPORT_VISIBLE rather
+ * than CUCIM_API, whose `extern "C"` rules out overloading.
  */
 EXPORT_VISIBLE bool move_raster_from_host(void** target,
                                           size_t size,
                                           const cucim::io::Device& dst_device,
-                                          DeviceResources& resources);
+                                          DeviceResources& resources,
+                                          ::cuda::stream_ref stream);
 
 /**
- * @brief move_raster_from_device() freeing through *resources*.
+ * @brief move_raster_from_device() freeing through *resources* on *stream*.
  *
- * *resources* must be the resource that allocated `*target`, and *alignment*
- * the alignment it was allocated with; this releases it after copying to the
- * host. Passing a different resource is undefined, which is why the plain
- * overload in memory_manager.h still exists for buffers that came from raw
- * `cudaMalloc` (notably anything allocated inside a plugin).
+ * *resources* and *alignment* must be the resource and alignment that
+ * allocated `*target`. Buffers from a raw `cudaMalloc`, such as those a plugin
+ * allocates, go through the overload in memory_manager.h instead.
  */
 EXPORT_VISIBLE bool move_raster_from_device(void** target,
                                             size_t size,
                                             const cucim::io::Device& dst_device,
                                             DeviceResources& resources,
+                                            ::cuda::stream_ref stream,
                                             std::size_t alignment = kDefaultAlignment);
 
 } // namespace cucim::memory

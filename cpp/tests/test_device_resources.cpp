@@ -215,6 +215,8 @@ public:
     }
 };
 
+const ::cuda::stream_ref kStream{ cucim::memory::kDefaultStream };
+
 /// A stream handle that is never submitted to, only compared.
 ::cuda::stream_ref fake_stream(std::uintptr_t id)
 {
@@ -223,10 +225,6 @@ public:
 
 } // namespace
 
-// The whole point of adopting CCCL rather than inventing another allocator
-// interface is that a resource written elsewhere - by RMM, by CCCL, or by a
-// user - drops in. If cuCIM's own resources stopped satisfying the concepts,
-// none of them would be interchangeable any more.
 TEST_CASE("cuCIM resources satisfy the CCCL concepts", "[test_device_resources.cpp]")
 {
     STATIC_REQUIRE(::cuda::mr::synchronous_resource<DeviceMemoryPoolResource>);
@@ -236,8 +234,6 @@ TEST_CASE("cuCIM resources satisfy the CCCL concepts", "[test_device_resources.c
     STATIC_REQUIRE(::cuda::mr::synchronous_resource<TrackingResource>);
     STATIC_REQUIRE(::cuda::mr::resource<TrackingResource>);
 
-    // device_accessible is what cuCIM requires of a resource, since the
-    // pointers reach CUDA kernels and __cuda_array_interface__ consumers.
     STATIC_REQUIRE(::cuda::has_property<DeviceMemoryPoolResource, cucim::memory::device_accessible>);
     STATIC_REQUIRE(::cuda::has_property<CudaMemoryResource, cucim::memory::device_accessible>);
     STATIC_REQUIRE(::cuda::has_property<TrackingResource, cucim::memory::device_accessible>);
@@ -251,12 +247,12 @@ TEST_CASE("DeviceResources allocates from the resource it was given", "[test_dev
     SECTION("allocation and deallocation reach the supplied resource")
     {
         constexpr std::size_t nbytes = 4096;
-        void* ptr = resources.allocate(nbytes);
+        void* ptr = resources.allocate(kStream, nbytes);
         REQUIRE(ptr != nullptr);
         REQUIRE(state.allocate_calls == 1);
         REQUIRE(state.last_alignment == cucim::memory::kDefaultAlignment);
 
-        resources.deallocate(ptr, nbytes);
+        resources.deallocate(kStream, ptr, nbytes);
         REQUIRE(state.deallocate_calls == 1);
         REQUIRE(state.outstanding.empty());
     }
@@ -265,31 +261,25 @@ TEST_CASE("DeviceResources allocates from the resource it was given", "[test_dev
     {
         constexpr std::size_t nbytes = 128;
         constexpr std::size_t alignment = 4096;
-        void* ptr = resources.allocate(nbytes, alignment);
+        void* ptr = resources.allocate(kStream, nbytes, alignment);
         REQUIRE(state.last_alignment == alignment);
 
-        resources.deallocate(ptr, nbytes, alignment);
+        resources.deallocate(kStream, ptr, nbytes, alignment);
         REQUIRE(state.outstanding.empty());
         REQUIRE_FALSE(state.saw_foreign_pointer);
     }
 
     SECTION("a zero-byte request is still the resource's decision")
     {
-        // Not filtered out here: a resource is entitled to define what an
-        // empty allocation means, and short-circuiting would hand back a
-        // pointer the resource never issued and would then be asked to free.
-        void* ptr = resources.allocate(0);
+        void* ptr = resources.allocate(kStream, 0);
         REQUIRE(state.allocate_calls == 1);
 
-        resources.deallocate(ptr, 0);
+        resources.deallocate(kStream, ptr, 0);
         REQUIRE(state.deallocate_calls == 1);
         REQUIRE(state.outstanding.empty());
     }
 }
 
-// Every allocation must come back to the same resource carrying the size it
-// was given out with. A pool resource needs that size to return the block to
-// the right free list, which is the reason deallocate() takes one at all.
 TEST_CASE("DeviceResources pairs allocations with sized deallocations", "[test_device_resources.cpp]")
 {
     TrackingResource::State state;
@@ -298,7 +288,7 @@ TEST_CASE("DeviceResources pairs allocations with sized deallocations", "[test_d
     std::vector<std::pair<void*, std::size_t>> blocks;
     for (std::size_t bytes : { std::size_t{ 512 }, std::size_t{ 4096 }, std::size_t{ 1u << 20 } })
     {
-        void* ptr = resources.allocate(bytes);
+        void* ptr = resources.allocate(kStream, bytes);
         REQUIRE(ptr != nullptr);
         blocks.emplace_back(ptr, bytes);
     }
@@ -306,7 +296,7 @@ TEST_CASE("DeviceResources pairs allocations with sized deallocations", "[test_d
 
     for (auto& [ptr, bytes] : blocks)
     {
-        resources.deallocate(ptr, bytes);
+        resources.deallocate(kStream, ptr, bytes);
     }
 
     REQUIRE(state.deallocate_calls == 3);
@@ -317,32 +307,24 @@ TEST_CASE("DeviceResources pairs allocations with sized deallocations", "[test_d
 
 TEST_CASE("DeviceResources propagates allocation failure", "[test_device_resources.cpp]")
 {
-    // Callers such as the tile cache rely on this being an exception rather
-    // than a null return, so they can decide whether to fall back.
     SECTION("a resource that throws bad_alloc")
     {
         DeviceResources resources{ any_device_resource{ FailingResource{} } };
-        REQUIRE_THROWS_AS(resources.allocate(1024), std::bad_alloc);
+        REQUIRE_THROWS_AS(resources.allocate(kStream, 1024), std::bad_alloc);
     }
 
     SECTION("a pool-style resource, which does not throw bad_alloc")
     {
-        // The reason callers have to catch std::exception: nothing requires a
-        // resource to signal exhaustion with bad_alloc, and the default pool
-        // does not.
         DeviceResources resources{ any_device_resource{ PoolStyleFailingResource{} } };
-        REQUIRE_THROWS_AS(resources.allocate(1024), std::exception);
-        REQUIRE_THROWS_AS(resources.allocate(1024), std::runtime_error);
+        REQUIRE_THROWS_AS(resources.allocate(kStream, 1024), std::exception);
+        REQUIRE_THROWS_AS(resources.allocate(kStream, 1024), std::runtime_error);
     }
 }
 
 TEST_CASE("Copying DeviceResources shares one resource", "[test_device_resources.cpp]")
 {
-    // Cached tile values hold a copy of the handle precisely so that they can
-    // outlive the cache that allocated them. Copying must therefore share the
-    // original resource rather than duplicate it: a copy that carried its own
-    // clone of a stateful allocator would free blocks through an allocator
-    // that never issued them.
+    // Cached values hold a copy of the handle and can outlive the cache, so a
+    // copy must free through the instance that allocated.
     TrackingResource::State state;
 
     SECTION("a copy frees through the instance that allocated")
@@ -353,9 +335,9 @@ TEST_CASE("Copying DeviceResources shares one resource", "[test_device_resources
         REQUIRE(copy.resource() == original.resource());
 
         constexpr std::size_t nbytes = 2048;
-        void* ptr = original.allocate(nbytes);
+        void* ptr = original.allocate(kStream, nbytes);
         REQUIRE(ptr != nullptr);
-        copy.deallocate(ptr, nbytes);
+        copy.deallocate(kStream, ptr, nbytes);
 
         REQUIRE(state.allocate_calls == 1);
         REQUIRE(state.deallocate_calls == 1);
@@ -380,10 +362,10 @@ TEST_CASE("Copying DeviceResources shares one resource", "[test_device_resources
         {
             DeviceResources original{ any_device_resource{ TrackingResource{ state } } };
             copy = original;
-            ptr = original.allocate(nbytes);
+            ptr = original.allocate(kStream, nbytes);
         }
         // The resource the original owned is still alive, held by the copy.
-        copy.deallocate(ptr, nbytes);
+        copy.deallocate(kStream, ptr, nbytes);
 
         REQUIRE_FALSE(state.freed_through_a_different_instance);
         REQUIRE_FALSE(state.saw_foreign_pointer);
@@ -393,22 +375,19 @@ TEST_CASE("Copying DeviceResources shares one resource", "[test_device_resources
 
 TEST_CASE("DeviceResources can borrow a resource it does not own", "[test_device_resources.cpp]")
 {
-    // The path for callers that already hold a resource, such as an
-    // rmm::device_async_resource_ref: cuCIM allocates from it without taking
-    // a copy, and the caller keeps it alive.
     TrackingResource::State state;
     TrackingResource resource{ state };
     DeviceResources resources{ device_resource_ref{ resource } };
 
     constexpr std::size_t nbytes = 256;
-    void* ptr = resources.allocate(nbytes);
+    void* ptr = resources.allocate(kStream, nbytes);
     REQUIRE(ptr != nullptr);
     REQUIRE(state.allocate_calls == 1);
 
     // A copy of a borrowing handle borrows the same resource.
     DeviceResources copy = resources;
     REQUIRE(copy.resource() == resources.resource());
-    copy.deallocate(ptr, nbytes);
+    copy.deallocate(kStream, ptr, nbytes);
 
     REQUIRE(state.deallocate_calls == 1);
     REQUIRE_FALSE(state.freed_through_a_different_instance);
@@ -416,53 +395,25 @@ TEST_CASE("DeviceResources can borrow a resource it does not own", "[test_device
     REQUIRE(state.outstanding.empty());
 }
 
-TEST_CASE("DeviceResources tracks the stream its memory is ordered on", "[test_device_resources.cpp]")
+TEST_CASE("DeviceResources orders each call on the stream it is given", "[test_device_resources.cpp]")
 {
+    // The handle holds no stream, so allocating a second buffer on B cannot
+    // move the release of a buffer still in use on A.
     TrackingResource::State state;
     DeviceResources resources{ any_device_resource{ TrackingResource{ state } } };
-    REQUIRE(resources.stream() == ::cuda::stream_ref{ cucim::memory::kDefaultStream });
+    const auto a = fake_stream(0x1000);
+    const auto b = fake_stream(0x3000);
 
-    SECTION("the stream-taking overloads do not rebind the handle")
-    {
-        // A buffer allocated on A and still in use there must not have its
-        // release moved to B by a later, unrelated allocation on B.
-        const auto a = fake_stream(0x1000);
-        const auto b = fake_stream(0x3000);
-        void* on_a = resources.allocate(a, 512);
-        void* on_b = resources.allocate(b, 512);
-        REQUIRE(resources.stream() == ::cuda::stream_ref{ cucim::memory::kDefaultStream });
+    void* on_a = resources.allocate(a, 512);
+    REQUIRE(state.last_stream == a.get());
+    void* on_b = resources.allocate(b, 512);
+    REQUIRE(state.last_stream == b.get());
 
-        resources.deallocate(a, on_a, 512);
-        REQUIRE(state.last_stream == a.get());
-        resources.deallocate(b, on_b, 512);
-        REQUIRE(state.last_stream == b.get());
-        REQUIRE(resources.stream() == ::cuda::stream_ref{ cucim::memory::kDefaultStream });
-        REQUIRE(state.outstanding.empty());
-    }
-
-    SECTION("with_stream binds a handle sharing the resource to another stream")
-    {
-        const auto other = fake_stream(0x1000);
-        DeviceResources on_other = resources.with_stream(other);
-        REQUIRE(on_other.stream() == other);
-        REQUIRE(on_other.resource() == resources.resource());
-        REQUIRE(resources.stream() == ::cuda::stream_ref{ cucim::memory::kDefaultStream });
-
-        void* ptr = on_other.allocate(512);
-        REQUIRE(state.last_stream == other.get());
-        on_other.deallocate(ptr, 512);
-        REQUIRE(state.last_stream == other.get());
-        REQUIRE(state.instances_created == 1);
-        REQUIRE_FALSE(state.freed_through_a_different_instance);
-        REQUIRE(state.outstanding.empty());
-    }
-
-    SECTION("a handle can be constructed on a specific stream")
-    {
-        const auto initial = fake_stream(0x2000);
-        DeviceResources on_stream{ any_device_resource{ TrackingResource{ state } }, initial };
-        REQUIRE(on_stream.stream() == initial);
-    }
+    resources.deallocate(a, on_a, 512);
+    REQUIRE(state.last_stream == a.get());
+    resources.deallocate(b, on_b, 512);
+    REQUIRE(state.last_stream == b.get());
+    REQUIRE(state.outstanding.empty());
 }
 
 TEST_CASE("CudaMemoryResource rejects alignments cudaMalloc cannot honor", "[test_device_resources.cpp]")
