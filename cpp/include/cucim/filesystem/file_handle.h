@@ -14,8 +14,6 @@
 #include <cstdint>
 #include <memory>
 
-#include <fmt/format.h>
-
 #include "cucim/memory/memory_manager.h"
 
 typedef void* CUfileHandle_t;

@@ -18,16 +18,17 @@ add_executable(cucim_tests
         test_metadata.cpp
         test_image_cache.cpp
         test_device_resource.cpp
+        test_print.cpp
         )
 
 set_target_properties(cucim_tests
     PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
 )
 target_compile_features(cucim_tests PRIVATE ${CUCIM_REQUIRED_FEATURES})
-# Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
+# Use generator expression to avoid `nvcc fatal   : Value '-std=c++20' is not defined for option 'Werror'`
 target_compile_options(cucim_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 target_compile_definitions(cucim_tests
     PUBLIC

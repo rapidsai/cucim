@@ -8,7 +8,6 @@
 #include "cucim/memory/memory_manager.h"
 
 #include <cuda_runtime.h>
-#include <fmt/format.h>
 
 #include "cucim/io/device_type.h"
 #include "cucim/memory/device_resource.h"

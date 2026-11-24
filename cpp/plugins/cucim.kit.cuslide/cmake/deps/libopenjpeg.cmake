@@ -1,9 +1,10 @@
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright 2020-2025 NVIDIA Corporation
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 
 if (NOT TARGET deps::libopenjpeg)
+    find_package(Git REQUIRED)
 
     FetchContent_Declare(
             deps-libopenjpeg

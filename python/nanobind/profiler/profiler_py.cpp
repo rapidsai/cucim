@@ -6,7 +6,7 @@
 #include "profiler_py.h"
 #include "profiler_pydoc.h"
 
-#include <fmt/format.h>
+#include <format>
 
 #include <cucim/cuimage.h>
 #include <cucim/profiler/profiler.h>
@@ -39,7 +39,7 @@ bool py_trace(Profiler& profiler, nb::handle value)
     }
     else
     {
-        throw std::invalid_argument(fmt::format("Only 'NoneType' or 'bool' is available for the argument"));
+        throw std::invalid_argument(std::format("Only 'NoneType' or 'bool' is available for the argument"));
     }
 }
 

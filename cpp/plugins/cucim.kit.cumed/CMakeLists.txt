@@ -63,7 +63,7 @@ find_package(CUDAToolkit REQUIRED)
 # For Threads::Threads
 find_package(Threads REQUIRED)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
 # Include CUDA headers explicitly for VSCode intelli-sense
@@ -94,7 +94,6 @@ include(ExternalProject)
 ################################################################################
 # Define dependencies
 ################################################################################
-superbuild_depend(fmt)
 superbuild_depend(catch2)
 superbuild_depend(googletest)
 superbuild_depend(googlebenchmark)
@@ -137,21 +136,20 @@ add_library(${CUCIM_PLUGIN_NAME}
 # Compile options
 set_target_properties(${CUCIM_PLUGIN_NAME}
     PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
         SOVERSION ${PROJECT_VERSION_MAJOR}
         VERSION ${PROJECT_VERSION}
 )
-target_compile_features(${CUCIM_PLUGIN_NAME} PRIVATE cxx_std_17)
-# Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
+target_compile_features(${CUCIM_PLUGIN_NAME} PRIVATE cxx_std_20)
+# Use generator expression to avoid `nvcc fatal   : Value '-std=c++20' is not defined for option 'Werror'`
 target_compile_options(${CUCIM_PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 
 # Link libraries
 target_link_libraries(${CUCIM_PLUGIN_NAME}
         PRIVATE
             CUDA::cudart_static
-            deps::fmt
             cucim::cucim
         )
 

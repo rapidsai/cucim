@@ -1,6 +1,6 @@
 #
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 #
@@ -13,12 +13,12 @@ add_executable(cuslide_benchmarks main.cpp config.h)
 
 set_target_properties(cuslide_benchmarks
     PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS NO
 )
 target_compile_features(cuslide_benchmarks PRIVATE ${CUCIM_REQUIRED_FEATURES})
-# Use generator expression to avoid `nvcc fatal   : Value '-std=c++17' is not defined for option 'Werror'`
+# Use generator expression to avoid `nvcc fatal   : Value '-std=c++20' is not defined for option 'Werror'`
 target_compile_options(cuslide_benchmarks PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror -Wall -Wextra>)
 target_compile_definitions(cuslide_benchmarks
     PUBLIC

@@ -33,11 +33,6 @@ libtiff
 - Files:
   - cpp/plugins/cucim.kit.cuslide/src/cuslide/lzw/lzw_libtiff.cpp : Implementation of lzw decoder.
 
-fmt
-- License: MIT License
-  - https://github.com/fmtlib/fmt/blob/master/LICENSE.rst
-- Copyright: Victor Zverovich
-
 spdlog
 - License: MIT License
   - https://github.com/gabime/spdlog/blob/v1.x/LICENSE

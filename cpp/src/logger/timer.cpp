@@ -1,11 +1,11 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "cucim/logger/timer.h"
 
-#include <fmt/format.h>
+#include "cucim/util/print.h"
 
 namespace cucim::logger
 {
@@ -43,11 +43,11 @@ void Timer::print(const char* message)
 {
     if (message)
     {
-        fmt::print(stderr, message, elapsed_seconds_);
+        cucim::vprint(stderr, message, std::make_format_args(elapsed_seconds_));
     }
     else
     {
-        fmt::print(stderr, message_, elapsed_seconds_);
+        cucim::vprint(stderr, message_, std::make_format_args(elapsed_seconds_));
     }
 }
 

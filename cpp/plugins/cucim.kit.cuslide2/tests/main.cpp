@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,8 +13,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_session.hpp>
+#include <format>
 #include <string>
-#include <fmt/format.h>
 
 CUCIM_FRAMEWORK_GLOBALS("sample.app")
 
@@ -32,8 +32,8 @@ AppConfig g_config;
  */
 static bool extract_test_file_option(int* argc, char** argv, std::string& obj, const char* argument)
 {
-    std::string arg_str = fmt::format("--{}=", argument); // test_file => --test_file=
-    std::string arg_str2 = fmt::format("--{}", argument); // test_file => --test_file
+    std::string arg_str = std::format("--{}=", argument); // test_file => --test_file=
+    std::string arg_str2 = std::format("--{}", argument); // test_file => --test_file
 
     char* value_ptr = nullptr;
     for (int i = 1; argc && i < *argc; ++i)

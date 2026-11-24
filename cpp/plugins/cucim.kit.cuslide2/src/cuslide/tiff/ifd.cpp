@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <algorithm>
 #include <cstdlib>
+#include <format>
 #include <iostream>
 #include <memory>
 #include <random>
@@ -19,7 +20,7 @@
 #include <langinfo.h>
 
 // Third-party includes - MUST be before any headers that open namespaces
-#include <fmt/format.h>
+#include <cucim/util/print.h>
 
 // cuCIM includes
 #include <cucim/cache/image_cache.h>
@@ -91,7 +92,7 @@ IFD::IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset) : tiff_(tiff), ifd_ind
             hash_value_ = tiff->file_handle_shared_.get()->hash_value ^ cucim::codec::splitmix64(index);
 
             #ifdef DEBUG
-            fmt::print("  IFD[{}]: Initialized from nvImageCodec ({}x{}, codec: {})\n",
+            cucim::print("  IFD[{}]: Initialized from nvImageCodec ({}x{}, codec: {})\n",
                       index, width_, height_, codec_name_);
             #endif
             return;
@@ -99,7 +100,7 @@ IFD::IFD(TIFF* tiff, uint16_t index, ifd_offset_t offset) : tiff_(tiff), ifd_ind
     }
 
     // Fallback: throw error if nvImageCodec parser not available
-    throw std::runtime_error(fmt::format(
+    throw std::runtime_error(std::format(
         "IFD constructor (offset-based) requires libtiff, which is not available in pure nvImageCodec build. "
         "Use IFD(TIFF*, uint16_t, IfdInfo&) constructor instead."));
 #else
@@ -124,7 +125,7 @@ IFD::IFD(TIFF* tiff,
     PROF_SCOPED_RANGE(PROF_EVENT(ifd_ifd));  // Use standard ifd_ifd profiler event
 
     #ifdef DEBUG
-    fmt::print("🔧 Creating IFD[{}] from nvImageCodec metadata\n", index);
+    cucim::print("🔧 Creating IFD[{}] from nvImageCodec metadata\n", index);
     #endif
 
     // Extract basic image properties from IfdInfo
@@ -136,7 +137,7 @@ IFD::IFD(TIFF* tiff,
     local_ifd_index_ = local_ifd_idx;
 
     #ifdef DEBUG
-    fmt::print("   Dimensions: {}x{}, {} channels, {} bits/sample\n",
+    cucim::print("   Dimensions: {}x{}, {} channels, {} bits/sample\n",
               width_, height_, samples_per_pixel_, bits_per_sample_);
     #endif
 
@@ -144,7 +145,7 @@ IFD::IFD(TIFF* tiff,
     codec_name_ = ifd_info.codec;
     compression_ = parse_codec_to_compression(codec_name_);
     #ifdef DEBUG
-    fmt::print("   Codec: {} (compression={})\n", codec_name_, compression_);
+    cucim::print("   Codec: {} (compression={})\n", codec_name_, compression_);
     #endif
 
     // Get ImageDescription from nvImageCodec
@@ -162,7 +163,7 @@ IFD::IFD(TIFF* tiff,
         if (subfile_type >= 0) {
             subfile_type_ = static_cast<uint64_t>(subfile_type);
             #ifdef DEBUG
-            fmt::print("   SUBFILETYPE: {}\n", subfile_type_);
+            cucim::print("   SUBFILETYPE: {}\n", subfile_type_);
             #endif
         }
 
@@ -170,7 +171,7 @@ IFD::IFD(TIFF* tiff,
         std::string jpeg_tables = parser.get_tiff_tag(local_ifd_idx, "JPEGTABLES");
         if (!jpeg_tables.empty()) {
             #ifdef DEBUG
-            fmt::print("   ✅ JPEGTables detected (abbreviated JPEG)\n");
+            cucim::print("   ✅ JPEGTables detected (abbreviated JPEG)\n");
             #endif
         }
 
@@ -184,11 +185,11 @@ IFD::IFD(TIFF* tiff,
                 tile_width_ = std::stoul(tile_w_str);
                 tile_height_ = std::stoul(tile_h_str);
                 #ifdef DEBUG
-                fmt::print("   Tiles: {}x{}\n", tile_width_, tile_height_);
+                cucim::print("   Tiles: {}x{}\n", tile_width_, tile_height_);
                 #endif
             } catch (...) {
                 #ifdef DEBUG
-                fmt::print("   ⚠️  Failed to parse tile dimensions\n");
+                cucim::print("   ⚠️  Failed to parse tile dimensions\n");
                 #endif
                 tile_width_ = 0;
                 tile_height_ = 0;
@@ -198,7 +199,7 @@ IFD::IFD(TIFF* tiff,
             tile_width_ = 0;
             tile_height_ = 0;
             #ifdef DEBUG
-            fmt::print("   Not tiled (strip-based or whole image)\n");
+            cucim::print("   Not tiled (strip-based or whole image)\n");
             #endif
         }
 
@@ -260,7 +261,7 @@ IFD::IFD(TIFF* tiff,
             }
         }
         #ifdef DEBUG
-        fmt::print("   Resolution: {}x{} (unit={})\n", x_resolution_, y_resolution_, resolution_unit_);
+        cucim::print("   Resolution: {}x{} (unit={})\n", x_resolution_, y_resolution_, resolution_unit_);
         #endif
     }
 
@@ -281,13 +282,13 @@ IFD::IFD(TIFF* tiff,
     // Store reference to nvImageCodec sub-stream
     nvimgcodec_sub_stream_ = ifd_info.sub_code_stream;
     #ifdef DEBUG
-    fmt::print("   ✅ nvImageCodec sub-stream: {}\n",
+    cucim::print("   ✅ nvImageCodec sub-stream: {}\n",
               static_cast<void*>(nvimgcodec_sub_stream_));
     #endif
 #endif
 
     #ifdef DEBUG
-    fmt::print("✅ IFD[{}] initialization complete\n", index);
+    cucim::print("✅ IFD[{}] initialization complete\n", index);
     #endif
 }
 #endif // CUCIM_HAS_NVIMGCODEC
@@ -316,7 +317,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     PROF_SCOPED_RANGE(PROF_EVENT(ifd_read));
 
     #ifdef DEBUG
-    fmt::print("🎯 IFD::read() ENTRY: IFD[{}], location=({}, {}), size={}x{}, device={}, location_len={}\n",
+    cucim::print("🎯 IFD::read() ENTRY: IFD[{}], location=({}, {}), size={}x{}, device={}, location_len={}\n",
               ifd_index_,
               request->location[0], request->location[1],
               request->size[0], request->size[1],
@@ -327,14 +328,14 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
 #ifdef CUCIM_HAS_NVIMGCODEC
     if (!nvimgcodec_sub_stream_)
     {
-        throw std::runtime_error(fmt::format(
+        throw std::runtime_error(std::format(
             "IFD[{}]: nvImageCodec parser not available", ifd_index_));
     }
 
     std::string device_name(request->device);
     if (request->shm_name)
     {
-        device_name = device_name + fmt::format("[{}]", request->shm_name);
+        device_name = device_name + std::format("[{}]", request->shm_name);
     }
     cucim::io::Device out_device(device_name);
 
@@ -380,7 +381,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         const uint64_t seed = request->seed;
 
         #ifdef DEBUG
-        fmt::print("🚀 Using ThreadBatchDataLoader for {} locations, batch_size={}, workers={}\n",
+        cucim::print("🚀 Using ThreadBatchDataLoader for {} locations, batch_size={}, workers={}\n",
                   location_len, batch_size, num_workers);
         #endif
 
@@ -476,7 +477,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         out_image_data->loader = loader.release();
 
         #ifdef DEBUG
-        fmt::print("✅ ThreadBatchDataLoader created for {} locations\n", adjusted_location_len);
+        cucim::print("✅ ThreadBatchDataLoader created for {} locations\n", adjusted_location_len);
         #endif
 
         // Always set container metadata (ndim, shape, dtype, device) even when
@@ -727,7 +728,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         };
 
         #ifdef DEBUG
-        ::fmt::print("🧩 Tile caching: ROI ({},{})→({},{}) maps to tiles [{},{}]→[{},{}], stride_y={}\n",
+        ::cucim::print("🧩 Tile caching: ROI ({},{})→({},{}) maps to tiles [{},{}]→[{},{}], stride_y={}\n",
                      sx, sy, ex, ey, offset_sx, offset_sy, offset_ex, offset_ey, stride_y);
         #endif
 
@@ -785,7 +786,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                     tile_data = static_cast<uint8_t*>(cached_value->data);
 
                     #ifdef DEBUG
-                    ::fmt::print("  ♻️  Cache HIT  tile[{},{}] idx={}\n", tile_col, tile_row, tile_index);
+                    ::cucim::print("  ♻️  Cache HIT  tile[{},{}] idx={}\n", tile_col, tile_row, tile_index);
                     #endif
                 }
                 else
@@ -796,7 +797,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                     {
                         tile_lock.unlock();
                         #ifdef DEBUG
-                        ::fmt::print("  ❌ Tile alloc FAILED tile[{},{}] — filling background\n",
+                        ::cucim::print("  ❌ Tile alloc FAILED tile[{},{}] — filling background\n",
                                      tile_col, tile_row);
                         #endif
 
@@ -826,14 +827,14 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
                         tile_lock.unlock();
 
                         #ifdef DEBUG
-                        ::fmt::print("  📥 Cache MISS tile[{},{}] idx={} decoded {}x{}\n",
+                        ::cucim::print("  📥 Cache MISS tile[{},{}] idx={} decoded {}x{}\n",
                                      tile_col, tile_row, tile_index, actual_tw, actual_th);
                         #endif
                     }
                     else
                     {
                         tile_lock.unlock();
-                        throw std::runtime_error(fmt::format(
+                        throw std::runtime_error(std::format(
                             "Failed to decode IFD[{}] tile ({},{}) with nvImageCodec",
                             ifd_index_, tile_col, tile_row));
                     }
@@ -899,7 +900,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
         out_image_data->container.byte_offset = 0;
 
         #ifdef DEBUG
-        ::fmt::print("✅ Tile-cached read complete: {}x{} at ({},{}) → {}\n",
+        ::cucim::print("✅ Tile-cached read complete: {}x{} at ({},{}) → {}\n",
                      w, h, sx, sy, (raster_type == cucim::io::DeviceType::kCUDA) ? "GPU" : "CPU");
         #endif
 
@@ -926,7 +927,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     if (success)
     {
         #ifdef DEBUG
-        fmt::print("✅ nvImageCodec ROI decode successful: {}x{} at ({}, {})\n", w, h, sx, sy);
+        cucim::print("✅ nvImageCodec ROI decode successful: {}x{} at ({}, {})\n", w, h, sx, sy);
         #endif
 
         // Set up output metadata
@@ -946,7 +947,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     else
     {
         #ifdef DEBUG
-        fmt::print("❌ nvImageCodec ROI decode failed for IFD[{}]\n", ifd_index_);
+        cucim::print("❌ nvImageCodec ROI decode failed for IFD[{}]\n", ifd_index_);
         #endif
 
         // Free allocated buffer on failure (only if we allocated it).
@@ -962,7 +963,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
             }
         }
 
-        throw std::runtime_error(fmt::format(
+        throw std::runtime_error(std::format(
             "Failed to decode IFD[{}] with nvImageCodec. ROI: ({},{}) {}x{}. "
             "If the image is JPEG 2000 compressed (Aperio 33003/33005 or TIFF compression 34712), "
             "or nvImageCodec printed 'Failed to load nvtiff library!' or 'Failed to load nvjpeg2k "
@@ -972,7 +973,7 @@ bool IFD::read([[maybe_unused]] const TIFF* tiff,
     }
 #else
     // If nvImageCodec not available, throw error
-    throw std::runtime_error(fmt::format(
+    throw std::runtime_error(std::format(
         "IFD[{}]: This library requires nvImageCodec for image decoding.", ifd_index_));
 #endif
 }
@@ -1130,14 +1131,14 @@ uint16_t IFD::parse_codec_to_compression(const std::string& codec)
     // For now, default to JPEG which is most common in whole-slide imaging
     if (codec == "tiff") {
         #ifdef DEBUG
-        fmt::print("ℹ️  nvImageCodec returned generic 'tiff' codec, assuming JPEG compression\n");
+        cucim::print("ℹ️  nvImageCodec returned generic 'tiff' codec, assuming JPEG compression\n");
         #endif
         return cuslide::tiff::COMPRESSION_JPEG;  // 7 - Most common for WSI (Aperio, Philips, etc.)
     }
 
     // Unknown codec - log warning and default to JPEG (safer than NONE for WSI)
     #ifdef DEBUG
-    fmt::print("⚠️  Unknown codec '{}', defaulting to COMPRESSION_JPEG\n", codec);
+    cucim::print("⚠️  Unknown codec '{}', defaulting to COMPRESSION_JPEG\n", codec);
     #endif
     return cuslide::tiff::COMPRESSION_JPEG;  // 7 - WSI files rarely use uncompressed
 }
