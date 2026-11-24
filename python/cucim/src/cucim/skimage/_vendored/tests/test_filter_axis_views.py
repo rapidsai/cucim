@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from cucim.skimage._vendored import _ndimage_filters as filters
+from cucim.skimage.filters import sobel
 
 pytestmark = pytest.mark.filterwarnings("error::UserWarning")
 
@@ -21,6 +22,47 @@ def test_filter_axis_view_integer_weights_with_constant_fill(algorithm):
     assert expected[0, 0, 0] == 1
     result = filters.correlate1d(image, weights, algorithm=algorithm, **kwargs)
     cp.testing.assert_array_equal(result, expected)
+
+
+def test_sobel_volume_with_axis_specific_modes():
+    image = cp.asarray(
+        np.random.default_rng(0).standard_normal((7, 11, 9)).astype(np.float32)
+    )
+    modes = ("reflect", "nearest", "wrap")
+    smooth = cp.asarray([0.25, 0.5, 0.25], dtype=cp.float32)
+    edge = cp.asarray([1, 0, -1], dtype=cp.float32)
+    expected = cp.zeros_like(image)
+    for edge_axis, mode in enumerate(modes):
+        result = filters.convolve1d(
+            image, edge, axis=edge_axis, mode=mode, algorithm="elementwise"
+        )
+        for axis, smooth_mode in enumerate(modes):
+            if axis != edge_axis:
+                result = filters.convolve1d(
+                    result,
+                    smooth,
+                    axis=axis,
+                    mode=smooth_mode,
+                    algorithm="elementwise",
+                )
+        expected += result**2
+    expected = cp.sqrt(expected / image.ndim)
+    cp.testing.assert_allclose(sobel(image, mode=modes), expected, atol=2e-6)
+
+
+def test_filter_axis_view_selects_mode_for_negative_axis():
+    image = cp.arange(4 * 8 * 4, dtype=cp.float32).reshape(4, 8, 4)
+    weights = cp.asarray([1, 2, 3], dtype=cp.float32)
+    modes = ("nearest", "constant", "mirror")
+    expected = filters.convolve1d(
+        image, weights, axis=1, mode=modes[1], cval=-2, algorithm="elementwise"
+    )
+    result = filters.convolve1d(
+        image, weights, axis=-2, mode=modes, cval=-2, algorithm="shared_memory"
+    )
+    cp.testing.assert_array_equal(result, expected)
+    with pytest.raises(RuntimeError, match="mode must have length"):
+        filters.convolve1d(image, weights, axis=-2, mode=modes[:2])
 
 
 @pytest.mark.parametrize(

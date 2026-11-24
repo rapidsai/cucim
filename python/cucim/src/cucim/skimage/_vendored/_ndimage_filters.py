@@ -297,6 +297,12 @@ def _correlate_or_convolve1d(
 ):
     # Calls fast shared-memory convolution when possible, otherwise falls back
     # to the vendored elementwise _correlate_or_convolve
+    if not isinstance(mode, str):
+        axis = internal._normalize_axis_index(axis, input.ndim)
+        modes = _util._fix_sequence_arg(
+            mode, input.ndim, "mode", _util._check_mode
+        )
+        mode = modes[axis]
     # Flatten only unfiltered trailing dimensions: axis-0 boundaries and sample
     # order are identical in this view, including for channel-last images.
     use_2d_view = (
