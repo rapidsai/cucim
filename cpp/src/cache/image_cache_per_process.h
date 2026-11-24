@@ -6,6 +6,7 @@
 #pragma once
 
 #include "cucim/cache/image_cache.h"
+#include "cucim/memory/device_resource.h"
 
 #include <libcuckoo/cuckoohash_map.hh>
 #include <memory>
@@ -37,11 +38,23 @@ struct PerProcessImageCacheItem;
 
 struct PerProcessImageCacheValue : public ImageCacheValue
 {
+    /**
+     * @param device_resource Resource that allocated *data*, when
+     *        *device_type* is kCUDA. Held by value because a value can outlive
+     *        the cache that produced it.
+     * @param stream Stream *data* was last used on; its release is ordered on it.
+     */
     PerProcessImageCacheValue(void* data,
                               uint64_t size,
                               void* user_obj = nullptr,
-                              const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU);
+                              const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU,
+                              cucim::memory::DeviceResource device_resource = {},
+                              ::cuda::stream_ref stream = ::cuda::stream_ref{ cucim::memory::kDefaultStream });
     ~PerProcessImageCacheValue() override;
+
+private:
+    cucim::memory::DeviceResource device_resource_;
+    ::cuda::stream_ref stream_;
 };
 
 
@@ -55,8 +68,20 @@ struct PerProcessImageCacheValue : public ImageCacheValue
 class PerProcessImageCache : public ImageCache
 {
 public:
+    /**
+     * @param device_resource Where device tiles are allocated from. Fixed for
+     *        the lifetime of the cache: allocate() and create_value() are
+     *        separate calls, so a resource that changed between them would
+     *        give an entry the wrong deallocator.
+     *
+     * Device tiles are allocated and released on the legacy default stream.
+     * The plugins fill and read them with default-stream copies that are not
+     * ordered against any other stream, so an allocation or release on a
+     * nonblocking stream would race them.
+     */
     PerProcessImageCache(const ImageCacheConfig& config,
-                         const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU);
+                         const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU,
+                         cucim::memory::DeviceResource device_resource = {});
     ~PerProcessImageCache();
 
     const char* type_str() const override;
@@ -97,6 +122,10 @@ private:
     bool erase(const std::shared_ptr<ImageCacheKey>& key);
 
     std::vector<std::mutex> mutex_array_;
+
+    cucim::memory::DeviceResource device_resource_;
+    /// See the constructor for why this is not configurable.
+    ::cuda::stream_ref stream_{ cucim::memory::kDefaultStream };
 
     std::atomic<uint64_t> size_nbytes_ = 0; /// size of cache memory used
     uint64_t capacity_nbytes_ = 0; /// size of cache memory allocated

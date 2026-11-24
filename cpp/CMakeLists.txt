@@ -99,6 +99,7 @@ add_library(${CUCIM_PACKAGE_NAME}
         src/loader/thread_batch_data_loader.cpp
         src/logger/logger.cpp
         src/logger/timer.cpp
+        src/memory/device_resource.cpp
         src/memory/memory_manager.cpp
         src/plugin/image_format.cpp
         src/plugin/plugin_config.cpp
@@ -145,8 +146,30 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             Threads::Threads # -lpthread
             $<BUILD_INTERFACE:deps::fmt>
             $<INSTALL_INTERFACE:cucim::fmt-header-only>
-        PRIVATE
+            # <cucim/memory/device_resource.h> is public and exposes cuda::mr,
+            # so a consumer compiling against it needs CCCL and the CUDA
+            # runtime. CCCL is listed first: the toolkit carries its own older
+            # libcudacxx, and the include directory searched first is the one
+            # that decides whether cuda::mr exists.
+            #
+            # The CUDA runtime rather than headers alone because CCCL emits
+            # calls into it (cudaGetErrorString among them) in the consumer's
+            # own objects, whether it uses the build tree or the install tree.
+            # Static, like everything else cuCIM ships: the conda package
+            # ignores cuda-cudart's run_exports, so a plugin that linked the
+            # shared runtime would fail the overlinking check.
+            #
+            # At build time CCCL instead comes from the include directory added
+            # further down, which can be ordered with BEFORE.
+            #
+            # CCCL::CCCL rather than CCCL::libcudacxx: when rapids-cmake adds
+            # CCCL to the build, CCCL::libcudacxx is an ALIAS of a target that
+            # is in no export set, which install(EXPORT) rejects. CCCL::CCCL is
+            # IMPORTED, and with the libcudacxx component that cucim-config
+            # asks for it links only CCCL::libcudacxx.
+            $<INSTALL_INTERFACE:CCCL::CCCL>
             CUDA::cudart_static
+        PRIVATE
             deps::abseil
             deps::gds
             deps::libcuckoo
@@ -154,6 +177,26 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             deps::json
             deps::nvtx3
             deps::taskflow
+        )
+
+# CCCL's headers have to be searched before the CUDA toolkit's.
+#
+# The toolkit ships its own copy of libcudacxx, and for every CUDA version
+# cuCIM supports that copy predates cuda::mr. If the toolkit include directory
+# (pulled in by CUDA::cudart_static) is searched first, CCCL's
+# <cuda/memory_resource> still resolves but the cuda/std/* headers it depends
+# on come from the toolkit, the version guards do not line up, and cuda::mr
+# silently disappears. BEFORE is what keeps the two copies from being mixed.
+#
+# PUBLIC because <cucim/memory/device_resource.h> exposes cuda::mr types.
+# BUILD_INTERFACE only because the install side resolves CCCL through
+# find_dependency(CCCL) instead; see the link libraries above. BEFORE cannot
+# be expressed through a linked target, so an installed consumer that also
+# pulls in the toolkit has to order the two include directories itself.
+target_include_directories(${CUCIM_PACKAGE_NAME}
+        BEFORE
+        PUBLIC
+            $<BUILD_INTERFACE:${CUCIM_CCCL_INCLUDE_DIRS}>
         )
 
 if (CUCIM_STATIC_GDS)
