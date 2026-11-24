@@ -12,6 +12,9 @@
 #include <string_view>
 #include <system_error>
 
+// C++20 has no std::print, so these helpers format with std::vformat and write with std::fwrite.
+// Replace them with std::print once cuCIM builds with C++23 (https://github.com/rapidsai/cucim/issues/1258).
+
 namespace cucim
 {
 
