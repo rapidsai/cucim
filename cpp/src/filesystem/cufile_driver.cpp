@@ -319,7 +319,7 @@ CuFileDriverInitializer::CuFileDriverInitializer()
         {
             cucim::print(stderr, "cuFileDriverGetProperties() failed!\n");
         }
-        // fmt::print(stderr, "CuFileDriver opened!\n");
+        // cucim::print(stderr, "CuFileDriver opened!\n");
     }
     else
     {
@@ -327,7 +327,7 @@ CuFileDriverInitializer::CuFileDriverInitializer()
         max_device_cache_size_ = DEFAULT_MAX_CACHE_SIZE;
         max_host_cache_size_ = DEFAULT_MAX_CACHE_SIZE;
 
-        // fmt::print(stderr, "[Warning] CuFileDriver cannot be open. Falling back to use POSIX file IO APIs.\n");
+        // cucim::print(stderr, "[Warning] CuFileDriver cannot be open. Falling back to use POSIX file IO APIs.\n");
     }
 }
 CuFileDriverInitializer::~CuFileDriverInitializer()
@@ -341,7 +341,7 @@ CuFileDriverInitializer::~CuFileDriverInitializer()
         }
         else
         {
-            // fmt::print(stderr, "CuFileDriver closed!\n");
+            // cucim::print(stderr, "CuFileDriver closed!\n");
         }
         is_available_ = false;
     }

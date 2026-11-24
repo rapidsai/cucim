@@ -298,13 +298,13 @@ void* SharedMemoryImageCache::allocate(std::size_t n)
     void* temp = nullptr;
     try
     {
-        // fmt::print(stderr, "## pid: {} memory_size: {}, memory_capacity: {}, free_memory: {}\n", getpid(),
-        //            memory_size(), memory_capacity(), free_memory());
-        // fmt::print(
+        // cucim::print(stderr, "## pid: {} memory_size: {}, memory_capacity: {}, free_memory: {}\n", getpid(),
+        //              memory_size(), memory_capacity(), free_memory());
+        // cucim::print(
         //     stderr, "## pid: {} size_nbytes: {}, capacity_nbytes: {}\n", getpid(), *size_nbytes_, *capacity_nbytes_);
-        // fmt::print(stderr, "## pid: {}, {} hit:{} miss:{} total:{} | {}/{}  hash size:{}\n", getpid(),
-        //            segment_->get_free_memory(), *stat_hit_, *stat_miss_, *stat_hit_ + *stat_miss_, size(),
-        //            *list_capacity_, hashmap_->size());
+        // cucim::print(stderr, "## pid: {}, {} hit:{} miss:{} total:{} | {}/{}  hash size:{}\n", getpid(),
+        //              segment_->get_free_memory(), *stat_hit_, *stat_miss_, *stat_hit_ + *stat_miss_, size(),
+        //              *list_capacity_, hashmap_->size());
 
         temp = segment_->allocate(n);
     }
@@ -319,7 +319,7 @@ void* SharedMemoryImageCache::allocate(std::size_t n)
 
 void SharedMemoryImageCache::lock(uint64_t index)
 {
-    // fmt::print(stderr, "# {}: {} {} [{}]-   lock\n",
+    // cucim::print(stderr, "# {}: {} {} [{}]-   lock\n",
     // std::chrono::high_resolution_clock::now().time_since_epoch().count(),
     //            getpid(), index, index % *mutex_pool_capacity_);
     mutex_array_[index % *mutex_pool_capacity_].lock();
@@ -327,9 +327,9 @@ void SharedMemoryImageCache::lock(uint64_t index)
 
 void SharedMemoryImageCache::unlock(uint64_t index)
 {
-    // fmt::print(stderr, "# {}: {} {} [{}]-   unlock\n",
-    //            std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index,
-    //            index % *mutex_pool_capacity_);
+    // cucim::print(stderr, "# {}: {} {} [{}]-   unlock\n",
+    //              std::chrono::high_resolution_clock::now().time_since_epoch().count(), getpid(), index,
+    //              index % *mutex_pool_capacity_);
     mutex_array_[index % *mutex_pool_capacity_].unlock();
 }
 
