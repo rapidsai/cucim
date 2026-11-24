@@ -201,11 +201,14 @@ def test_binary_fill_holes_1d():
 
 @pytest.mark.parametrize("footprint_type", ["numpy", "list", "cupy"])
 @pytest.mark.parametrize("inplace", [False, True])
-def test_binary_fill_holes_host_iterative_footprint(footprint_type, inplace):
+@pytest.mark.parametrize("origin", [0, -1])
+def test_binary_fill_holes_host_iterative_footprint(
+    footprint_type, inplace, origin
+):
     data = np.random.default_rng(5).random((24, 24)) > 0.35
     footprint = np.zeros((3, 3), dtype=bool)
     footprint[1, :] = True
-    expected = ndi_cpu.binary_fill_holes(data, footprint)
+    expected = ndi_cpu.binary_fill_holes(data, footprint, origin=origin)
     assert not np.array_equal(expected, ndi_cpu.binary_fill_holes(data))
     if footprint_type == "list":
         footprint = footprint.tolist()
@@ -213,7 +216,7 @@ def test_binary_fill_holes_host_iterative_footprint(footprint_type, inplace):
         footprint = cp.asarray(footprint)
     image = cp.asarray(data)
     out = image if inplace else None
-    result = ndi.binary_fill_holes(image, footprint, output=out)
+    result = ndi.binary_fill_holes(image, footprint, output=out, origin=origin)
     if inplace:
         assert result is out
     cp.testing.assert_array_equal(result, expected)

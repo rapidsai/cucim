@@ -947,15 +947,15 @@ def binary_fill_holes(
             return _binary_fill_holes_non_iterative(
                 input, structure=structure_cpu, output=output
             )
-        if isinstance(structure, numpy.ndarray) or (
-            isinstance(structure, list) and numpy.ndim(structure) == input.ndim
-        ):
-            structure = cupy.asarray(structure, dtype=bool)
     elif filter_all_axes:
         warnings.warn(
             "It is recommended to keep the default origin=0 so that a faster "
             "non-iterative algorithm can be used."
         )
+    if isinstance(structure, numpy.ndarray) or (
+        isinstance(structure, list) and numpy.ndim(structure) == input.ndim
+    ):
+        structure = cupy.asarray(structure, dtype=bool)
     mask = cupy.logical_not(input)
     tmp = cupy.zeros(mask.shape, bool)
     inplace = isinstance(output, cupy.ndarray)
