@@ -1,13 +1,17 @@
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Infrastructure, Inc.
 # SPDX-FileCopyrightText: Copyright (c) 2015 Preferred Networks, Inc.
-# SPDX-FileCopyrightText: Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND MIT
 
 """A vendored subset of cupyx.scipy.ndimage._util"""
 
 import operator
+import threading
 import warnings
+import weakref
+from collections import deque
 from collections.abc import Iterable
+from functools import lru_cache
 
 try:
     from numpy.exceptions import AxisError
@@ -15,6 +19,173 @@ except ImportError:
     from numpy import AxisError
 
 import cupy
+
+_cache_array_streams = {}
+_cache_array_streams_lock = threading.Lock()
+_MAX_STREAMS_PER_CACHE_ARRAY = 32
+# ids of live cache arrays known to contain no zero entries
+_nonzero_cache_array_ids = set()
+_retired_cache_allocations = {}
+_CACHE_RETIREMENT_POLL_LIMIT = 8
+# A finalizer can reenter cleanup on a thread that already holds this lock.
+_retired_cache_lock = threading.RLock()
+
+
+def _release_completed_cache_allocations(device_id):
+    """Reclaim evicted storage after all queued consumers have finished."""
+    with _retired_cache_lock:
+        allocations = _retired_cache_allocations.get(device_id)
+        if not allocations:
+            return
+        # Give pending allocations another turn without letting one busy
+        # stream block cleanup of its peers or scanning the entire queue.
+        for _ in range(min(len(allocations), _CACHE_RETIREMENT_POLL_LIMIT)):
+            if not allocations:  # A nested cleanup can drain the queue.
+                break
+            entry = allocations.popleft()
+            complete = False
+            try:
+                complete = all(event.done for event in entry[1])
+            finally:
+                if not complete:
+                    allocations.append(entry)
+
+
+def _retire_cache_allocation(array_id, device_id, memory, streams):
+    # The last ndarray reference is gone, so every use has now been enqueued.
+    # Keep its allocation alive separately until those reads complete; returning
+    # it immediately to the initialization stream's arena would allow early reuse.
+    del _cache_array_streams[array_id]
+    with cupy.cuda.Device(device_id):
+        events = []
+        for stream in streams.values():
+            event = cupy.cuda.Event(disable_timing=True)
+            event.record(stream)
+            events.append(event)
+        with _retired_cache_lock:
+            _retired_cache_allocations.setdefault(device_id, deque()).append(
+                (memory, events)
+            )
+        _release_completed_cache_allocations(device_id)
+
+
+def _register_cache_array(array, all_nonzero=False):
+    """Protect an initialized array's allocation from reuse after eviction.
+
+    If ``all_nonzero`` is True, the array (which must contain no zero entries)
+    is also recorded for :func:`_is_nonzero_cache_array`.
+    """
+    device_id = array.device.id
+    _release_completed_cache_allocations(device_id)
+    streams = _cache_array_streams[id(array)] = {}
+    # The memory pointer owns the allocation, without retaining the ndarray.
+    finalizer = weakref.finalize(
+        array,
+        _retire_cache_allocation,
+        id(array),
+        device_id,
+        array.data,
+        streams,
+    )
+    finalizer.atexit = False
+    if all_nonzero:
+        _nonzero_cache_array_ids.add(id(array))
+        weakref.finalize(
+            array, _nonzero_cache_array_ids.discard, id(array)
+        ).atexit = False
+    return array
+
+
+def _is_nonzero_cache_array(array):
+    """Whether ``array`` is a cache array registered as having no zeros.
+
+    Filter kernels skip zero weights so that a non-finite input value under a
+    zero weight does not propagate (as in SciPy). For cached coefficients the
+    absence of zeros is checked once, when the cache entry is created, which
+    lets the kernels omit the per-tap test without a host synchronization.
+    """
+    return id(array) in _nonzero_cache_array_ids
+
+
+def _coefficient_cache_stream():
+    """Return a trackable stream or None for a per-thread default stream."""
+    stream = cupy.cuda.get_current_stream()
+    runtime = cupy.cuda.runtime
+    if not runtime.is_hip and stream.ptr not in (0, runtime.streamLegacy):
+        if stream.is_capturing():
+            # Retirement only covers queued work, not future graph replays.
+            raise RuntimeError(
+                "Direct CUDA Graph capture is unsupported for operations "
+                "using the coefficient cache"
+            )
+        if stream.ptr == runtime.streamPerThread:
+            # The PTDS handle resolves relative to the issuing host thread.
+            # A finalizer on another thread cannot record a completion event
+            # for this consumer. Allocate in the caller's stream instead.
+            return None
+    return stream
+
+
+def _record_cache_array_use(array, stream):
+    """Return the shared array, or None if the caller needs private storage."""
+    streams = _cache_array_streams[id(array)]
+    ptr = stream.ptr
+    if ptr not in streams:
+        with _cache_array_streams_lock:
+            if ptr not in streams:
+                if len(streams) >= _MAX_STREAMS_PER_CACHE_ARRAY:
+                    return None
+                streams[ptr] = stream
+    return array
+
+
+@cupy.memoize(for_each_device=True)
+def _get_cache_init_stream():
+    """Share a private stream for small cache-initialization copies per device.
+
+    Synchronize this stream before publishing an entry so other streams can
+    reuse it immediately, without waiting for work queued by the caller.
+    """
+    return cupy.cuda.Stream(non_blocking=True)
+
+
+def _cached_filter_weights(weights, dtype, divisor=1):
+    """Reuse small built-in coefficient tuples; callers must not modify them.
+
+    Optional normalization runs once in the working dtype on the device, as
+    in the uncached edge filters. Keep it in the key so magnitude and single-
+    axis filters never share coefficients with different normalization.
+    """
+    caller = _coefficient_cache_stream()
+    if caller is None:
+        return _make_filter_weights(weights, dtype, divisor)
+    device_id = cupy.cuda.runtime.getDevice()
+    array = _cached_filter_weights_for_device(
+        device_id, weights, cupy.dtype(dtype).str, divisor
+    )
+    if _record_cache_array_use(array, caller) is None:
+        return _make_filter_weights(weights, dtype, divisor)
+    return array
+
+
+def _make_filter_weights(weights, dtype, divisor):
+    array = cupy.asarray(weights, dtype=dtype)
+    if divisor != 1:
+        array /= divisor
+    return array
+
+
+@lru_cache(maxsize=64)
+def _cached_filter_weights_for_device(device_id, weights, dtype, divisor):
+    """Publish initialized coefficients using the shared cache stream policy."""
+    with cupy.cuda.Device(device_id):
+        stream = _get_cache_init_stream()
+        with stream:
+            array = _make_filter_weights(weights, dtype, divisor)
+            # checked once per cache entry (synchronizes the cache stream)
+            all_nonzero = int(cupy.count_nonzero(array)) == array.size
+        stream.synchronize()
+        return _register_cache_array(array, all_nonzero=all_nonzero)
 
 
 def _is_integer_output(output, input):

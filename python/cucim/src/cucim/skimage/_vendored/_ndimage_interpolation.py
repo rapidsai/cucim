@@ -8,6 +8,7 @@ import cmath
 import ctypes
 import math
 import warnings
+from functools import lru_cache
 
 import cupy
 import numpy
@@ -21,6 +22,32 @@ from cucim.skimage._vendored import (
 )
 from cucim.skimage._vendored._internal import _normalize_axis_index
 from cucim.skimage._vendored.pad import pad
+
+_MAX_CACHED_ZOOM_FACTORS = 128
+
+
+def _cached_zoom_factors(zoom, dtype):
+    caller = _util._coefficient_cache_stream()
+    if caller is None:
+        return cupy.asarray(zoom, dtype=dtype)
+    device_id = runtime.getDevice()
+    factors = _cached_zoom_factors_for_device(
+        device_id, tuple(zoom), cupy.dtype(dtype).str
+    )
+    if _util._record_cache_array_use(factors, caller) is None:
+        return cupy.asarray(zoom, dtype=dtype)
+    return factors
+
+
+@lru_cache(maxsize=_MAX_CACHED_ZOOM_FACTORS)
+def _cached_zoom_factors_for_device(device_id, zoom, dtype):
+    with cupy.cuda.Device(device_id):
+        stream = _util._get_cache_init_stream()
+        with stream:
+            factors = cupy.asarray(zoom, dtype=cupy.dtype(dtype))
+        # Publish fully initialized factors without draining the caller.
+        stream.synchronize()
+        return _util._register_cache_array(factors)
 
 
 def _launch_interpolation(
@@ -1210,7 +1237,7 @@ def zoom(
             input, prefilter, mode, cval, order, batch_axes=batch_axes
         )
 
-        zoom = cupy.asarray(zoom, dtype=float_dtype)
+        zoom = _cached_zoom_factors(zoom, float_dtype)
         _launch_interpolation(
             "zoom_grid" if grid_mode else "zoom",
             filtered,
