@@ -6,7 +6,7 @@
 #pragma once
 
 #include "cucim/cache/image_cache.h"
-#include "cucim/memory/device_resources.h"
+#include "cucim/memory/device_resource.h"
 
 #include <libcuckoo/cuckoohash_map.hh>
 #include <memory>
@@ -39,7 +39,7 @@ struct PerProcessImageCacheItem;
 struct PerProcessImageCacheValue : public ImageCacheValue
 {
     /**
-     * @param device_resources Resource that allocated *data*, when
+     * @param device_resource Resource that allocated *data*, when
      *        *device_type* is kCUDA. Held by value because a value can outlive
      *        the cache that produced it.
      * @param stream Stream *data* was last used on; its release is ordered on it.
@@ -48,12 +48,12 @@ struct PerProcessImageCacheValue : public ImageCacheValue
                               uint64_t size,
                               void* user_obj = nullptr,
                               const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU,
-                              cucim::memory::DeviceResources device_resources = {},
+                              cucim::memory::DeviceResource device_resource = {},
                               ::cuda::stream_ref stream = ::cuda::stream_ref{ cucim::memory::kDefaultStream });
     ~PerProcessImageCacheValue() override;
 
 private:
-    cucim::memory::DeviceResources device_resources_;
+    cucim::memory::DeviceResource device_resource_;
     ::cuda::stream_ref stream_;
 };
 
@@ -69,7 +69,7 @@ class PerProcessImageCache : public ImageCache
 {
 public:
     /**
-     * @param device_resources Where device tiles are allocated from.
+     * @param device_resource Where device tiles are allocated from.
      * @param stream Stream device tiles are allocated on.
      *
      * Both are fixed for the lifetime of the cache: allocate() and
@@ -78,7 +78,7 @@ public:
      */
     PerProcessImageCache(const ImageCacheConfig& config,
                          const cucim::io::DeviceType device_type = cucim::io::DeviceType::kCPU,
-                         cucim::memory::DeviceResources device_resources = {},
+                         cucim::memory::DeviceResource device_resource = {},
                          ::cuda::stream_ref stream = ::cuda::stream_ref{ cucim::memory::kDefaultStream });
     ~PerProcessImageCache();
 
@@ -121,7 +121,7 @@ private:
 
     std::vector<std::mutex> mutex_array_;
 
-    cucim::memory::DeviceResources device_resources_;
+    cucim::memory::DeviceResource device_resource_;
     ::cuda::stream_ref stream_;
 
     std::atomic<uint64_t> size_nbytes_ = 0; /// size of cache memory used

@@ -130,7 +130,7 @@ superbuild_depend(taskflow)
 
 # Use the CCCL version pinned by rapids-cmake (as other RAPIDS projects do)
 # rather than the one bundled with the CUDA Toolkit, which for every supported
-# toolkit predates the cuda::mr types in <cucim/memory/device_resources.h>.
+# toolkit predates the cuda::mr types in <cucim/memory/device_resource.h>.
 #
 # The install export set is what makes rapids-cmake install CCCL, under
 # include/rapids and lib/rapids, so that installed consumers of that public

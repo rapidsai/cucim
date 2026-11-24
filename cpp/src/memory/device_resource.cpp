@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "cucim/memory/device_resources.h"
+#include "cucim/memory/device_resource.h"
 
 #include "cucim/profiler/nvtx3.h"
 
@@ -126,25 +126,25 @@ void CudaMemoryResource::deallocate(::cuda::stream_ref /*stream*/,
     deallocate_sync(ptr, bytes, alignment);
 }
 
-DeviceResources::DeviceResources() : DeviceResources(any_device_resource{ DeviceMemoryPoolResource{} })
+DeviceResource::DeviceResource() : DeviceResource(any_device_resource{ DeviceMemoryPoolResource{} })
 {
 }
 
-DeviceResources::DeviceResources(any_device_resource resource)
+DeviceResource::DeviceResource(any_device_resource resource)
     : owned_(std::make_shared<any_device_resource>(std::move(resource))), resource_(*owned_)
 {
 }
 
-DeviceResources::DeviceResources(device_resource_ref resource) : owned_(nullptr), resource_(resource)
+DeviceResource::DeviceResource(device_resource_ref resource) : owned_(nullptr), resource_(resource)
 {
 }
 
-void* DeviceResources::allocate(::cuda::stream_ref stream, std::size_t bytes, std::size_t alignment)
+void* DeviceResource::allocate(::cuda::stream_ref stream, std::size_t bytes, std::size_t alignment)
 {
     return resource_.allocate(stream, bytes, alignment);
 }
 
-void DeviceResources::deallocate(::cuda::stream_ref stream,
+void DeviceResource::deallocate(::cuda::stream_ref stream,
                                  void* ptr,
                                  std::size_t bytes,
                                  std::size_t alignment) noexcept

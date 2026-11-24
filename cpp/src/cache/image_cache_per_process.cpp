@@ -50,10 +50,10 @@ PerProcessImageCacheValue::PerProcessImageCacheValue(void* data,
                                                      uint64_t size,
                                                      void* user_obj,
                                                      const cucim::io::DeviceType device_type,
-                                                     cucim::memory::DeviceResources device_resources,
+                                                     cucim::memory::DeviceResource device_resource,
                                                      ::cuda::stream_ref stream)
     : ImageCacheValue(data, size, user_obj, device_type),
-      device_resources_(std::move(device_resources)),
+      device_resource_(std::move(device_resource)),
       stream_(stream){};
 
 PerProcessImageCacheValue::~PerProcessImageCacheValue()
@@ -66,7 +66,7 @@ PerProcessImageCacheValue::~PerProcessImageCacheValue()
             cucim_free(data);
             break;
         case io::DeviceType::kCUDA:
-            device_resources_.deallocate(stream_, data, size);
+            device_resource_.deallocate(stream_, data, size);
             break;
         case io::DeviceType::kCUDAHost:
         case io::DeviceType::kCUDAManaged:
@@ -81,11 +81,11 @@ PerProcessImageCacheValue::~PerProcessImageCacheValue()
 
 PerProcessImageCache::PerProcessImageCache(const ImageCacheConfig& config,
                                            const cucim::io::DeviceType device_type,
-                                           cucim::memory::DeviceResources device_resources,
+                                           cucim::memory::DeviceResource device_resource,
                                            ::cuda::stream_ref stream)
     : ImageCache(config, CacheType::kPerProcess, device_type),
       mutex_array_(config.mutex_pool_capacity),
-      device_resources_(std::move(device_resources)),
+      device_resource_(std::move(device_resource)),
       stream_(stream),
       capacity_nbytes_(kOneMiB * config.memory_capacity),
       capacity_(config.capacity),
@@ -113,7 +113,7 @@ std::shared_ptr<ImageCacheValue> PerProcessImageCache::create_value(void* data,
                                                                     uint64_t size,
                                                                     const cucim::io::DeviceType device_type)
 {
-    return std::make_shared<PerProcessImageCacheValue>(data, size, nullptr, device_type, device_resources_, stream_);
+    return std::make_shared<PerProcessImageCacheValue>(data, size, nullptr, device_type, device_resource_, stream_);
 }
 
 void* PerProcessImageCache::allocate(std::size_t n)
@@ -127,7 +127,7 @@ void* PerProcessImageCache::allocate(std::size_t n)
         // since a caller's resource may throw anything.
         try
         {
-            return device_resources_.allocate(stream_, n);
+            return device_resource_.allocate(stream_, n);
         }
         catch (const std::exception&)
         {

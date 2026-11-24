@@ -118,23 +118,23 @@ public:
  * `device_resource_ref` borrows, and the caller keeps that resource alive for
  * as long as any copy of the handle or any buffer from it is in use.
  */
-class EXPORT_VISIBLE DeviceResources
+class EXPORT_VISIBLE DeviceResource
 {
 public:
     /// The current device's default memory pool.
-    DeviceResources();
+    DeviceResource();
 
     /// Own *resource*, sharing it with every copy of this handle.
-    explicit DeviceResources(any_device_resource resource);
+    explicit DeviceResource(any_device_resource resource);
 
     /// Borrow *resource*; the caller keeps it alive.
-    explicit DeviceResources(device_resource_ref resource);
+    explicit DeviceResource(device_resource_ref resource);
 
     /**
      * @brief Allocate *bytes* of device memory ordered on *stream*.
      *
      * @throws Whatever the resource throws: std::bad_alloc from cuCIM's
-     * resources when memory runs out, std::invalid_argument for an alignment
+     * resource when memory runs out, std::invalid_argument for an alignment
      * they cannot honor, and any type from a caller's resource.
      */
     void* allocate(::cuda::stream_ref stream, std::size_t bytes, std::size_t alignment = kDefaultAlignment);
@@ -159,7 +159,7 @@ private:
 };
 
 /**
- * @brief move_raster_from_host() allocating from *resources* on *stream*.
+ * @brief move_raster_from_host() allocating from *resource* on *stream*.
  *
  * The caller frees the device memory written to *target* through the same
  * resource. The transfer is synchronized on *stream* before returning.
@@ -171,20 +171,20 @@ private:
 EXPORT_VISIBLE bool move_raster_from_host(void** target,
                                           size_t size,
                                           const cucim::io::Device& dst_device,
-                                          DeviceResources& resources,
+                                          DeviceResource& resource,
                                           ::cuda::stream_ref stream);
 
 /**
- * @brief move_raster_from_device() freeing through *resources* on *stream*.
+ * @brief move_raster_from_device() freeing through *resource* on *stream*.
  *
- * *resources* and *alignment* must be the resource and alignment that
+ * *resource* and *alignment* must be the resource and alignment that
  * allocated `*target`. Buffers from a raw `cudaMalloc`, such as those a plugin
  * allocates, go through the overload in memory_manager.h instead.
  */
 EXPORT_VISIBLE bool move_raster_from_device(void** target,
                                             size_t size,
                                             const cucim::io::Device& dst_device,
-                                            DeviceResources& resources,
+                                            DeviceResource& resource,
                                             ::cuda::stream_ref stream,
                                             std::size_t alignment = kDefaultAlignment);
 

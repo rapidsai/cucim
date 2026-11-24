@@ -11,7 +11,7 @@
 #include <fmt/format.h>
 
 #include "cucim/io/device_type.h"
-#include "cucim/memory/device_resources.h"
+#include "cucim/memory/device_resource.h"
 #include "cucim/profiler/nvtx3.h"
 #include "cucim/util/cuda.h"
 
@@ -66,7 +66,7 @@ void get_pointer_attributes(PointerAttributes& attr, const void* ptr)
 EXPORT_VISIBLE bool move_raster_from_host(void** target,
                                           size_t size,
                                           const cucim::io::Device& dst_device,
-                                          DeviceResources& resources,
+                                          DeviceResource& resource,
                                           ::cuda::stream_ref stream)
 {
     switch (dst_device.type())
@@ -76,7 +76,7 @@ EXPORT_VISIBLE bool move_raster_from_host(void** target,
     case cucim::io::DeviceType::kCUDA: {
         cudaError_t cuda_status;
         void* host_mem = *target;
-        void* cuda_mem = resources.allocate(stream, size);
+        void* cuda_mem = resource.allocate(stream, size);
         CUDA_TRY(cudaMemcpyAsync(cuda_mem, host_mem, size, cudaMemcpyHostToDevice, stream.get()));
         if (cuda_status == cudaSuccess)
         {
@@ -85,7 +85,7 @@ EXPORT_VISIBLE bool move_raster_from_host(void** target,
         }
         if (cuda_status)
         {
-            resources.deallocate(stream, cuda_mem, size);
+            resource.deallocate(stream, cuda_mem, size);
             throw std::bad_alloc();
         }
         cucim_free(host_mem);
@@ -101,7 +101,7 @@ EXPORT_VISIBLE bool move_raster_from_host(void** target,
 EXPORT_VISIBLE bool move_raster_from_device(void** target,
                                             size_t size,
                                             const cucim::io::Device& dst_device,
-                                            DeviceResources& resources,
+                                            DeviceResource& resource,
                                             ::cuda::stream_ref stream,
                                             std::size_t alignment)
 {
@@ -123,7 +123,7 @@ EXPORT_VISIBLE bool move_raster_from_device(void** target,
             cucim_free(host_mem);
             throw std::bad_alloc();
         }
-        resources.deallocate(stream, cuda_mem, size, alignment);
+        resource.deallocate(stream, cuda_mem, size, alignment);
         *target = host_mem;
         break;
     }
@@ -145,24 +145,24 @@ namespace
 // buffer a plugin allocated came from cudaMalloc and cannot go to a pool.
 //
 // Borrowed, so that a no-op move costs no allocation.
-DeviceResources cuda_malloc_resources()
+DeviceResource cuda_malloc_resource()
 {
     static CudaMemoryResource backend;
-    return DeviceResources{ device_resource_ref{ backend } };
+    return DeviceResource{ device_resource_ref{ backend } };
 }
 
 } // namespace
 
 CUCIM_API bool move_raster_from_host(void** target, size_t size, const cucim::io::Device& dst_device)
 {
-    DeviceResources resources = cuda_malloc_resources();
-    return move_raster_from_host(target, size, dst_device, resources, ::cuda::stream_ref{ kDefaultStream });
+    DeviceResource resource = cuda_malloc_resource();
+    return move_raster_from_host(target, size, dst_device, resource, ::cuda::stream_ref{ kDefaultStream });
 }
 
 CUCIM_API bool move_raster_from_device(void** target, size_t size, const cucim::io::Device& dst_device)
 {
-    DeviceResources resources = cuda_malloc_resources();
-    return move_raster_from_device(target, size, dst_device, resources, ::cuda::stream_ref{ kDefaultStream });
+    DeviceResource resource = cuda_malloc_resource();
+    return move_raster_from_device(target, size, dst_device, resource, ::cuda::stream_ref{ kDefaultStream });
 }
 
 } // namespace cucim::memory

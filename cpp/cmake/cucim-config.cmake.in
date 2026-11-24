@@ -11,7 +11,7 @@ include(CMakeFindDependencyMacro)
 #find_dependency(Boost x.x.x REQUIRED)
 find_dependency(CUDAToolkit)
 
-# <cucim/memory/device_resources.h> is a public header and exposes cuda::mr
+# <cucim/memory/device_resource.h> is a public header and exposes cuda::mr
 # types, so consumers need CCCL's headers.
 #
 # libcudacxx is the only component cuCIM uses. Asking for it alone does not

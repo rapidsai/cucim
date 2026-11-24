@@ -99,7 +99,7 @@ add_library(${CUCIM_PACKAGE_NAME}
         src/loader/thread_batch_data_loader.cpp
         src/logger/logger.cpp
         src/logger/timer.cpp
-        src/memory/device_resources.cpp
+        src/memory/device_resource.cpp
         src/memory/memory_manager.cpp
         src/plugin/image_format.cpp
         src/plugin/plugin_config.cpp
@@ -146,7 +146,7 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
             Threads::Threads # -lpthread
             $<BUILD_INTERFACE:deps::fmt>
             $<INSTALL_INTERFACE:cucim::fmt-header-only>
-            # <cucim/memory/device_resources.h> is public and exposes cuda::mr,
+            # <cucim/memory/device_resource.h> is public and exposes cuda::mr,
             # so a consumer compiling against it needs CCCL and the CUDA
             # runtime. CCCL is listed first: the toolkit carries its own older
             # libcudacxx, and the include directory searched first is the one
@@ -188,7 +188,7 @@ target_link_libraries(${CUCIM_PACKAGE_NAME}
 # on come from the toolkit, the version guards do not line up, and cuda::mr
 # silently disappears. BEFORE is what keeps the two copies from being mixed.
 #
-# PUBLIC because <cucim/memory/device_resources.h> exposes cuda::mr types.
+# PUBLIC because <cucim/memory/device_resource.h> exposes cuda::mr types.
 # BUILD_INTERFACE only because the install side resolves CCCL through
 # find_dependency(CCCL) instead; see the link libraries above. BEFORE cannot
 # be expressed through a linked target, so an installed consumer that also

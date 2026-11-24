@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "cucim/memory/device_resources.h"
+#include "cucim/memory/device_resource.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -18,7 +18,7 @@
 using cucim::memory::any_device_resource;
 using cucim::memory::CudaMemoryResource;
 using cucim::memory::DeviceMemoryPoolResource;
-using cucim::memory::DeviceResources;
+using cucim::memory::DeviceResource;
 using cucim::memory::device_resource_ref;
 
 namespace
@@ -34,7 +34,7 @@ namespace
  *
  * The counters live in a separate State object so that a test can keep
  * watching them after the resource itself has been handed to a
- * `DeviceResources`, which type-erases it.
+ * `DeviceResource`, which type-erases it.
  *
  * Each instance also carries an identity that copying does *not* preserve,
  * which is what makes it possible to tell a shared resource from a duplicated
@@ -225,7 +225,7 @@ const ::cuda::stream_ref kStream{ cucim::memory::kDefaultStream };
 
 } // namespace
 
-TEST_CASE("cuCIM resources satisfy the CCCL concepts", "[test_device_resources.cpp]")
+TEST_CASE("cuCIM handle satisfy the CCCL concepts", "[test_device_resource.cpp]")
 {
     STATIC_REQUIRE(::cuda::mr::synchronous_resource<DeviceMemoryPoolResource>);
     STATIC_REQUIRE(::cuda::mr::resource<DeviceMemoryPoolResource>);
@@ -239,20 +239,20 @@ TEST_CASE("cuCIM resources satisfy the CCCL concepts", "[test_device_resources.c
     STATIC_REQUIRE(::cuda::has_property<TrackingResource, cucim::memory::device_accessible>);
 }
 
-TEST_CASE("DeviceResources allocates from the resource it was given", "[test_device_resources.cpp]")
+TEST_CASE("DeviceResource allocates from the resource it was given", "[test_device_resource.cpp]")
 {
     TrackingResource::State state;
-    DeviceResources resources{ any_device_resource{ TrackingResource{ state } } };
+    DeviceResource handle{ any_device_resource{ TrackingResource{ state } } };
 
     SECTION("allocation and deallocation reach the supplied resource")
     {
         constexpr std::size_t nbytes = 4096;
-        void* ptr = resources.allocate(kStream, nbytes);
+        void* ptr = handle.allocate(kStream, nbytes);
         REQUIRE(ptr != nullptr);
         REQUIRE(state.allocate_calls == 1);
         REQUIRE(state.last_alignment == cucim::memory::kDefaultAlignment);
 
-        resources.deallocate(kStream, ptr, nbytes);
+        handle.deallocate(kStream, ptr, nbytes);
         REQUIRE(state.deallocate_calls == 1);
         REQUIRE(state.outstanding.empty());
     }
@@ -261,34 +261,34 @@ TEST_CASE("DeviceResources allocates from the resource it was given", "[test_dev
     {
         constexpr std::size_t nbytes = 128;
         constexpr std::size_t alignment = 4096;
-        void* ptr = resources.allocate(kStream, nbytes, alignment);
+        void* ptr = handle.allocate(kStream, nbytes, alignment);
         REQUIRE(state.last_alignment == alignment);
 
-        resources.deallocate(kStream, ptr, nbytes, alignment);
+        handle.deallocate(kStream, ptr, nbytes, alignment);
         REQUIRE(state.outstanding.empty());
         REQUIRE_FALSE(state.saw_foreign_pointer);
     }
 
     SECTION("a zero-byte request is still the resource's decision")
     {
-        void* ptr = resources.allocate(kStream, 0);
+        void* ptr = handle.allocate(kStream, 0);
         REQUIRE(state.allocate_calls == 1);
 
-        resources.deallocate(kStream, ptr, 0);
+        handle.deallocate(kStream, ptr, 0);
         REQUIRE(state.deallocate_calls == 1);
         REQUIRE(state.outstanding.empty());
     }
 }
 
-TEST_CASE("DeviceResources pairs allocations with sized deallocations", "[test_device_resources.cpp]")
+TEST_CASE("DeviceResource pairs allocations with sized deallocations", "[test_device_resource.cpp]")
 {
     TrackingResource::State state;
-    DeviceResources resources{ any_device_resource{ TrackingResource{ state } } };
+    DeviceResource handle{ any_device_resource{ TrackingResource{ state } } };
 
     std::vector<std::pair<void*, std::size_t>> blocks;
     for (std::size_t bytes : { std::size_t{ 512 }, std::size_t{ 4096 }, std::size_t{ 1u << 20 } })
     {
-        void* ptr = resources.allocate(kStream, bytes);
+        void* ptr = handle.allocate(kStream, bytes);
         REQUIRE(ptr != nullptr);
         blocks.emplace_back(ptr, bytes);
     }
@@ -296,7 +296,7 @@ TEST_CASE("DeviceResources pairs allocations with sized deallocations", "[test_d
 
     for (auto& [ptr, bytes] : blocks)
     {
-        resources.deallocate(kStream, ptr, bytes);
+        handle.deallocate(kStream, ptr, bytes);
     }
 
     REQUIRE(state.deallocate_calls == 3);
@@ -305,23 +305,23 @@ TEST_CASE("DeviceResources pairs allocations with sized deallocations", "[test_d
     REQUIRE_FALSE(state.saw_foreign_pointer);
 }
 
-TEST_CASE("DeviceResources propagates allocation failure", "[test_device_resources.cpp]")
+TEST_CASE("DeviceResource propagates allocation failure", "[test_device_resource.cpp]")
 {
     SECTION("a resource that throws bad_alloc")
     {
-        DeviceResources resources{ any_device_resource{ FailingResource{} } };
-        REQUIRE_THROWS_AS(resources.allocate(kStream, 1024), std::bad_alloc);
+        DeviceResource handle{ any_device_resource{ FailingResource{} } };
+        REQUIRE_THROWS_AS(handle.allocate(kStream, 1024), std::bad_alloc);
     }
 
     SECTION("a pool-style resource, which does not throw bad_alloc")
     {
-        DeviceResources resources{ any_device_resource{ PoolStyleFailingResource{} } };
-        REQUIRE_THROWS_AS(resources.allocate(kStream, 1024), std::exception);
-        REQUIRE_THROWS_AS(resources.allocate(kStream, 1024), std::runtime_error);
+        DeviceResource handle{ any_device_resource{ PoolStyleFailingResource{} } };
+        REQUIRE_THROWS_AS(handle.allocate(kStream, 1024), std::exception);
+        REQUIRE_THROWS_AS(handle.allocate(kStream, 1024), std::runtime_error);
     }
 }
 
-TEST_CASE("Copying DeviceResources shares one resource", "[test_device_resources.cpp]")
+TEST_CASE("Copying DeviceResource shares one resource", "[test_device_resource.cpp]")
 {
     // Cached values hold a copy of the handle and can outlive the cache, so a
     // copy must free through the instance that allocated.
@@ -329,9 +329,9 @@ TEST_CASE("Copying DeviceResources shares one resource", "[test_device_resources
 
     SECTION("a copy frees through the instance that allocated")
     {
-        DeviceResources original{ any_device_resource{ TrackingResource{ state } } };
+        DeviceResource original{ any_device_resource{ TrackingResource{ state } } };
         // Copied before allocating, so this cannot collapse into a move.
-        DeviceResources copy = original;
+        DeviceResource copy = original;
         REQUIRE(copy.resource() == original.resource());
 
         constexpr std::size_t nbytes = 2048;
@@ -348,8 +348,8 @@ TEST_CASE("Copying DeviceResources shares one resource", "[test_device_resources
 
     SECTION("copy assignment shares too")
     {
-        DeviceResources original{ any_device_resource{ TrackingResource{ state } } };
-        DeviceResources other{ any_device_resource{ TrackingResource{ state } } };
+        DeviceResource original{ any_device_resource{ TrackingResource{ state } } };
+        DeviceResource other{ any_device_resource{ TrackingResource{ state } } };
         other = original;
         REQUIRE(other.resource() == original.resource());
     }
@@ -358,9 +358,9 @@ TEST_CASE("Copying DeviceResources shares one resource", "[test_device_resources
     {
         constexpr std::size_t nbytes = 2048;
         void* ptr = nullptr;
-        DeviceResources copy{ any_device_resource{ TrackingResource{ state } } };
+        DeviceResource copy{ any_device_resource{ TrackingResource{ state } } };
         {
-            DeviceResources original{ any_device_resource{ TrackingResource{ state } } };
+            DeviceResource original{ any_device_resource{ TrackingResource{ state } } };
             copy = original;
             ptr = original.allocate(kStream, nbytes);
         }
@@ -373,20 +373,20 @@ TEST_CASE("Copying DeviceResources shares one resource", "[test_device_resources
     }
 }
 
-TEST_CASE("DeviceResources can borrow a resource it does not own", "[test_device_resources.cpp]")
+TEST_CASE("DeviceResource can borrow a resource it does not own", "[test_device_resource.cpp]")
 {
     TrackingResource::State state;
     TrackingResource resource{ state };
-    DeviceResources resources{ device_resource_ref{ resource } };
+    DeviceResource handle{ device_resource_ref{ resource } };
 
     constexpr std::size_t nbytes = 256;
-    void* ptr = resources.allocate(kStream, nbytes);
+    void* ptr = handle.allocate(kStream, nbytes);
     REQUIRE(ptr != nullptr);
     REQUIRE(state.allocate_calls == 1);
 
     // A copy of a borrowing handle borrows the same resource.
-    DeviceResources copy = resources;
-    REQUIRE(copy.resource() == resources.resource());
+    DeviceResource copy = handle;
+    REQUIRE(copy.resource() == handle.resource());
     copy.deallocate(kStream, ptr, nbytes);
 
     REQUIRE(state.deallocate_calls == 1);
@@ -395,28 +395,28 @@ TEST_CASE("DeviceResources can borrow a resource it does not own", "[test_device
     REQUIRE(state.outstanding.empty());
 }
 
-TEST_CASE("DeviceResources orders each call on the stream it is given", "[test_device_resources.cpp]")
+TEST_CASE("DeviceResource orders each call on the stream it is given", "[test_device_resource.cpp]")
 {
     // The handle holds no stream, so allocating a second buffer on B cannot
     // move the release of a buffer still in use on A.
     TrackingResource::State state;
-    DeviceResources resources{ any_device_resource{ TrackingResource{ state } } };
+    DeviceResource handle{ any_device_resource{ TrackingResource{ state } } };
     const auto a = fake_stream(0x1000);
     const auto b = fake_stream(0x3000);
 
-    void* on_a = resources.allocate(a, 512);
+    void* on_a = handle.allocate(a, 512);
     REQUIRE(state.last_stream == a.get());
-    void* on_b = resources.allocate(b, 512);
+    void* on_b = handle.allocate(b, 512);
     REQUIRE(state.last_stream == b.get());
 
-    resources.deallocate(a, on_a, 512);
+    handle.deallocate(a, on_a, 512);
     REQUIRE(state.last_stream == a.get());
-    resources.deallocate(b, on_b, 512);
+    handle.deallocate(b, on_b, 512);
     REQUIRE(state.last_stream == b.get());
     REQUIRE(state.outstanding.empty());
 }
 
-TEST_CASE("CudaMemoryResource rejects alignments cudaMalloc cannot honor", "[test_device_resources.cpp]")
+TEST_CASE("CudaMemoryResource rejects alignments cudaMalloc cannot honor", "[test_device_resource.cpp]")
 {
     // Rejected before cudaMalloc is reached, so no device is needed.
     CudaMemoryResource resource;
