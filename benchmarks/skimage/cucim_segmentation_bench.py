@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
@@ -95,6 +95,80 @@ class MorphGeodesicBench(ImageBench):
         assert imaged.shape == self.shape
         self.args_cpu = (image,)
         self.args_gpu = (imaged,)
+
+
+class WatershedBench(ImageBench):
+    # kwargs that only apply to the cuCIM implementation (not scikit-image)
+    _gpu_only_kwargs = {
+        "use_block_async",
+        "inner_iterations",
+        "convergence_check_interval",
+    }
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Wrap the CPU function to strip GPU-only kwargs
+        _orig_cpu = self.func_cpu
+
+        def _cpu_wrapper(*args, **kw):
+            kw = {k: v for k, v in kw.items() if k not in self._gpu_only_kwargs}
+            return _orig_cpu(*args, **kw)
+
+        self.func_cpu = _cpu_wrapper
+
+    def set_args(self, dtype):
+        ndim = len(self.shape)
+        # use_block_async is only supported for 2D and 3D; remove for other
+        # ndim to avoid redundant benchmark combinations
+        if ndim not in [2, 3] and "use_block_async" in self.var_kwargs:
+            del self.var_kwargs["use_block_async"]
+
+        from cupyx.scipy import ndimage as ndi
+
+        from cucim.skimage.feature import peak_local_max
+
+        # Generate a reproducible gradient-like image from binary blobs.
+        blobs = cucim.skimage.data.binary_blobs(max(self.shape), n_dim=ndim, rng=5)
+        blobs = blobs[tuple(slice(s) for s in self.shape)]
+        if ndim == 2:
+            # Avoid one dominant connected foreground component while keeping
+            # the separators sparse enough to preserve larger 2D regions.
+            blobs[::128, :] = False
+            blobs[:, ::128] = False
+        elif ndim == 3:
+            # Break up the otherwise dominant connected foreground component
+            # so 3D benchmarks exercise multiple independent basins.
+            blobs[::32, :, :] = False
+            blobs[:, ::32, :] = False
+            blobs[:, :, ::32] = False
+
+        distance = ndi.distance_transform_edt(blobs)
+        image_d = cp.max(distance) - distance  # invert so minima are inside
+        image_d = image_d.astype(np.float32)
+
+        # Generate markers from distance peaks
+        coords = peak_local_max(
+            distance,
+            min_distance=max(3, min(self.shape) // 20),
+            labels=blobs,
+        )
+        markers_d = cp.zeros(self.shape, dtype=dtype)
+        markers_d[tuple(coords.T)] = cp.arange(1, len(coords) + 1)
+        markers_d, _ = ndi.label(markers_d > 0)
+        markers_d = markers_d.astype(dtype)
+
+        # Use the foreground blobs as mask so background isn't labeled
+        mask_d = blobs.astype(bool)
+
+        print(f"  # markers = {int(markers_d.max())}")
+
+        image = cp.asnumpy(image_d)
+        markers = cp.asnumpy(markers_d)
+        self.args_cpu = (image, markers)
+        self.args_gpu = (image_d, markers_d)
+
+        self.fixed_kwargs_cpu["mask"] = cp.asnumpy(mask_d)
+        self.fixed_kwargs_gpu["mask"] = mask_d
 
 
 class RandomWalkerBench(ImageBench):
@@ -214,6 +288,24 @@ def main(args):
             False,
             False,
         ),
+        # _watershed.py
+        # Standard watershed: compare the block-async and global kernels
+        # (block-async is only available for 2D/3D)
+        (
+            "watershed",
+            dict(compactness=0),
+            dict(use_block_async=[True, False]),
+            False,
+            True,
+        ),
+        # Compact watershed: various compactness values (global kernel only)
+        (
+            "watershed",
+            dict(),
+            dict(compactness=[0.01, 1.0]),
+            False,
+            True,
+        ),
         # omit: disk_level_set (simple array generation function)
         # omit: checkerboard_level_set (simple array generation function)
     ]:
@@ -238,6 +330,7 @@ def main(args):
             "find_boundaries",
             "mark_boundaries",
             "random_walker",
+            "watershed",
         ]:
             if function_name == "random_walker":
                 fixed_kwargs["channel_axis"] = -1 if shape[-1] == 3 else None
@@ -246,6 +339,8 @@ def main(args):
                 bench_func = LabelAndImageBench
             elif function_name == "random_walker":
                 bench_func = RandomWalkerBench
+            elif function_name == "watershed":
+                bench_func = WatershedBench
             else:
                 bench_func = LabelBench
 
@@ -308,6 +403,7 @@ if __name__ == "__main__":
         "find_boundaries",
         "mark_boundaries",
         "random_walker",
+        "watershed",
         "inverse_gaussian_gradient",
         "morphological_geodesic_active_contour",
         "morphological_chan_vese",
