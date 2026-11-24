@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from cupyx import allow_synchronize
 
-from cucim.skimage.transform import _warps, _warps_kernels
+from cucim.skimage.transform import _warps, _warps_kernels, warp
 from cucim.skimage.transform._warps import _clip_warp_output
 from cucim.skimage.transform._warps_kernels import _get_warp_range
 
@@ -105,6 +105,19 @@ def test_clip_warp_output_cval_uses_input_dtype(cval, clipping_dispatch):
     with allow_synchronize(clipping_dispatch == "host"):
         _clip_warp_output(image, output, "constant", cval, 3, True)
     cp.testing.assert_array_equal(output, expected)
+
+
+@pytest.mark.parametrize("sign", [-1, 1])
+@pytest.mark.parametrize("fill", [0.0, float(2**58)])
+def test_warp_preserves_large_integer_bound(sign, fill, clipping_dispatch):
+    label = sign * (2**60 - 1)
+    fill *= sign
+    image = cp.full((2, 2), label, dtype=cp.int64)
+    coords = cp.asarray([[[0, -2]], [[0, -2]]])
+    result = warp(image, coords, order=0, mode="constant", cval=fill, clip=True)
+    cp.testing.assert_array_equal(
+        result, np.asarray([[label, int(fill)]], dtype=np.int64)
+    )
 
 
 @pytest.mark.parametrize(

@@ -944,14 +944,17 @@ def _clip_warp_output_with_cval(
         & (output_nanmin <= cval)
         & (cval <= output_nanmax)
     )
+    # Callers pass Python floats as strong scalars so fusion cannot narrow
+    # the fill before this cast.
+    fill = cval.astype(min_val.dtype)
     min_val = cp.where(
         preserve_cval,
-        cp.minimum(min_val, cval).astype(min_val.dtype),
+        cp.minimum(min_val, fill),
         min_val,
     )
     max_val = cp.where(
         preserve_cval,
-        cp.maximum(max_val, cval).astype(max_val.dtype),
+        cp.maximum(max_val, fill),
         max_val,
     )
     cp.clip(output_image, min_val, max_val, out=output_image)
@@ -983,7 +986,7 @@ def _clip_constant_warp_output(image, output_image, cval):
         output_image,
         image.dtype.type(min_val),
         max_val,
-        cval,
+        np.float64(cval) if type(cval) is float else cval,
         False,
         False,
         output_image.min(),
@@ -1076,7 +1079,7 @@ def _clip_warp_output(
             output_image,
             min_val,
             max_val,
-            cval,
+            np.float64(cval) if type(cval) is float else cval,
             input_has_nan,
             output_has_nan,
             output_min,
