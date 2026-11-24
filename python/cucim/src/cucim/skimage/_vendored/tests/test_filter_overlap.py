@@ -22,3 +22,18 @@ def test_correlate1d_overlapping_output(algorithm, partial_overlap):
     )
     assert result is output
     cp.testing.assert_array_equal(result, expected)
+
+
+def test_convolve1d_with_output_backed_weights():
+    image = cp.ones((512, 32, 4), dtype=cp.float32)
+    output = cp.empty_like(image)
+    weights = output.ravel()[:3]
+    weights[:] = cp.asarray([1, 2, 3], dtype=cp.float32)
+    expected = filters.convolve1d(
+        image, weights.copy(), axis=1, algorithm="shared_memory"
+    )
+    result = filters.convolve1d(
+        image, weights, axis=1, output=output, algorithm="shared_memory"
+    )
+    assert result is output
+    cp.testing.assert_array_equal(result, expected)

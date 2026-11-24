@@ -1171,13 +1171,10 @@ def _shmem_convolve1d(
     )
     if not weights.flags.c_contiguous or weights.dtype != weights_dtype:
         weights = cp.ascontiguousarray(weights, weights_dtype)
-    # The per-tap zero-weight test costs up to 2x for float64 2D filters. It
-    # can be omitted for cached coefficients known (on the host) to have no
-    # zeros, e.g. Gaussian kernels; other weights keep it.
-    skip_zero_weights = not util._is_nonzero_cache_array(weights)
 
     # promote output to nearest complex dtype if necessary
     complex_output = complex_output or weights.dtype.kind == "c"
+    provided_output = output
     output = util._get_output(output, image, None, complex_output)
 
     # The kernels write C-contiguous output and require separate input/output.
@@ -1186,6 +1183,16 @@ def _shmem_convolve1d(
     )
     if needs_temp:
         output, temp = util._get_output(output.dtype, image), output
+    elif output is provided_output and cp.shares_memory(
+        output, weights, "MAY_SHARE_BOUNDS"
+    ):
+        # Blocks may still be reading taps when other blocks write output.
+        weights = weights.copy()
+
+    # The per-tap zero-weight test costs up to 2x for float64 2D filters. It
+    # can be omitted for cached coefficients known (on the host) to have no
+    # zeros, e.g. Gaussian kernels; other weights keep it.
+    skip_zero_weights = not util._is_nonzero_cache_array(weights)
 
     # index_c_type = util._get_inttype(image)
     image_c_type = _dtype_char_to_c_types[image.dtype.char]
