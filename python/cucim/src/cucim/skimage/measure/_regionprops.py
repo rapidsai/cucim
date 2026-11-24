@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import inspect
@@ -19,7 +19,12 @@ from cucim.skimage._vendored.ndimage import find_objects
 from cucim.skimage.morphology.convex_hull import convex_hull_image
 
 from . import _moments
-from ._regionprops_utils import euler_number, perimeter, perimeter_crofton
+from ._regionprops_utils import (
+    _normalize_spacing,
+    euler_number,
+    perimeter,
+    perimeter_crofton,
+)
 
 __all__ = ["regionprops", "euler_number", "perimeter", "perimeter_crofton"]
 
@@ -344,11 +349,12 @@ class RegionProperties:
         self._ndim = label_image.ndim
         self._multichannel = multichannel
         self._spatial_axes = tuple(range(self._ndim))
-        self._spacing = spacing if spacing is not None else (1.0,) * self._ndim
-        if isinstance(self._spacing, cp.ndarray):
-            self._pixel_area = cp.product(self._spacing)
+        if spacing is None:
+            self._spacing = (1.0,) * self._ndim
         else:
-            self._pixel_area = math.prod(self._spacing)
+            # a scalar means the same spacing along every axis
+            self._spacing = _normalize_spacing(spacing, self._ndim)
+        self._pixel_area = math.prod(self._spacing)
 
         self._extra_properties = {}
         if extra_properties is not None:
@@ -684,9 +690,9 @@ class RegionProperties:
         a, b, b, c = self.inertia_tensor.ravel()
         if a - c == 0:
             if b < 0:
-                return -PI / 4.0
-            else:
                 return PI / 4.0
+            else:
+                return -PI / 4.0
         else:
             return 0.5 * math.atan2(-2 * b, c - a)
 
@@ -715,7 +721,10 @@ class RegionProperties:
     @property
     def centroid_weighted(self):
         ctr = self.centroid_weighted_local
-        return tuple(idx + slc.start for idx, slc in zip(ctr, self.slice))
+        return tuple(
+            idx + slc.start * spc
+            for idx, slc, spc in zip(ctr, self.slice, self._spacing)
+        )
 
     @property
     def centroid_weighted_local(self):
@@ -851,6 +860,16 @@ class RegionProperties:
 
 # For compatibility with code written prior to 0.16
 _RegionProperties = RegionProperties
+
+
+def _to_host(value):
+    """Copy a property value to the host, including tuples of CuPy scalars
+    (e.g. centroid_weighted)."""
+    if isinstance(value, cp.ndarray):
+        return cp.asnumpy(value)
+    if isinstance(value, (tuple, list)):
+        return type(value)(_to_host(v) for v in value)
+    return value
 
 
 def _props_to_dict(
@@ -1017,21 +1036,33 @@ def _props_to_dict(
             if isinstance(rp, cp.ndarray):
                 shape = rp.shape
             else:
-                shape = (len(rp),)
+                shape = (len(rp),) + (
+                    tuple(getattr(rp[0], "shape", ())) if len(rp) else ()
+                )
 
             if not to_table:
                 if copy_to_host:
                     column_data = np.empty((n,) + shape, dtype=dtype)
                     for k in range(n):
-                        rp = regions[k][prop]
-                        if isinstance(rp, cp.ndarray):
-                            rp = cp.asnumpy(rp)
-                        column_data[k] = rp
+                        column_data[k] = _to_host(regions[k][prop])
                     out[orig_prop] = column_data
                 else:
                     column_buffer = [regions[k][prop] for k in range(n)]
                     if isinstance(rp, cp.ndarray):
                         out[orig_prop] = cp.stack(column_buffer, axis=0)
+                    elif len(shape) > 1:
+                        # Stack the array components for all regions at once.
+                        out[orig_prop] = (
+                            cp.stack(
+                                [
+                                    cp.asarray(component)
+                                    for value in column_buffer
+                                    for component in value
+                                ]
+                            )
+                            .reshape((n,) + shape)
+                            .astype(dtype, copy=False)
+                        )
                     else:
                         out[orig_prop] = cp.asarray(column_buffer, dtype=dtype)
                 continue
@@ -1050,13 +1081,17 @@ def _props_to_dict(
             if copy_to_host:
                 column_data = np.empty((n, n_columns), dtype=dtype)
                 for k in range(n):
-                    rp = cp.asnumpy(regions[k][prop])
+                    rp = np.asarray(_to_host(regions[k][prop]))
                     for i, loc in enumerate(locs):
                         column_data[k, i] = rp[loc]
             else:
                 column_data = cp.empty((n, n_columns), dtype=dtype)
                 for k in range(n):
                     rp = regions[k][prop]
+                    if not isinstance(rp, cp.ndarray) and len(shape) > 1:
+                        rp = cp.stack(
+                            [cp.asarray(component) for component in rp]
+                        )
                     for i, loc in enumerate(locs):
                         column_data[k, i] = rp[loc]
 
@@ -1614,6 +1649,9 @@ def regionprops(
             raise TypeError("Non-integer label_image types are ambiguous")
 
     _warn_regionprops_performance_once()
+
+    if isinstance(spacing, cp.ndarray):
+        spacing = cp.asnumpy(spacing)
 
     regions = []
 
