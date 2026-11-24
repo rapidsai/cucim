@@ -10,6 +10,19 @@ from cucim.skimage._vendored import _ndimage_filters as filters
 pytestmark = pytest.mark.filterwarnings("error::UserWarning")
 
 
+@pytest.mark.parametrize("algorithm", [None, "shared_memory"])
+def test_filter_axis_view_integer_weights_with_constant_fill(algorithm):
+    image = cp.zeros((4, 8, 4), dtype=cp.float32)
+    weights = cp.asarray([1, 2, 1], dtype=cp.int32)
+    kwargs = dict(axis=1, mode="constant", cval=1)
+    expected = filters.correlate1d(
+        image, weights, algorithm="elementwise", **kwargs
+    )
+    assert expected[0, 0, 0] == 1
+    result = filters.correlate1d(image, weights, algorithm=algorithm, **kwargs)
+    cp.testing.assert_array_equal(result, expected)
+
+
 @pytest.mark.parametrize(
     "shape,axis",
     [

@@ -278,11 +278,10 @@ def _unsupported_shmem_cval(cval, image, weights):
     working_dtype = _util._get_weights_dtype(
         image, weights, use_cucim_casting=True
     )
+    cast = numpy.dtype(working_dtype).type
     with numpy.errstate(over="ignore"):
         staged = dtype.type(cval)
-        return not numpy.isfinite(staged) or (
-            working_dtype.type(staged) != working_dtype.type(cval)
-        )
+        return not numpy.isfinite(staged) or cast(staged) != cast(cval)
 
 
 def _correlate_or_convolve1d(
