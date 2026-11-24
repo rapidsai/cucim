@@ -1957,6 +1957,7 @@ def test_intensity_std_narrow_integer_accumulators(
     assert_allclose(result["intensity_std"], expected, rtol=1e-12)
 
 
+@pytest.mark.parametrize("dtype", [cp.float16, cp.float32, cp.float64])
 @pytest.mark.parametrize(
     "values",
     [
@@ -1967,8 +1968,12 @@ def test_intensity_std_narrow_integer_accumulators(
         [np.finfo(np.float64).max, np.inf],
     ],
 )
-def test_intensity_extrema_float64_infinities(values):
-    image = cp.asarray([values], dtype=cp.float64)
+def test_intensity_extrema_float_infinities(values, dtype):
+    values = [
+        np.finfo(dtype).max if v == np.finfo(np.float64).max else v
+        for v in values
+    ]
+    image = cp.asarray([values], dtype=dtype)
     labels = cp.ones(image.shape, dtype=cp.uint8)
     result = regionprops_intensity_min_max(
         labels, image, max_label=2, compute_min=True, compute_max=True
