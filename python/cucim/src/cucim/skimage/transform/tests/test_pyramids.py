@@ -153,15 +153,25 @@ def test_gaussian_pyramid_skips_terminal_reduction(
 
 
 @pytest.mark.parametrize(
-    "kwargs, error",
+    "kwargs, error_type, match",
     [
-        (dict(sigma=-1), "Sigma values less than zero"),
-        (dict(order=6), "Spline interpolation order"),
+        (dict(sigma=-1), ValueError, "Sigma values less than zero"),
+        (dict(order=6), ValueError, "Spline interpolation order"),
+        (dict(mode="bogus"), ValueError, "Unknown mode"),
+        (dict(sigma=(1, 2, 3)), RuntimeError, "sigma must have length"),
+        (
+            dict(sigma=(1, 2, 3), channel_axis=-1),
+            RuntimeError,
+            "sigma must have length",
+        ),
     ],
 )
-def test_gaussian_pyramid_checks_arguments_for_terminal_input(kwargs, error):
-    image = cp.ones((1, 1))
-    with pytest.raises(ValueError, match=error):
+def test_gaussian_pyramid_checks_arguments_for_terminal_input(
+    kwargs, error_type, match
+):
+    shape = (1, 1, 3) if "channel_axis" in kwargs else (1, 1)
+    image = cp.ones(shape)
+    with pytest.raises(error_type, match=match):
         list(pyramids.pyramid_gaussian(image, **kwargs))
     # Requesting just the input layer does not attempt a reduction.
     layers = list(pyramids.pyramid_gaussian(image, max_layer=0, **kwargs))

@@ -8,8 +8,13 @@ from numbers import Real
 
 import cupy as cp
 
-from .._shared.utils import _validate_interpolation_order, convert_to_float
+from .._shared.utils import (
+    _to_ndimage_mode,
+    _validate_interpolation_order,
+    convert_to_float,
+)
 from .._vendored import ndimage as ndi
+from .._vendored._ndimage_util import _fix_sequence_arg
 from ._pyramid_kernels import _gaussian_decimate
 from ._warps import _validate_assume_finite, resize
 
@@ -364,6 +369,9 @@ def pyramid_gaussian(
                 # leave the shape unchanged.
                 if sigma is not None:
                     _check_sigma(sigma)
+                    spatial_ndim = image.ndim - (channel_axis is not None)
+                    _fix_sequence_arg(sigma, spatial_ndim, "sigma", float)
+                _to_ndimage_mode(mode)
                 _validate_interpolation_order(image.dtype, order)
             break
 
