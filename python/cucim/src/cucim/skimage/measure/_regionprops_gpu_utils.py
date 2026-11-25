@@ -58,6 +58,174 @@ __device__ __forceinline__ void cucim_atomic_max<double>(double* address,
 }
 """
 
+# Warp-level helpers for the label-run kernels (see _get_label_run_loop).
+#
+# cucim_shfl_down: __shfl_down_sync, also for the 8 and 16-bit label types.
+# cucim_warp_reduce: reduction of `v` over the lanes lane, lane + 1, ...,
+#     seg_end (which must all be in `mask`), as an inclusive Hillis-Steele scan
+#     towards lower lanes: after the step with offset `off`, each lane holds
+#     the reduction over up to 2 * off lanes, never past seg_end. The steps
+#     stop at offset `max_off`, which must be at least half the length of the
+#     longest group of lanes sharing seg_end. All lanes in `mask` must call it
+#     with the same `max_off`. The result is complete in the first lane of
+#     each group.
+_warp_includes = (
+    _includes
+    + r"""
+#include <cuda/std/limits>
+
+template <typename T>
+__device__ __forceinline__ T cucim_shfl_down(unsigned int mask, T v,
+                                             unsigned int delta) {
+  return __shfl_down_sync(mask, v, delta);
+}
+
+template <typename T>
+__device__ __forceinline__ T cucim_shfl(unsigned int mask, T v,
+                                        unsigned int src_lane) {
+  if constexpr (sizeof(T) < 4) {
+    return static_cast<T>(__shfl_sync(mask, static_cast<int>(v), src_lane));
+  } else {
+    return __shfl_sync(mask, v, src_lane);
+  }
+}
+
+template <typename T>
+__device__ __forceinline__ T cucim_shfl_down_small(unsigned int mask, T v,
+                                                   unsigned int delta) {
+  return static_cast<T>(__shfl_down_sync(mask, static_cast<int>(v), delta));
+}
+
+__device__ __forceinline__ signed char cucim_shfl_down(
+    unsigned int mask, signed char v, unsigned int delta) {
+  return cucim_shfl_down_small(mask, v, delta);
+}
+
+__device__ __forceinline__ unsigned char cucim_shfl_down(
+    unsigned int mask, unsigned char v, unsigned int delta) {
+  return cucim_shfl_down_small(mask, v, delta);
+}
+
+__device__ __forceinline__ short cucim_shfl_down(
+    unsigned int mask, short v, unsigned int delta) {
+  return cucim_shfl_down_small(mask, v, delta);
+}
+
+__device__ __forceinline__ unsigned short cucim_shfl_down(
+    unsigned int mask, unsigned short v, unsigned int delta) {
+  return cucim_shfl_down_small(mask, v, delta);
+}
+
+struct cucim_sum_op {
+  template <typename T>
+  __device__ T operator()(T a, T b) const { return a + b; }
+  template <typename T>
+  static __device__ T identity() { return T(0); }
+};
+
+struct cucim_min_op {
+  template <typename T>
+  __device__ T operator()(T a, T b) const { return min(a, b); }
+  template <typename T>
+  static __device__ T identity() {
+    if constexpr (cuda::std::numeric_limits<T>::has_infinity) {
+      return cuda::std::numeric_limits<T>::infinity();
+    } else {
+      return cuda::std::numeric_limits<T>::max();
+    }
+  }
+};
+
+struct cucim_max_op {
+  template <typename T>
+  __device__ T operator()(T a, T b) const { return max(a, b); }
+  template <typename T>
+  static __device__ T identity() {
+    if constexpr (cuda::std::numeric_limits<T>::has_infinity) {
+      return -cuda::std::numeric_limits<T>::infinity();
+    } else {
+      return cuda::std::numeric_limits<T>::lowest();
+    }
+  }
+};
+
+// Element at byte offset `byte` of a 16-byte chunk (any 1, 2, 4 or 8-byte
+// type, selected without indexing an array so that the chunk stays in
+// registers).
+template <typename T>
+__device__ __forceinline__ T cucim_chunk_element(const uint4& chunk,
+                                                 unsigned int byte) {
+  unsigned int w = byte >> 2;
+  unsigned int word = w == 0 ? chunk.x
+                      : w == 1 ? chunk.y
+                      : w == 2 ? chunk.z
+                      : chunk.w;
+  T out;
+  if constexpr (sizeof(T) == 8) {
+    unsigned int high = w == 0 ? chunk.y : chunk.w;
+    unsigned long long bits =
+        (static_cast<unsigned long long>(high) << 32) | word;
+    memcpy(&out, &bits, 8);
+  } else if constexpr (sizeof(T) == 4) {
+    memcpy(&out, &word, 4);
+  } else if constexpr (sizeof(T) == 2) {
+    unsigned short bits = static_cast<unsigned short>(word >> ((byte & 3u) * 8));
+    memcpy(&out, &bits, 2);
+  } else {
+    unsigned char bits = static_cast<unsigned char>(word >> ((byte & 3u) * 8));
+    memcpy(&out, &bits, 1);
+  }
+  return out;
+}
+
+// Reads elements of the `n` consecutive elements of `data` in increasing
+// order (get(k) for increasing k < n), with 16-byte loads when the elements
+// are at least 4 bytes, `n` elements are a multiple of 16 bytes, `full` is
+// true and data is 16-byte aligned.
+template <typename T>
+struct cucim_sequential_reader {
+  const T* ptr;
+  bool vector_loads;
+  unsigned int loaded;
+  uint4 chunk;
+
+  __device__ cucim_sequential_reader(const T* data, size_t n, bool full) {
+    ptr = data;
+    vector_loads = sizeof(T) >= 4 && (n * sizeof(T)) % 16 == 0 && full
+                   && (reinterpret_cast<size_t>(data) & 15) == 0;
+    loaded = 0xffffffffu;
+  }
+
+  __device__ __forceinline__ T get(unsigned int k) {
+    if (!vector_loads) {
+      return ptr[k];
+    }
+    unsigned int byte = k * static_cast<unsigned int>(sizeof(T));
+    if ((byte >> 4) != loaded) {
+      loaded = byte >> 4;
+      chunk = reinterpret_cast<const uint4*>(ptr)[loaded];
+    }
+    return cucim_chunk_element<T>(chunk, byte & 15u);
+  }
+};
+
+template <typename T, typename Op>
+__device__ __forceinline__ T cucim_warp_reduce(unsigned int mask, T v,
+                                               unsigned int seg_end,
+                                               unsigned int max_off, Op op) {
+  unsigned int lane = threadIdx.x & 31;
+#pragma unroll 1
+  for (unsigned int off = 1; off <= max_off; off <<= 1) {
+    T y = cucim_shfl_down(mask, v, off);
+    if (lane + off <= seg_end) {
+      v = op(v, y);
+    }
+  }
+  return v;
+}
+"""
+)
+
 
 def _get_count_dtype(label_image_size):
     """atomicAdd only supports int32, uint32, int64, uint64, float32, float64"""
@@ -79,17 +247,149 @@ def _get_coord_dtype(label_image_size):
     return coord_dtype, int32_coords
 
 
-def _get_run_count_ctype(pixels_per_thread):
-    """C type of the per-thread pixel counters of the label-run kernels.
+def _get_label_run_loop(
+    pixels_per_thread, pre, start, op, flush, warp_reduce=(), finish=""
+):
+    """Source of the loop shared by the label-run kernels.
 
-    A thread counts at most `pixels_per_thread` pixels for one label, so the
-    counter must be able to hold that value.
+    Each thread scans `pixels_per_thread` consecutive pixels in raveled order.
+    Consecutive pixels with the same nonzero label form a run (background
+    pixels are skipped and do not end a run). The statistics of the current
+    run are accumulated in scalar variables (registers) and added to the
+    global outputs with atomics when the label changes and after the last
+    pixel. This issues the same atomics as keeping one set of accumulators per
+    run in a per-thread array, but without that array in local memory.
+
+    Parameters
+    ----------
+    pre : str
+        Declarations, placed before the loop.
+    start : str
+        Executed at the start of each run. Must initialize the accumulators.
+        Can use `lab`, the label of the run.
+    op : str
+        Executed for each pixel of the run. Can use `ii`, the raveled index of
+        the pixel, and `lab`.
+    flush : str
+        Executed at the end of each run to write the accumulators to the
+        outputs. Can use `lab`.
+    finish : str, optional
+        Executed at the end of each run, before its accumulators are combined
+        across the warp (see `warp_reduce`) and flushed. Can use `lab`.
+    warp_reduce : sequence of (str, str), optional
+        The accumulators and how they are combined ("sum", "min" or "max").
+        If given, the last runs of neighboring lanes of a warp that have the
+        same label are combined with warp shuffles, and only the first lane
+        of each such group flushes them. In a large region every thread's
+        last (often only) run has the same label, so this divides the number
+        of atomics on the same addresses by up to 32. The kernel must then be
+        compiled with the `_warp_includes` preamble.
+
+    Notes
+    -----
+    The kernel must have the inputs ``raw X labels`` and
+    ``raw uint64 labels_size``, and be launched with
+    ``size=math.ceil(labels_size / pixels_per_thread)``.
     """
-    if pixels_per_thread <= 255:
-        return "uint8_t"
-    elif pixels_per_thread <= 65535:
-        return "uint16_t"
-    return "uint32_t"
+    final_flush = f"""
+      if (lab != 0) {{
+        {finish}
+        {flush}
+      }}\n"""
+    if warp_reduce:
+        reduce_code = "".join(
+            f"""
+          {var} = cucim_warp_reduce(
+              mask, {var}, seg_end, max_off, cucim_{kind}_op());"""
+            for var, kind in warp_reduce
+        )
+        identity_code = "".join(
+            f"""
+          {var} = cucim_{kind}_op::identity<decltype({var})>();"""
+            for var, kind in warp_reduce
+        )
+        # The lanes of this warp that run this iteration of the grid-stride
+        # loop are those with i < num_threads (blocks are a multiple of 32
+        # threads, so warps start at multiples of 32).
+        final_flush = f"""
+      if (lab != 0) {{
+        {finish}
+      }}
+      {{
+        unsigned int lane = threadIdx.x & 31;
+        uint64_t num_threads = (labels_size + {pixels_per_thread - 1})
+                               / {pixels_per_thread};
+        uint64_t warp_lanes = num_threads - (i - lane);
+        unsigned int mask = warp_lanes >= 32 ? 0xffffffffu
+                            : (1u << warp_lanes) - 1u;
+        // A lane without any labeled pixel between two lanes whose last runs
+        // have the same label (e.g. in a hole of a large region) joins their
+        // group with identity values, so that it does not split the group.
+        // (Lanes between different labels stay apart: joining them would
+        // only lengthen the groups, and so the scans.)
+        unsigned int has_run = __ballot_sync(mask, lab != 0);
+        if (has_run != 0 && has_run != mask) {{
+          unsigned int later = has_run & ~((2u << lane) - 1u);
+          unsigned int earlier = has_run & ((1u << lane) - 1u);
+          bool between = lab == 0 && later != 0 && earlier != 0;
+          X next_run_lab = cucim_shfl(
+              mask, lab, between ? __ffs(later) - 1 : lane);
+          X prev_run_lab = cucim_shfl(
+              mask, lab, between ? 31 - __clz(earlier) : lane);
+          if (between && next_run_lab == prev_run_lab) {{
+            lab = next_run_lab;{identity_code}
+          }}
+        }}
+        // continues: the next lane's last run has the same (nonzero) label
+        X next_lab = cucim_shfl_down(mask, lab, 1);
+        bool continues = (lab != 0) && (lane < 31)
+                         && ((mask >> (lane + 1)) & 1u) && (next_lab == lab);
+        unsigned int cont = __ballot_sync(mask, continues);
+        if (cont != 0) {{
+          // last lane of this lane's group
+          unsigned int seg_end = __ffs(~cont & (0xffffffffu << lane)) - 1;
+          // longest run of set bits in cont = (longest group length - 1), so
+          // the scan needs the offsets 1, 2, 4, ... up to that
+          unsigned int max_off = 0;
+          for (unsigned int x = cont; x != 0; x &= x >> 1) {{
+            ++max_off;
+          }}
+          {reduce_code}
+        }}
+        bool first = (lane == 0) || !((cont >> (lane - 1)) & 1u);
+        if (first && lab != 0) {{
+          {flush}
+        }}
+      }}\n"""
+    # The thread's labels are read with 16-byte loads if they are 4 or 8-byte
+    # labels (cucim_sequential_reader). With one-element loads, the 32 lanes
+    # of a warp read 32 locations pixels_per_thread elements apart in each
+    # instruction, and for 4 and 8-byte labels a warp's lines no longer fit
+    # in the L1 cache. (For 1 and 2-byte labels, extracting the elements
+    # costs more than it saves.) Kernels reading an image can use the same
+    # reader for it; `full_thread` tells whether the thread has
+    # pixels_per_thread pixels.
+    return f"""
+      uint64_t start_index = {pixels_per_thread}*i;
+      uint64_t ii_max = min(start_index + {pixels_per_thread}, labels_size);
+      bool full_thread = ii_max == start_index + {pixels_per_thread};
+      {pre}
+      cucim_sequential_reader<X> label_reader(
+          &labels[start_index], {pixels_per_thread}, full_thread);
+      X lab = 0;
+      for (uint64_t ii = start_index; ii < ii_max; ii++) {{
+        X current_label = label_reader.get(ii - start_index);
+        if (current_label == 0) {{ continue; }}
+        if (current_label != lab) {{
+          if (lab != 0) {{
+            {finish}
+            {flush}
+          }}
+          lab = current_label;
+          {start}
+        }}
+        {op}
+      }}{final_flush}"""
 
 
 def _get_min_integer_dtype(max_size, signed=False):
