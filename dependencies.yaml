@@ -46,14 +46,6 @@ files:
       table: build-system
     includes:
       - rapids_build_setuptools
-  py_rapids_build_cucim:
-    output: pyproject
-    pyproject_dir: python/cucim
-    extras:
-      table: tool.rapids-build-backend
-      key: requires
-    includes:
-      - build
   py_run:
     output: pyproject
     pyproject_dir: python/cucim
@@ -111,9 +103,6 @@ dependencies:
           - c-compiler
           - cuda-nvcc
           - cxx-compiler
-      - output_types: [requirements, constraints, pyproject]
-        packages:
-          - wheel
     specific:
       - output_types: conda
         matrices:
