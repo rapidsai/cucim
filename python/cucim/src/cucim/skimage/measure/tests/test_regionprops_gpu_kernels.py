@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 import functools
-import inspect
+import itertools
 import math
 import warnings
 from copy import deepcopy
@@ -20,9 +20,9 @@ from skimage import measure as measure_cpu
 
 from cucim.skimage import data, measure
 from cucim.skimage._vendored import ndimage as ndi
+from cucim.skimage.measure import _regionprops_gpu_convex
 from cucim.skimage.measure._regionprops import PROPS
 from cucim.skimage.measure._regionprops_gpu import (
-    _find_close_labels,
     equivalent_diameter_area,
     ndim_2_only,
     need_intensity_image,
@@ -54,16 +54,29 @@ from cucim.skimage.measure._regionprops_gpu import (
 )
 from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
     _fill_holes_by_label,
+    _regionprops_label_pass,
     basic_deps,
 )
-from cucim.skimage.measure._regionprops_gpu_convex import convex_deps
+from cucim.skimage.measure._regionprops_gpu_convex import (
+    _regionprops_row_extents,
+    convex_deps,
+)
 from cucim.skimage.measure._regionprops_gpu_intensity_kernels import (
+    _regionprops_intensity,
     intensity_deps,
 )
-from cucim.skimage.measure._regionprops_gpu_misc_kernels import misc_deps
+from cucim.skimage.measure._regionprops_gpu_misc_kernels import (
+    _get_boundary_kernel,
+    _get_euler_coefs,
+    _get_perimeter_coefs,
+    _get_perimeter_crofton_coefs,
+    misc_deps,
+)
 from cucim.skimage.measure._regionprops_gpu_moments_kernels import (
+    get_raw_moments_kernel,
     moment_deps,
 )
+from cucim.skimage.measure._regionprops_gpu_utils import _find_close_labels
 
 
 def get_labels_nd(
@@ -194,6 +207,57 @@ def test_area(precompute_max, ndim, area_dtype, spacing):
     )
 
 
+def _row_extents_reference(labels, max_label):
+    """First and last column of each label in each row of its bbox."""
+    labels = cp.asnumpy(labels)
+    first, last = [], []
+    for lab in range(1, max_label + 1):
+        coords = np.nonzero(labels == lab)
+        if coords[0].size == 0:
+            continue
+        crop = labels[tuple(slice(c.min(), c.max() + 1) for c in coords)]
+        rows = (crop == lab).reshape(-1, crop.shape[-1])
+        nonempty = rows.any(axis=1)
+        n_cols = rows.shape[1]
+        first.append(np.where(nonempty, rows.argmax(axis=1), n_cols))
+        last.append(
+            np.where(nonempty, n_cols - 1 - rows[:, ::-1].argmax(axis=1), -1)
+        )
+    return np.concatenate(first), np.concatenate(last)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize(
+    "label_dtype", [cp.uint8, cp.int16, cp.int32, cp.int64]
+)
+@pytest.mark.parametrize("pixels_per_thread", [1, 3, 16])
+@pytest.mark.parametrize("kind", ["blobs", "random"])
+def test_row_extents(ndim, label_dtype, pixels_per_thread, kind):
+    shape = (61, 87) if ndim == 2 else (17, 13, 19)
+    if kind == "blobs":
+        labels = get_labels_nd(shape, blob_size_fraction=0.2)
+    else:
+        # labels with several components, rows without pixels in their
+        # bounding box, runs continuing from one row to the next, and an
+        # absent label value (3)
+        rng = np.random.default_rng(0)
+        labels = cp.asarray(rng.choice([0, 1, 2, 4, 5], size=shape))
+    labels = labels.astype(label_dtype)
+    max_label = int(labels.max())
+    props = _regionprops_label_pass(labels, max_label, compute_bbox=True)
+    row_first, row_last, offsets, num_rows = _regionprops_row_extents(
+        labels, props["bbox"], max_label, pixels_per_thread=pixels_per_thread
+    )
+    expected_first, expected_last = _row_extents_reference(labels, max_label)
+    assert num_rows == expected_first.size == int(offsets[-1])
+    assert offsets.size == max_label + 1
+    # rows without pixels of the label only need row_first > row_last
+    nonempty = expected_last >= 0
+    assert_array_equal(row_first <= row_last, nonempty)
+    assert_array_equal(row_first[nonempty], expected_first[nonempty])
+    assert_array_equal(row_last[nonempty], expected_last[nonempty])
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 @pytest.mark.parametrize("spacing", [None, (1, 1, 1), (0.5, 0.35, 0.75)])
 @pytest.mark.parametrize(
@@ -258,6 +322,175 @@ def test_area_convex_and_solidity(ndim, spacing, blob_kwargs):
         rtol = 1e-4
         assert cp.all(area_convex >= (area - rtol))
         assert not cp.any(cp.isnan(solidity))
+
+
+def _convex_test_labels(kind, ndim):
+    """Label images for comparing the convex-hull properties with skimage."""
+    if kind == "blobs":
+        shape = (256, 512) if ndim == 2 else (48, 64, 40)
+        return get_labels_nd(shape)
+    if kind == "large_blobs":
+        shape = (256, 512) if ndim == 2 else (48, 64, 40)
+        return get_labels_nd(
+            shape, blob_size_fraction=0.12, volume_fraction=0.3
+        )
+    rng = np.random.default_rng(0)
+    if kind == "lines":
+        # thin digital lines in random directions (nearly collinear hull
+        # edges), each with a separate pixel of the same label
+        shape = (200, 300) if ndim == 2 else (40, 50, 60)
+        labels = np.zeros(shape, dtype=np.int32)
+        t = np.linspace(0, 1, 2 * max(shape))
+        for lab in range(1, 31):
+            start, end = (rng.integers(0, shape) for _ in range(2))
+            line = start + t[:, np.newaxis] * (end - start)
+            labels[tuple(np.round(line).astype(int).T)] = lab
+            labels[tuple(rng.integers(0, shape))] = lab
+        return cp.asarray(labels)
+    if kind == "random":
+        # labels with several components and rows without any of their pixels
+        # in their bounding box; label 3 is absent
+        shape = (37, 29) if ndim == 2 else (11, 9, 13)
+        return cp.asarray(rng.choice([0, 0, 1, 2, 4, 5], size=shape))
+    raise ValueError(kind)
+
+
+@pytest.mark.parametrize("spacing", [None, (0.5, 0.35)])
+@pytest.mark.parametrize("kind", ["blobs", "large_blobs", "lines", "random"])
+def test_area_convex_and_solidity_batch_2d(spacing, kind):
+    labels = _convex_test_labels(kind, 2)
+    max_label = int(labels.max())
+    result = regionprops_dict(
+        labels, properties=["area_convex", "solidity"], spacing=spacing
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        properties=["label", "area_convex", "solidity"],
+        spacing=spacing,
+    )
+    present = expected["label"] - 1
+    absent = np.setdiff1d(np.arange(max_label), present)
+    assert_allclose(
+        result["area_convex"][present], expected["area_convex"], rtol=1e-12
+    )
+    assert_allclose(
+        result["solidity"][present], expected["solidity"], rtol=1e-6
+    )
+    assert_array_equal(result["area_convex"][absent], 0)
+
+
+@pytest.mark.parametrize("kind", ["blobs", "large_blobs", "lines", "random"])
+def test_image_convex_batch_2d(kind):
+    labels = _convex_test_labels(kind, 2)
+    max_label = int(labels.max())
+    result = regionprops_dict(labels, properties=["image_convex"])
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels), properties=["label", "image_convex"]
+    )
+    images = result["image_convex"]
+    assert len(images) == max_label
+    for lab, image in zip(expected["label"], expected["image_convex"]):
+        assert_array_equal(images[lab - 1], image)
+    for lab in set(range(1, max_label + 1)) - set(expected["label"]):
+        assert images[lab - 1].size == 0
+
+
+@pytest.mark.parametrize("spacing", [None, (0.5, 0.35, 0.75)])
+@pytest.mark.parametrize("kind", ["blobs", "large_blobs", "lines", "random"])
+def test_convex_batch_3d(spacing, kind):
+    labels = _convex_test_labels(kind, 3)
+    max_label = int(labels.max())
+    properties = ["image_convex", "area_convex", "solidity"]
+    result = regionprops_dict(labels, properties=properties, spacing=spacing)
+    with warnings.catch_warnings():
+        # scikit-image's qhull fails for flat regions (see below)
+        warnings.simplefilter("ignore")
+        expected = measure_cpu.regionprops_table(
+            cp.asnumpy(labels),
+            properties=["label"] + properties,
+            spacing=spacing,
+        )
+    images = result["image_convex"]
+    assert len(images) == max_label
+    n_compared = 0
+    for n, lab in enumerate(expected["label"]):
+        if not expected["image_convex"][n].any():
+            # scikit-image returns an empty image for regions whose voxel
+            # centers are coplanar (test_convex_flat_3d)
+            continue
+        assert_array_equal(images[lab - 1], expected["image_convex"][n])
+        assert_allclose(
+            result["area_convex"][lab - 1],
+            expected["area_convex"][n],
+            rtol=1e-12,
+        )
+        assert_allclose(
+            result["solidity"][lab - 1], expected["solidity"][n], rtol=1e-6
+        )
+        n_compared += 1
+    assert n_compared > 0
+    for lab in set(range(1, max_label + 1)) - set(expected["label"]):
+        assert images[lab - 1].size == 0
+        assert result["area_convex"][lab - 1] == 0
+
+
+def test_convex_flat_3d():
+    # Regions that are flat along an axis get the convex image and Feret
+    # diameter of the squeezed 2D region (as cuCIM's convex_hull_image did
+    # for the image; scikit-image's qhull fails, it returns an empty image
+    # and its feret_diameter_max raises), and a single voxel itself.
+    labels = cp.zeros((5, 30, 40), dtype=cp.int32)
+    labels[2, 3:20, 5:9] = 1
+    labels[2, 10:25, 20:35] = 1  # one plane, two components
+    labels[0:4, 7, 1:30:3] = 2  # one row index, gaps along x
+    labels[4, 0, 0] = 3
+    properties = ["image_convex", "area_convex", "feret_diameter_max"]
+    result = regionprops_dict(labels, properties=properties)
+    images = result["image_convex"]
+    for lab, axis in [(1, 0), (2, 1)]:
+        mask = labels == lab
+        coords = cp.nonzero(mask)
+        crop = mask[
+            tuple(slice(int(c.min()), int(c.max()) + 1) for c in coords)
+        ]
+        expected = measure_cpu.regionprops_table(
+            cp.asnumpy(crop.squeeze(axis)).astype(np.uint8),
+            properties=properties,
+        )
+        image = expected["image_convex"][0]
+        assert_array_equal(images[lab - 1].squeeze(axis), image)
+        assert result["area_convex"][lab - 1] == image.sum()
+        assert_allclose(
+            result["feret_diameter_max"][lab - 1],
+            expected["feret_diameter_max"][0],
+            rtol=1e-12,
+        )
+    assert_array_equal(images[2], cp.ones((1, 1, 1), dtype=bool))
+    assert result["feret_diameter_max"][2] == 1
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+def test_convex_batch_64bit_coordinates(ndim, monkeypatch):
+    # images with an axis of 2**30 pixels or more use 64-bit row extents and
+    # hull vertices; force that path on a small image
+    labels = _convex_test_labels("large_blobs", ndim)
+    properties = ["image_convex", "area_convex", "feret_diameter_max"]
+    spacing = (0.7,) * ndim
+    expected = regionprops_dict(labels, properties=properties, spacing=spacing)
+    monkeypatch.setattr(
+        _regionprops_gpu_convex,
+        "_get_row_extent_dtype",
+        lambda shape: cp.dtype(cp.int64),
+    )
+    result = regionprops_dict(labels, properties=properties, spacing=spacing)
+    for image, expected_image in zip(
+        result["image_convex"], expected["image_convex"]
+    ):
+        assert_array_equal(image, expected_image)
+    assert_array_equal(result["area_convex"], expected["area_convex"])
+    assert_allclose(
+        result["feret_diameter_max"], expected["feret_diameter_max"], rtol=1e-14
+    )
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
@@ -456,6 +689,43 @@ def test_intensity_std(
             )
 
 
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("image_dtype", [cp.uint8, cp.int16, cp.float32])
+@pytest.mark.parametrize("num_channels", [1, 3])
+@pytest.mark.parametrize("compute_std", [False, True])
+def test_intensity_stats_one_pass(ndim, image_dtype, num_channels, compute_std):
+    # the mean (or std), min and max computed in one pass match the separate
+    # functions
+    shape = (256, 512) if ndim == 2 else (15, 63, 37)
+    labels = get_labels_nd(shape)
+    intensity_image = get_intensity_image(
+        shape, dtype=image_dtype, num_channels=num_channels
+    )
+    props = _regionprops_intensity(
+        labels,
+        intensity_image,
+        compute_mean=not compute_std,
+        compute_std=compute_std,
+        compute_min=True,
+        compute_max=True,
+    )
+    if compute_std:
+        expected = regionprops_intensity_std(labels, intensity_image)
+    else:
+        expected = regionprops_intensity_mean(labels, intensity_image)
+    regionprops_intensity_min_max(
+        labels,
+        intensity_image,
+        compute_min=True,
+        compute_max=True,
+        props_dict=expected,
+    )
+    assert set(props) == set(expected)
+    for name, values in expected.items():
+        assert props[name].dtype == values.dtype
+        assert_allclose(props[name], values, rtol=1e-12)
+
+
 @pytest.mark.parametrize("image_dtype", [cp.float32, cp.float64])
 @pytest.mark.parametrize("sample_std", [False, True])
 def test_intensity_std_constant_regions(image_dtype, sample_std):
@@ -596,6 +866,123 @@ def test_centroid(via_moments, local, ndim):
         assert_allclose(centroid[:, 2], expected[name + "-2"])
 
 
+@pytest.mark.parametrize(
+    "label_dtype", [cp.uint8, cp.int16, cp.uint16, cp.int32, cp.uint64]
+)
+@pytest.mark.parametrize("pixels_per_thread", [1, 3, 16])
+@pytest.mark.parametrize("pattern", ["single", "stripes", "random", "blocks"])
+def test_label_run_warp_aggregation(label_dtype, pixels_per_thread, pattern):
+    # The last runs of neighboring lanes with the same label are combined
+    # with warp shuffles before the atomics. Check the counts, bounding boxes,
+    # coordinate sums and intensity statistics against NumPy for groups of
+    # lanes of various lengths, a partial last warp, and all label dtypes.
+    shape = (37, 1001)  # 37037 pixels: not a multiple of 32 * pixels_per_thread
+    rng = np.random.default_rng(0)
+    if pattern == "single":
+        labels = np.ones(shape, dtype=np.int64)
+    elif pattern == "stripes":
+        # runs of 1 to 100 pixels with labels cycling through 1..5, so that
+        # groups of equal labels have different lengths
+        lengths = rng.integers(1, 100, size=2000)
+        values = np.arange(lengths.size) % 5 + 1
+        labels = np.repeat(values, lengths)[: math.prod(shape)].reshape(shape)
+    elif pattern == "blocks":
+        # a large region with background blocks of 16 to 48 pixels, so that
+        # whole lanes have no labeled pixel, and a second region
+        cols = np.arange(shape[1])
+        labels = np.broadcast_to((cols // 16) % 3 != 1, shape).astype(int)
+        labels[:5, :500] *= 2
+    else:
+        labels = rng.integers(0, 4, size=shape)
+    labels_gpu = cp.asarray(labels.astype(label_dtype))
+    # positive intensities in odd and negative ones in even labels, so that
+    # neither 0 nor any other wrong identity of min/max would go unnoticed
+    image = rng.uniform(1, 10, size=shape).astype(np.float32)
+    image[labels % 2 == 0] *= -1
+    image_gpu = cp.asarray(image)
+    max_label = int(labels.max())
+
+    props = _regionprops_label_pass(
+        labels_gpu,
+        max_label,
+        compute_num_pixels=True,
+        compute_bbox=True,
+        compute_coordinate_sums=True,
+        pixels_per_thread=pixels_per_thread,
+    )
+    _regionprops_intensity(
+        labels_gpu,
+        image_gpu,
+        max_label,
+        compute_mean=True,
+        compute_min=True,
+        compute_max=True,
+        pixels_per_thread=pixels_per_thread,
+        props_dict=props,
+    )
+    rr, cc = np.indices(shape)
+    for lab in range(1, max_label + 1):
+        mask = labels == lab
+        assert int(props["num_pixels"][lab - 1]) == mask.sum()
+        expected_bbox = [
+            rr[mask].min(),
+            cc[mask].min(),
+            rr[mask].max() + 1,
+            cc[mask].max() + 1,
+        ]
+        assert_array_equal(props["bbox"][lab - 1], expected_bbox)
+        assert_array_equal(
+            props["coordinate_sums"][lab - 1], [rr[mask].sum(), cc[mask].sum()]
+        )
+        assert float(props["intensity_min"][lab - 1]) == image[mask].min()
+        assert float(props["intensity_max"][lab - 1]) == image[mask].max()
+        assert_allclose(
+            props["intensity_mean"][lab - 1], image[mask].mean(), rtol=1e-5
+        )
+
+
+@pytest.mark.parametrize("label_dtype", [cp.uint16, cp.int32, cp.int64])
+@pytest.mark.parametrize("image_dtype", [cp.float32, cp.float64])
+def test_label_run_unaligned_inputs(label_dtype, image_dtype):
+    # 4 and 8-byte labels and images are read with 16-byte loads when they
+    # are 16-byte aligned; views starting one (odd-length) row in are not,
+    # and must give the same results as aligned copies
+    shape = (65, 999)
+    labels = cp.asarray(
+        get_labels_nd(shape, blob_size_fraction=0.1), dtype=label_dtype
+    )
+    image = get_intensity_image(shape, dtype=image_dtype)
+    labels_view, image_view = labels[1:], image[1:]
+    assert labels_view.flags.c_contiguous and image_view.flags.c_contiguous
+    assert labels_view.data.ptr % 16 != 0 or image_view.data.ptr % 16 != 0
+    labels_copy, image_copy = labels_view.copy(), image_view.copy()
+    max_label = int(labels.max())
+    results = []
+    for lab, img in [(labels_view, image_view), (labels_copy, image_copy)]:
+        props = _regionprops_label_pass(
+            lab,
+            max_label,
+            compute_num_pixels=True,
+            compute_bbox=True,
+            compute_coordinate_sums=True,
+        )
+        _regionprops_intensity(
+            lab,
+            img,
+            max_label,
+            compute_std=True,
+            compute_min=True,
+            compute_max=True,
+            props_dict=props,
+        )
+        regionprops_moments(
+            lab, img, max_label=max_label, order=2, props_dict=props
+        )
+        results.append(props)
+    for name, values in results[1].items():
+        assert_allclose(results[0][name], values, rtol=1e-12)
+
+
 @pytest.mark.parametrize("ndim", [2, 3])
 def test_centroid_reuses_num_pixels(ndim):
     shape = (256, 128) if ndim == 2 else (40, 32, 24)
@@ -608,6 +995,43 @@ def test_centroid_reuses_num_pixels(ndim):
         labels, max_label=max_label, props_dict=props
     )
     assert_allclose(centroid, expected)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("order", [1, 2, 3])
+@pytest.mark.parametrize("spacing", [None, (0.8, 0.5, 1.3)])
+def test_raw_moments_accumulator_types(ndim, order, spacing):
+    # the unweighted moments are summed per run in a 32-bit or 64-bit integer
+    # type depending on the image size, or in double for huge images; all
+    # must give the same result
+    shape = (256, 512) if ndim == 2 else (15, 63, 37)
+    if spacing is not None:
+        spacing = spacing[:ndim]
+    labels = get_labels_nd(shape)
+    max_label = int(labels.max())
+    bbox, _ = regionprops_bbox_coords(labels, max_label=max_label)
+    results = []
+    for accum_c_type in ["unsigned int", "unsigned long long", "double"]:
+        kernel = get_raw_moments_kernel(
+            ndim,
+            order,
+            spacing=spacing,
+            pixels_per_thread=16,
+            accum_c_type=accum_c_type,
+        )
+        moments = cp.zeros((max_label,) + (order + 1,) * ndim, cp.float64)
+        args = (labels, labels.size, bbox)
+        if spacing is not None:
+            args += (cp.asarray(spacing, dtype=cp.float64),)
+        kernel(*args, moments, size=math.ceil(labels.size / 16))
+        results.append(moments)
+    if spacing is None:
+        # integer sums of integers are exact
+        assert_array_equal(results[0], results[1])
+    # (with spacing, the scaled per-run sums are added by floating-point
+    # atomics in a nondeterministic order)
+    assert_allclose(results[0], results[1], rtol=1e-14)
+    assert_allclose(results[0], results[2], rtol=1e-14)
 
 
 @pytest.mark.parametrize("spacing", [None, (0.8, 0.5), (0.2, 1.3)])
@@ -1220,6 +1644,85 @@ def test_perimeter_crofton(shape, robust, volume_fraction, blob_size_fraction):
     allclose(values, expected["perimeter_crofton"])
 
 
+@pytest.mark.parametrize("granularity", [1, 2, 3, 5])
+@pytest.mark.parametrize("label_dtype", [cp.uint8, cp.int32])
+def test_boundary_properties_touching_labels(granularity, label_dtype):
+    # every region is measured as in isolation, also when regions touch
+    rng = np.random.default_rng(granularity)
+    g = granularity
+    small = rng.integers(0, 7, size=(61 // g + 1, 87 // g + 1))
+    labels = np.kron(small, np.ones((g, g), dtype=int))[:61, :87]
+    labels_gpu = cp.asarray(labels.astype(label_dtype))
+    max_label = int(labels.max())
+    masks = [labels == lab for lab in range(1, max_label + 1)]
+    for neighborhood in [4, 8]:
+        values = regionprops_perimeter(
+            labels_gpu, neighborhood, max_label=max_label
+        )
+        expected = [measure_cpu.perimeter(m, neighborhood) for m in masks]
+        assert_allclose(values, expected, rtol=1e-12, atol=1e-12)
+    for directions in [2, 4]:
+        values = regionprops_perimeter_crofton(
+            labels_gpu, directions, max_label=max_label
+        )
+        expected = [measure_cpu.perimeter_crofton(m, directions) for m in masks]
+        assert_allclose(values, expected, rtol=1e-12, atol=1e-12)
+    for connectivity in [1, 2]:
+        values = regionprops_euler(
+            labels_gpu, connectivity, max_label=max_label
+        )
+        expected = [measure_cpu.euler_number(m, connectivity) for m in masks]
+        assert_array_equal(values, expected)
+
+    small = rng.integers(0, 5, size=(9, 8, 10))
+    labels = np.kron(small, np.ones((g, g, g), dtype=int))[:17, :13, :19]
+    labels_gpu = cp.asarray(labels.astype(label_dtype))
+    max_label = int(labels.max())
+    for connectivity in [1, 3]:
+        values = regionprops_euler(
+            labels_gpu, connectivity, max_label=max_label
+        )
+        expected = [
+            measure_cpu.euler_number(labels == lab, connectivity)
+            for lab in range(1, max_label + 1)
+        ]
+        assert_array_equal(values, expected)
+
+
+@pytest.mark.parametrize("int32_coords", [True, False])
+@pytest.mark.parametrize(
+    "kind, ndim", [("perimeter", 2), ("crofton", 2), ("euler", 2), ("euler", 3)]
+)
+def test_boundary_kernel_coordinate_types(kind, ndim, int32_coords):
+    # images of fewer than 2**31 pixels use 32-bit coordinates, larger ones
+    # 64-bit coordinates; both must give scikit-image's values
+    rng = np.random.default_rng(ndim)
+    shape = (61, 87) if ndim == 2 else (17, 13, 19)
+    small = rng.integers(0, 5, size=tuple(s // 2 + 1 for s in shape))
+    labels = np.kron(small, np.ones((2,) * ndim, dtype=int))
+    labels = labels[tuple(slice(0, s) for s in shape)]
+    max_label = int(labels.max())
+    masks = [labels == lab for lab in range(1, max_label + 1)]
+    if kind == "perimeter":
+        coefs, option = _get_perimeter_coefs(), 4
+        expected = [measure_cpu.perimeter(m, 4) for m in masks]
+    elif kind == "crofton":
+        coefs, option = _get_perimeter_crofton_coefs(4), False
+        expected = [measure_cpu.perimeter_crofton(m, 4) for m in masks]
+    else:
+        coefs, option = _get_euler_coefs(ndim, 1), False
+        expected = [measure_cpu.euler_number(m, 1) for m in masks]
+    labels = cp.asarray(labels, dtype=cp.int32)
+    kernel = _get_boundary_kernel(kind, ndim, option, 10, int32_coords)
+    # (the Euler coefficients are summed into int64)
+    out_dtype = cp.int64 if kind == "euler" else coefs.dtype
+    out = cp.zeros((max_label,), dtype=out_dtype)
+    kernel(labels, labels.size, coefs, out, size=math.ceil(labels.size / 10))
+    if kind == "euler" and ndim == 3:
+        out = (out * 0.125).astype(cp.int64)
+    assert_allclose(out, expected, rtol=1e-12, atol=1e-12)
+
+
 @pytest.mark.parametrize(
     "shape, connectivity",
     [
@@ -1413,6 +1916,53 @@ def test_feret_diameter_max(ndim, spacing, blob_kwargs):
     )
     # print(f"max_diff = {max_diff}")
     assert max_diff < math.sqrt(ndim)
+
+
+@pytest.mark.parametrize("spacing", [None, (0.5, 0.35)])
+@pytest.mark.parametrize("kind", ["blobs", "large_blobs", "lines", "random"])
+def test_feret_diameter_max_batch_2d(spacing, kind):
+    # equal to scikit-image's (contour points of the convex image), also for
+    # single pixels (diameter 1)
+    labels = _convex_test_labels(kind, 2)
+    result = regionprops_dict(
+        labels, properties=["feret_diameter_max"], spacing=spacing
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels),
+        properties=["label", "feret_diameter_max"],
+        spacing=spacing,
+    )
+    assert_allclose(
+        result["feret_diameter_max"][expected["label"] - 1],
+        expected["feret_diameter_max"],
+        rtol=1e-12,
+    )
+
+
+@pytest.mark.parametrize("spacing", [None, (0.5, 0.35, 0.75)])
+@pytest.mark.parametrize("kind", ["blobs", "large_blobs", "lines", "random"])
+def test_feret_diameter_max_batch_3d(spacing, kind):
+    labels = _convex_test_labels(kind, 3)
+    result = regionprops_dict(
+        labels, properties=["feret_diameter_max"], spacing=spacing
+    )["feret_diameter_max"]
+    n_compared = 0
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for region in measure_cpu.regionprops(
+            cp.asnumpy(labels), spacing=spacing
+        ):
+            if not region.image_convex.any():
+                # scikit-image's qhull fails for flat regions, and its
+                # feret_diameter_max then raises (test_convex_flat_3d)
+                continue
+            assert_allclose(
+                result[region.label - 1],
+                region.feret_diameter_max,
+                rtol=1e-12,
+            )
+            n_compared += 1
+    assert n_compared > 0
 
 
 @pytest.mark.parametrize("ndim", [2, 3])
@@ -1656,6 +2206,81 @@ def test_label_filled():
     assert_array_equal(label_filled, expected)
 
 
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("max_canvas_pixels", [None, 4000, 1])
+def test_fill_holes_of_labels_batch(ndim, max_canvas_pixels):
+    # the crops packed into one canvas are filled as one at a time, also when
+    # the canvas is split in several batches (1: every crop on its own)
+    from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
+        _fill_holes_of_labels,
+    )
+
+    rng = np.random.default_rng(3)
+    shape = (120, 150) if ndim == 2 else (30, 40, 36)
+    # nested and touching regions: labeled components of noise levels
+    noise = ndi.gaussian_filter(cp.asarray(rng.random(shape)), 2)
+    levels = cp.digitize(noise, cp.percentile(noise, [20, 50, 80]))
+    labels = measure.label(levels + 1, connectivity=ndim)
+    max_label = int(labels.max())
+    bbox, _ = regionprops_bbox_coords(labels, max_label=max_label)
+    bbox_host = cp.asnumpy(bbox)
+    labels_list = np.arange(1, max_label + 1)
+    counts, images = _fill_holes_of_labels(
+        labels,
+        labels_list,
+        bbox_host,
+        compute_image=True,
+        max_canvas_pixels=max_canvas_pixels,
+    )
+    structure = cp.ones((3,) * ndim, dtype=bool)
+    for lab, count, image in zip(labels_list, cp.asnumpy(counts), images):
+        sl = tuple(
+            slice(int(bbox_host[lab - 1, d]), int(bbox_host[lab - 1, d + ndim]))
+            for d in range(ndim)
+        )
+        expected = ndi.binary_fill_holes(labels[sl] == lab, structure)
+        assert_array_equal(image, expected)
+        assert count == int(expected.sum())
+
+
+def test_pack_crops_canvas_is_not_wider_than_the_boxes():
+    from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
+        _pack_crops,
+    )
+
+    # one tall box: its own width, not that of a square canvas
+    shape, starts = _pack_crops([[1000, 5]])
+    assert shape == (1002, 7)
+    assert tuple(starts[0]) == (1, 1)
+    # several boxes: about square, and every box inside with a margin
+    extents = np.array([[40, 30], [10, 70], [25, 25], [5, 5]])
+    shape, starts = _pack_crops(extents)
+    assert shape[1] < sum(extents[:, 1]) + len(extents) + 1
+    canvas = np.zeros(shape, dtype=int)
+    for i, (st, ext) in enumerate(zip(starts, extents), 1):
+        box = canvas[
+            st[0] - 1 : st[0] + ext[0] + 1, st[1] - 1 : st[1] + ext[1] + 1
+        ]
+        assert not box.any()
+        canvas[st[0] : st[0] + ext[0], st[1] : st[1] + ext[1]] = i
+
+
+@pytest.mark.parametrize("dtype", [cp.uint8, cp.int16, cp.int64])
+def test_fill_holes_by_label_dtypes(dtype):
+    labels = cp.zeros((20, 20), dtype=dtype)
+    labels[2:12, 2:12] = 1
+    labels[4:10, 4:10] = 0
+    labels[8:12, 14:18] = 2
+    labels[9, 15:17] = 0
+    label_filled, labels_inexact = _fill_holes_by_label(labels, 2)
+    assert label_filled.dtype == dtype
+    expected = labels.copy()
+    expected[4:10, 4:10] = 1
+    expected[9, 15:17] = 2
+    assert_array_equal(label_filled, expected)
+    assert labels_inexact.size == 0
+
+
 def test_fill_holes_by_label_tiling_is_exact():
     # touching labels without nesting need no per-label recomputation
     labels = cp.arange(1, 65, dtype=cp.int32).reshape(8, 8)
@@ -1667,6 +2292,27 @@ def test_fill_holes_by_label_tiling_is_exact():
     labels[1:4, 1:3] = 100
     _, labels_inexact = _fill_holes_by_label(labels, 100)
     assert list(labels_inexact) == [1]
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize("spacing", [None, (1.5, 0.5, 0.75)])
+def test_regionprops_dict_centroid_paths(ndim, spacing):
+    # The centroids come from coordinate sums when no other property needs
+    # the raw moments, and from the moments otherwise. Both must agree.
+    shape = (256, 512) if ndim == 2 else (48, 64, 64)
+    if spacing is not None:
+        spacing = spacing[:ndim]
+    labels = get_labels_nd(shape)
+    labels[labels == 3] = 0  # an absent label gives NaN centroids
+    props = ["centroid", "centroid_local"]
+    from_sums = regionprops_dict(labels, properties=props, spacing=spacing)
+    from_moments = regionprops_dict(
+        labels, properties=props + ["moments_central"], spacing=spacing
+    )
+    for prop in props:
+        assert from_sums[prop].dtype == from_moments[prop].dtype
+        assert_allclose(from_sums[prop], from_moments[prop], rtol=1e-12)
+        assert cp.all(cp.isnan(from_sums[prop][2]))
 
 
 @pytest.mark.parametrize("spacing", [None, (2, 3)])
@@ -1983,29 +2629,237 @@ def test_intensity_extrema_float_infinities(values, dtype):
     assert_array_equal(result["intensity_max"], [np.max(values), -np.inf])
 
 
-def test_filled_erosion_kernel_reused_across_label_counts(monkeypatch):
-    from cucim.skimage._vendored import _ndimage_filters as filters
+def _power_sum(n, e):
+    return sum(i**e for i in range(n))
 
-    get_kernel = filters._get_min_or_max_kernel
-    signature = inspect.signature(get_kernel)
-    minimum_kernels = []
 
-    def record(*args, **kwargs):
-        kernel = get_kernel(*args, **kwargs)
-        if signature.bind(*args, **kwargs).arguments["func"] == "min":
-            minimum_kernels.append(kernel)
-        return kernel
+@pytest.mark.parametrize(
+    "shape", [(512, 512), (1024, 700), (2048, 64), (40, 300, 300)]
+)
+@pytest.mark.parametrize("order", [2, 3])
+def test_raw_moments_large_region_exact(shape, order):
+    """One region filling the image, with the default launch parameters: the
+    per-run moments are combined over up to 32 lanes before the flush, so
+    their type must hold a warp's sum, not only a lane's (a 512 x 512 region
+    gave M[0, 3] = 2164697071616 instead of 8761766838272 when only one
+    lane's sum was bounded)."""
+    import inspect
 
-    monkeypatch.setattr(filters, "_get_min_or_max_kernel", record)
-    previous = None
-    for lab in (1, 2, 3):
-        minimum_kernels.clear()
-        labels = cp.zeros((7, 7), dtype=cp.uint8)
-        labels[1:6, 1:6] = lab
-        labels[2:5, 2:5] = 0
-        filled, _ = _fill_holes_by_label(labels, lab)
-        assert_array_equal(filled[1:6, 1:6], cp.full((5, 5), lab))
-        assert minimum_kernels
-        if previous is not None:
-            assert minimum_kernels == previous
-        previous = minimum_kernels.copy()
+    from cucim.skimage.measure._regionprops_gpu import regionprops_dict
+    from cucim.skimage.measure._regionprops_gpu_moments_kernels import (
+        _get_moments_accum_c_type,
+        regionprops_moments,
+    )
+
+    ppt = (
+        inspect.signature(regionprops_moments)
+        .parameters["pixels_per_thread"]
+        .default
+    )
+    if order == 3 and shape[:2] == (512, 512):
+        # this case crosses the 32-bit limit between one lane and a warp
+        assert _get_moments_accum_c_type(shape, order, ppt) == "unsigned int"
+        assert (
+            _get_moments_accum_c_type(shape, order, ppt, lanes=32)
+            == "unsigned long long"
+        )
+    labels = cp.ones(shape, dtype=cp.int32)
+    out = regionprops_dict(labels, properties=["moments"], moment_order=order)
+    moments = cp.asnumpy(out["moments"][0])
+    for exponents in itertools.product(range(order + 1), repeat=len(shape)):
+        if sum(exponents) > order:
+            continue
+        expected = 1
+        for n, e in zip(shape, exponents):
+            expected *= _power_sum(n, e)
+        # all values are below 2**53, so float64 holds them exactly
+        assert moments[exponents] == expected, exponents
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+@pytest.mark.parametrize(
+    "centroid_props",
+    [["centroid"], ["centroid_local"], ["centroid", "centroid_local"]],
+)
+@pytest.mark.parametrize(
+    "weighted_props",
+    [
+        ["centroid_weighted"],
+        ["centroid_weighted_local"],
+        ["moments_weighted"],
+        ["moments_weighted_central", "intensity_mean"],
+    ],
+)
+def test_regionprops_dict_centroids_with_weighted_props(
+    ndim, centroid_props, weighted_props
+):
+    """Unweighted centroids (from coordinate sums) together with weighted
+    properties that do not need the unweighted moments (this raised
+    KeyError: 'moments')."""
+    shape = (40, 50) if ndim == 2 else (12, 14, 16)
+    labels = get_labels_nd(shape)
+    rng = np.random.default_rng(0)
+    intensity = cp.asarray(rng.random(shape))
+    props = centroid_props + weighted_props
+    # (scikit-image's moments are of order 3)
+    actual = regionprops_dict(
+        labels, intensity, properties=props, moment_order=3
+    )
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels), cp.asnumpy(intensity), properties=props
+    )
+    for prop in props:
+        value = actual[prop]
+        if isinstance(value, cp.ndarray) and value.ndim > 1:
+            value = value.reshape(value.shape[0], -1)
+            keys = sorted(
+                (k for k in expected if k.startswith(prop + "-")),
+                key=lambda k: tuple(int(i) for i in k.split("-")[1:]),
+            )
+            ref = np.stack([expected[k] for k in keys], axis=-1)
+            if prop.startswith("moments"):
+                # the batch path computes the entries of total order <= 3
+                low = [
+                    sum(e) <= 3
+                    for e in itertools.product(range(4), repeat=ndim)
+                ]
+                value, ref = value[:, low], ref[:, low]
+        else:
+            ref = expected[prop]
+        tol = 1e-6 if value.dtype == cp.float32 else 1e-9
+        assert_allclose(value, ref, rtol=tol, atol=tol)
+
+
+@pytest.mark.parametrize("ndim", [2, 3])
+def test_euler_sums_beyond_int32(ndim):
+    """The Euler coefficients of a region are summed in 64 bits. (In 3D the
+    unscaled coefficients add up to 8 times the Euler number, which
+    overflowed int32 for a 1292**3 volume of isolated voxels.) Large
+    coefficients make a small image of isolated pixels cross 2**31 while
+    the sums of one run, and of a warp's last runs, stay small."""
+    from cucim.skimage.measure._regionprops_gpu_misc_kernels import (
+        _boundary_sums,
+    )
+
+    shape = (2000, 2000) if ndim == 2 else (160, 160, 160)
+    labels = cp.zeros(shape, dtype=cp.uint8)
+    labels[(slice(None, None, 2),) * ndim] = 1
+    n_pixels = int(labels.sum())
+    c = 1 << 12
+    coefs = cp.full((2 ** (2**ndim),), c, dtype=cp.int32)
+    coefs[-1] = 0  # a window full of the region contributes 0
+    out = _boundary_sums("euler", labels, coefs, False, 1, 10)
+    # an isolated pixel is the first region pixel of all 2**ndim windows
+    # that contain it, each of which contains only this pixel of the region
+    expected = n_pixels * 2**ndim * c
+    assert expected > 2**31
+    assert out.dtype == cp.int64
+    assert int(out[0]) == expected
+
+
+def test_euler_number_many_isolated_voxels():
+    # a smaller version of the reported case (646**3 isolated voxels): the
+    # Euler number of n isolated voxels is n
+    labels = cp.zeros((100, 100, 100), dtype=cp.uint8)
+    labels[::2, ::2, ::2] = 1
+    out = regionprops_dict(labels, properties=["euler_number"])
+    assert int(out["euler_number"][0]) == 50**3
+
+
+def test_regionprops_bbox_coords_positional_props_dict():
+    """props_dict keeps its positional slot (compute_num_pixels, added
+    later, is keyword-only)."""
+    labels = get_labels_nd((32, 40))
+    max_label = int(labels.max())
+    props = {}
+    bbox, slices = regionprops_bbox_coords(labels, max_label, True, 16, props)
+    assert props["bbox"] is bbox
+    assert props["slice"] == slices
+    assert "num_pixels" not in props
+    props = {}
+    regionprops_bbox_coords(
+        labels, max_label, True, 16, props, compute_num_pixels=True
+    )
+    expected = cp.bincount(labels.ravel(), minlength=max_label + 1)[1:]
+    assert_array_equal(props["num_pixels"], expected)
+    with pytest.raises(TypeError):
+        regionprops_bbox_coords(labels, max_label, True, 16, True, props)
+
+
+def _concentric_shells(n, dtype=cp.int16):
+    """Each pixel labeled 1 + its distance to the nearest face: nested square
+    shells that touch, whose filled areas are n**2, (n - 2)**2, ..."""
+    r = cp.arange(n)
+    d = cp.minimum(r, n - 1 - r)
+    return (1 + cp.minimum(d[:, cp.newaxis], d[cp.newaxis, :])).astype(dtype)
+
+
+@pytest.mark.parametrize("repeat", range(3))
+def test_regionprops_dict_filled_shells_many_blocks(repeat):
+    """Concentric touching shells: every pixel of every label reads and may
+    set its label's flag, from many blocks (the flags are atomic)."""
+    n = 256
+    labels = _concentric_shells(n)
+    out = regionprops_dict(
+        labels, properties=["num_pixels_filled", "area_filled"]
+    )
+    expected = cp.asarray([(n - 2 * i) ** 2 for i in range(n // 2)])
+    assert_array_equal(out["num_pixels_filled"], expected)
+    assert_allclose(out["area_filled"], expected)
+
+
+@pytest.mark.parametrize("repeat", range(3))
+def test_regionprops_dict_filled_touching_tiles(repeat):
+    """Two touching labels tiled over a large image, with holes in label 1's
+    tiles: the touch flag is set from many blocks."""
+    tiles = (cp.add.outer(cp.arange(64), cp.arange(64)) % 2 + 1).astype(
+        cp.uint8
+    )
+    labels = cp.kron(tiles, cp.ones((8, 8), dtype=cp.uint8))
+    # a hole in each tile of label 1 (bordered by label 1 only)
+    hole = (labels == 1) & (
+        (cp.arange(512)[:, None] % 8 == 3) & (cp.arange(512)[None, :] % 8 == 4)
+    )
+    labels[hole] = 0
+    out = regionprops_dict(labels, properties=["area_filled", "num_pixels"])
+    expected = measure_cpu.regionprops_table(
+        cp.asnumpy(labels), properties=["area_filled"]
+    )["area_filled"]
+    assert_allclose(out["area_filled"], expected)
+
+
+def test_regionprops_dict_filled_bounded_pool_retries():
+    """With a 16 MiB memory pool (not the default pool, so the canvas
+    budget cannot see its limit), a canvas that does not fit is split and
+    retried (this raised OutOfMemoryError)."""
+    n = 256
+    labels = _concentric_shells(n)
+    expected = cp.asarray([(n - 2 * i) ** 2 for i in range(n // 2)])
+    pool = cp.cuda.MemoryPool()
+    pool.set_limit(size=16 * 2**20)
+    with cp.cuda.using_allocator(pool.malloc):
+        out = regionprops_dict(labels, properties=["num_pixels_filled"])
+        counts = out["num_pixels_filled"].copy()
+    assert_array_equal(counts, expected)
+
+
+def test_regionprops_dict_filled_default_pool_limit():
+    """The canvas budget accounts for a limit of the default memory pool."""
+    from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
+        _FILL_BYTES_PER_PIXEL,
+        _canvas_pixel_limit,
+    )
+
+    n = 256
+    labels = _concentric_shells(n)
+    expected = cp.asarray([(n - 2 * i) ** 2 for i in range(n // 2)])
+    pool = cp.get_default_memory_pool()
+    old_limit = pool.get_limit()
+    try:
+        pool.set_limit(size=pool.used_bytes() + 16 * 2**20)
+        budget = _canvas_pixel_limit()
+        assert budget <= 16 * 2**20 // 4 // _FILL_BYTES_PER_PIXEL
+        out = regionprops_dict(labels, properties=["num_pixels_filled"])
+        assert_array_equal(out["num_pixels_filled"], expected)
+    finally:
+        pool.set_limit(size=old_limit)
