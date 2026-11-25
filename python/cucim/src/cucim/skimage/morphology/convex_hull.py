@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2009-2022 the scikit-image team
-# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 from itertools import product
@@ -188,10 +188,54 @@ def convex_hull_image(
     The parameters listed under "Extra Parameters" above are present only
     in cuCIM and not in scikit-image.
 
+    In 2D and 3D with ``offset_coordinates=True``, the hull is computed from
+    the first and last pixel of each row on the GPU (the batch convex-hull
+    kernels of ``regionprops``): exactly in 2D, and in 3D with one Qhull call
+    on the host for a reduced set of candidate vertices. Other cases use
+    Qhull on the boundary pixels, as scikit-image does.
+
     References
     ----------
     .. [1] https://blogs.mathworks.com/steve/2011/10/04/binary-image-convex-hull-algorithm-notes/
 
+    """
+    return _convex_hull_image(
+        image,
+        offset_coordinates=offset_coordinates,
+        tolerance=tolerance,
+        include_borders=include_borders,
+        omit_empty_coords_check=omit_empty_coords_check,
+        float64_computation=float64_computation,
+        cpu_fallback_threshold=cpu_fallback_threshold,
+    )
+
+
+def _use_batch_kernels(ndim, offset_coordinates, include_borders):
+    """Whether the batch convex-hull kernels of regionprops apply.
+
+    They compute the hull of the pixels' diamond points
+    (``offset_coordinates=True``) with the pixels on the hull included
+    (``include_borders=True``), in 2D and 3D.
+    """
+    return ndim in (2, 3) and offset_coordinates and include_borders
+
+
+def _convex_hull_image(
+    image,
+    offset_coordinates=True,
+    tolerance=1e-10,
+    include_borders=True,
+    *,
+    omit_empty_coords_check=False,
+    float64_computation=True,
+    cpu_fallback_threshold=None,
+    use_batch_kernels=True,
+):
+    """`convex_hull_image`; `use_batch_kernels=False` forces the Qhull path.
+
+    The batch kernels fall back to the Qhull path for a 3D region whose
+    candidate vertices Qhull rejects, through this function with
+    ``use_batch_kernels=False``.
     """
     if cpu_fallback_threshold is not None and cpu_fallback_threshold < 0:
         raise ValueError("cpu_fallback_threshold must be non-negative")
@@ -199,11 +243,6 @@ def convex_hull_image(
         raise ValueError("tolerance must be positive")
     if image.ndim < 2:
         raise ValueError("image must be at least 2D")
-    if cpu_fallback_threshold is None:
-        # Fallback to scikit-image implementation of total number of pixels
-        # is less than this. Values here are approximately when GPU computation
-        # became faster on an NVIDIA RTX A6000.
-        cpu_fallback_threshold = 30000 if image.ndim == 2 else 13000
 
     # singleton sizes can cause numeric problems in QHull, so squeeze out
     # these dimensions first (and restore original shape at end)
@@ -212,6 +251,19 @@ def convex_hull_image(
     image = cp.squeeze(image)
     if image.ndim < 2:
         return image.reshape(original_shape)
+
+    batch = use_batch_kernels and _use_batch_kernels(
+        image.ndim, offset_coordinates, include_borders
+    )
+    if cpu_fallback_threshold is None:
+        # Fallback to scikit-image implementation of total number of pixels
+        # is less than this. Values here are approximately when GPU computation
+        # became faster on an NVIDIA RTX A6000 (batch kernels: about 4000
+        # pixels in 2D and 3D, 0.5 ms in 2D and 2.5 ms in 3D).
+        if batch:
+            cpu_fallback_threshold = 4000
+        else:
+            cpu_fallback_threshold = 30000 if image.ndim == 2 else 13000
 
     if image.size < cpu_fallback_threshold:
         # Fallback to pure CPU implementation
@@ -250,15 +302,32 @@ def convex_hull_image(
             "Returning empty image",
             UserWarning,
         )
-        return cp.zeros(image.shape, dtype=bool)
+        return cp.zeros(original_shape, dtype=bool)
 
     if image.dtype != cp.dtype(bool):
-        if image.dtype == cp.uint8:
-            # bool are actually already stored as uint8 so can use a view to
-            # avoid a copy
-            image = image.view(bool)
-        else:
-            image = image.astype(bool)
+        # canonical 0/1 values: a bool view of a uint8 image would keep
+        # values such as 255, which the batch path reads as labels
+        image = image != 0
+
+    if batch:
+        # the image as a label image with a single label (the hull kernels
+        # need the label's tight bounding box)
+        from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
+            _regionprops_label_pass,
+        )
+        from cucim.skimage.measure._regionprops_gpu_convex import (
+            _convex_hull_union,
+        )
+
+        labels = cp.ascontiguousarray(image).view(cp.uint8)
+        bbox = _regionprops_label_pass(labels, 1, compute_bbox=True)["bbox"]
+        # In 3D, the hull of the one label is computed with qhull on the
+        # host: for a large round region the GPU hull kernel is slower (2.2x
+        # for a ball of radius 120), while for blobs qhull costs < 1 ms more.
+        convex_image = _convex_hull_union(
+            labels, bbox, 1, tolerance=tolerance, use_qhull=True
+        )
+        return convex_image.reshape(original_shape)
 
     # xor with eroded version to keep only edge pixels of the binary image
     image_boundary = cp.bitwise_xor(image, ndi.binary_erosion(image, 3))
@@ -285,7 +354,7 @@ def convex_hull_image(
             f"Returning empty image, see error message below:\n"
             f"{err}"
         )
-        return cp.zeros(image.shape, dtype=bool)
+        return cp.zeros(original_shape, dtype=bool)
 
     coord_dtype = cp.min_scalar_type(max(image.shape))
     if float64_computation:
@@ -357,15 +426,53 @@ def convex_hull_object(
     convex_hull_image separately on each object or adjust ``connectivity``.
 
     The parameters listed under "Extra Parameters" above are present only
-    in cuCIM and not in scikit-image.
+    in cuCIM and not in scikit-image. Unlike scikit-image, images with more
+    than two dimensions are supported.
+
+    In 2D and 3D, the convex hulls of all objects are computed at once with
+    the batch convex-hull kernels of ``regionprops`` and written into the
+    output in one pass (`float64_computation` has no effect there). Other
+    images, and images smaller than an explicitly given
+    `cpu_fallback_threshold`, use ``convex_hull_image`` once per object.
     """
     if connectivity not in tuple(range(1, image.ndim + 1)):
         raise ValueError("`connectivity` must be between 1 and image.ndim.")
+    # (as convex_hull_image, whatever the image's contents and dispatch)
+    if cpu_fallback_threshold is not None and cpu_fallback_threshold < 0:
+        raise ValueError("cpu_fallback_threshold must be non-negative")
 
     labeled_im = label(image, connectivity=connectivity, background=0)
+    max_label = int(labeled_im.max())
+
+    # singleton axes are squeezed, as convex_hull_image does for each object
+    squeezed = cp.squeeze(labeled_im)
+    if (
+        squeezed.ndim in (2, 3)
+        and max_label > 0
+        and (
+            cpu_fallback_threshold is None
+            or image.size >= cpu_fallback_threshold
+        )
+    ):
+        # all objects at once
+        from cucim.skimage.measure._regionprops_gpu_basic_kernels import (
+            _regionprops_label_pass,
+        )
+        from cucim.skimage.measure._regionprops_gpu_convex import (
+            _convex_hull_union,
+        )
+
+        squeezed = cp.ascontiguousarray(squeezed)
+        bbox = _regionprops_label_pass(squeezed, max_label, compute_bbox=True)[
+            "bbox"
+        ]
+        # (in 3D, the hulls are computed on the GPU: with many objects this
+        # is much faster than one qhull call per object)
+        convex_img = _convex_hull_union(squeezed, bbox, max_label)
+        return convex_img.reshape(image.shape)
+
     convex_img = cp.zeros(image.shape, dtype=bool)
 
-    max_label = int(labeled_im.max())
     for i in range(1, max_label + 1):
         convex_obj = convex_hull_image(
             labeled_im == i,
